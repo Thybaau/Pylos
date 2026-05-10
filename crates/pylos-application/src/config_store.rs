@@ -423,15 +423,11 @@ fn build_runtime_providers(
             // Résolution de la région si elle contient une référence env
             if bedrock_cfg.region.starts_with("env.") {
                 let var_name = bedrock_cfg.region.trim_start_matches("env.");
-                bedrock_cfg.region = std::env::var(var_name)
-                    .unwrap_or_else(|_| "us-east-1".into());
+                bedrock_cfg.region = std::env::var(var_name).unwrap_or_else(|_| "us-east-1".into());
             }
 
             // Résolution des autres champs EnvVar
-            let resolved_access_key = bedrock_cfg
-                .access_key_id
-                .as_ref()
-                .and_then(|e| e.resolve());
+            let resolved_access_key = bedrock_cfg.access_key_id.as_ref().and_then(|e| e.resolve());
             let resolved_secret_key = bedrock_cfg
                 .secret_access_key
                 .as_ref()
