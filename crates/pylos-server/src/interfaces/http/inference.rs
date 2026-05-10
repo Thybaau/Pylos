@@ -27,7 +27,6 @@ pub async fn chat_completions(
 ) -> Response {
     let is_stream = payload.stream.unwrap_or(false);
     let model = payload.model.clone();
-    // Preview du premier message user
     let input_preview = payload
         .messages
         .iter()
@@ -58,8 +57,6 @@ async fn complete_response(
             let latency = start.elapsed().as_secs_f64() * 1000.0;
             let output_preview = resp.choices.first().map(|c| c.message.content.clone());
             let finish_reason = resp.choices.first().and_then(|c| c.finish_reason.clone());
-
-            // Détermine le provider depuis l'orchestrateur (approximation: premier tenté)
             let provider = guess_provider(&resp.model);
 
             let entry = build_log_entry(
@@ -86,7 +83,6 @@ async fn complete_response(
         Err(e) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
             let provider = guess_provider(&model);
-
             let entry = build_log_entry(
                 &provider,
                 &model,
@@ -104,7 +100,6 @@ async fn complete_response(
             tokio::spawn(async move {
                 state_clone.log_store.push(entry).await;
             });
-
             error_response(&e)
         }
     }
@@ -142,7 +137,6 @@ async fn stream_response(
                 Ok::<Event, axum::Error>(Event::default().data("[DONE]"))
             });
 
-            // Log après fin du stream
             let latency = start.elapsed().as_secs_f64() * 1000.0;
             tokio::spawn(async move {
                 let entry = build_log_entry(
@@ -213,44 +207,47 @@ fn error_response(error: &PylosError) -> Response {
     (status, Json(body)).into_response()
 }
 
-/// Déduit le provider depuis le nom du modèle (heuristique)
+/// Déduit le provider depuis le nom du modèle
 fn guess_provider(model: &str) -> String {
-    if model.starts_with("us.") || model.starts_with("eu.") || model.starts_with("ap.")
-        || model.starts_with("amazon.") || model.contains("nova") || model.contains("titan")
+    // Bedrock : préfixes régionaux ou noms de familles AWS
+    if model.starts_with("us.")
+        || model.starts_with("eu.")
+        || model.starts_with("ap.")
+        || model.starts_with("amazon.")
+        || model.contains("nova")
+        || model.contains("titan")
     {
         return "bedrock".to_string();
     }
+    // Claude via Bedrock cross-region
+    if model.starts_with("anthropic.") {
+        return "bedrock".to_string();
+    }
+    // Anthropic direct
     if model.contains("claude") {
         return "anthropic".to_string();
     }
+    // OpenAI
     if model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3") {
         return "openai".to_string();
     }
+    // OpenRouter : format "provider/model"
     if model.contains('/') {
         return "openrouter".to_string();
     }
-    // Ollama : modèles sans préfixe de provider (llama3.1:8b, codestral:22b, etc.)
-    if model.contains(':') || model.contains("llama") || model.contains("qwen")
-        || model.contains("codestral") || model.contains("deepseek")
-        || model.contains("starcoder") || model.contains("nomic")
-        || model.contains("mistral") || model.contains("gemma")
-        || model.contains("phi") || model.contains("falcon")
+    // Ollama : modèles locaux (llama3.1:8b, codestral:22b, qwen2.5, etc.)
+    if model.contains(':')
+        || model.contains("llama")
+        || model.contains("qwen")
+        || model.contains("codestral")
+        || model.contains("deepseek")
+        || model.contains("starcoder")
+        || model.contains("nomic")
+        || model.contains("mistral")
+        || model.contains("gemma")
+        || model.contains("phi")
     {
         return "ollama".to_string();
     }
     "unknown".to_string()
-}
-    } else if model.contains("nova")
-        || model.starts_with("amazon.")
-        || model.starts_with("us.amazon")
-    {
-        "bedrock".to_string()
-    } else if model.contains("gpt") || model.contains("openai") {
-        "openai".to_string()
-    } else if model.contains('/') {
-        // Format OpenRouter : "openai/gpt-4o-mini"
-        "openrouter".to_string()
-    } else {
-        "unknown".to_string()
-    }
 }
