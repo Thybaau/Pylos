@@ -33,9 +33,10 @@ impl RateLimitStore {
             .connect_with(options)
             .await?;
 
-        sqlx::migrate!("./migrations").run(&pool).await.map_err(|e| {
-            sqlx::Error::Migrate(Box::new(e))
-        })?;
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| sqlx::Error::Migrate(Box::new(e)))?;
 
         info!(path = %db_path.display(), "Rate limit store opened");
         Ok(Self { pool })
@@ -129,10 +130,7 @@ impl RateLimitStore {
 
     /// Vérifie et incrémente le compteur de requêtes
     /// Retourne Ok(()) si dans les limites, Err(RateLimitExceeded) sinon
-    pub async fn check_and_increment_requests(
-        &self,
-        vk_id: &str,
-    ) -> Result<(), PylosError> {
+    pub async fn check_and_increment_requests(&self, vk_id: &str) -> Result<(), PylosError> {
         self.check_and_increment(vk_id, "requests", 1).await
     }
 
@@ -214,21 +212,27 @@ impl RateLimitStore {
         .await
         .unwrap_or_default();
 
-        rows.iter().map(|row| {
-            let window_start: i64 = row.try_get("window_start_ms").unwrap_or(0);
-            let window_dur: i64 = row.try_get("window_duration_ms").unwrap_or(60_000);
-            let current: i64 = row.try_get("current_value").unwrap_or(0);
-            let max: i64 = row.try_get("max_value").unwrap_or(0);
-            // Si la fenêtre est expirée, current effectif = 0
-            let effective_current = if now - window_start >= window_dur { 0 } else { current };
+        rows.iter()
+            .map(|row| {
+                let window_start: i64 = row.try_get("window_start_ms").unwrap_or(0);
+                let window_dur: i64 = row.try_get("window_duration_ms").unwrap_or(60_000);
+                let current: i64 = row.try_get("current_value").unwrap_or(0);
+                let max: i64 = row.try_get("max_value").unwrap_or(0);
+                // Si la fenêtre est expirée, current effectif = 0
+                let effective_current = if now - window_start >= window_dur {
+                    0
+                } else {
+                    current
+                };
 
-            RateLimitStatus {
-                window_type: row.try_get("window_type").unwrap_or_default(),
-                max_value: max as u64,
-                current_value: effective_current as u64,
-                reset_at_ms: window_start + window_dur,
-            }
-        }).collect()
+                RateLimitStatus {
+                    window_type: row.try_get("window_type").unwrap_or_default(),
+                    max_value: max as u64,
+                    current_value: effective_current as u64,
+                    reset_at_ms: window_start + window_dur,
+                }
+            })
+            .collect()
     }
 }
 
@@ -254,7 +258,9 @@ impl RateLimitPlugin {
 
 #[async_trait::async_trait]
 impl pylos_core::domain::traits::LlmPlugin for RateLimitPlugin {
-    fn name(&self) -> &str { "rate_limit" }
+    fn name(&self) -> &str {
+        "rate_limit"
+    }
 
     async fn pre_hook(
         &self,
@@ -317,7 +323,9 @@ mod tests {
     use pylos_core::domain::config::{Duration, RateLimitConfig};
 
     async fn make_store() -> RateLimitStore {
-        RateLimitStore::in_memory().await.expect("in-memory rate limit store")
+        RateLimitStore::in_memory()
+            .await
+            .expect("in-memory rate limit store")
     }
 
     fn make_config(req_limit: u32, window: &str) -> RateLimitConfig {
@@ -333,7 +341,10 @@ mod tests {
     #[tokio::test]
     async fn test_request_under_limit() {
         let store = make_store().await;
-        store.upsert_rate_limit("vk-1", &make_config(10, "1m")).await.unwrap();
+        store
+            .upsert_rate_limit("vk-1", &make_config(10, "1m"))
+            .await
+            .unwrap();
 
         for _ in 0..10 {
             store.check_and_increment_requests("vk-1").await.unwrap();
@@ -343,14 +354,20 @@ mod tests {
     #[tokio::test]
     async fn test_request_exceeds_limit() {
         let store = make_store().await;
-        store.upsert_rate_limit("vk-2", &make_config(3, "1m")).await.unwrap();
+        store
+            .upsert_rate_limit("vk-2", &make_config(3, "1m"))
+            .await
+            .unwrap();
 
         for _ in 0..3 {
             store.check_and_increment_requests("vk-2").await.unwrap();
         }
         let result = store.check_and_increment_requests("vk-2").await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), PylosError::RateLimitExceeded(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            PylosError::RateLimitExceeded(_)
+        ));
     }
 
     #[tokio::test]
@@ -358,14 +375,20 @@ mod tests {
         let store = make_store().await;
         // Sans config → toujours OK
         for _ in 0..1000 {
-            store.check_and_increment_requests("vk-unknown").await.unwrap();
+            store
+                .check_and_increment_requests("vk-unknown")
+                .await
+                .unwrap();
         }
     }
 
     #[tokio::test]
     async fn test_get_status() {
         let store = make_store().await;
-        store.upsert_rate_limit("vk-3", &make_config(100, "1m")).await.unwrap();
+        store
+            .upsert_rate_limit("vk-3", &make_config(100, "1m"))
+            .await
+            .unwrap();
         store.check_and_increment_requests("vk-3").await.unwrap();
         store.check_and_increment_requests("vk-3").await.unwrap();
 

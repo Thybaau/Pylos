@@ -11,16 +11,26 @@ export default function Logs() {
   const [period, setPeriod] = useState('1h')
   const [provider, setProvider] = useState('')
   const [status, setStatus] = useState('')
+  const [virtualKey, setVirtualKey] = useState('')
+  const [model, setModel] = useState('')
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null)
 
+  const { data: filterData } = useQuery({
+    queryKey: ['logs-filterdata'],
+    queryFn: () => logsApi.getFilterData(),
+    staleTime: 30_000,
+  })
+
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['logs', offset, period, provider, status],
+    queryKey: ['logs', offset, period, provider, status, virtualKey, model],
     queryFn: () => logsApi.getLogs({
       limit: LIMIT,
       offset,
       period,
       ...(provider && { provider }),
       ...(status && { status }),
+      ...(virtualKey && { virtual_key: virtualKey }),
+      ...(model && { model }),
     }),
     refetchInterval: 10_000,
   })
@@ -28,6 +38,10 @@ export default function Logs() {
   const total = data?.pagination.total_count ?? 0
   const totalPages = Math.ceil(total / LIMIT)
   const currentPage = Math.floor(offset / LIMIT) + 1
+
+  const resetFilters = () => {
+    setOffset(0)
+  }
 
   return (
     <div className="p-6 h-full flex flex-col gap-4">
@@ -44,7 +58,7 @@ export default function Logs() {
           {/* Period */}
           <select
             value={period}
-            onChange={e => { setPeriod(e.target.value); setOffset(0) }}
+            onChange={e => { setPeriod(e.target.value); resetFilters() }}
             className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200"
           >
             {['1h', '6h', '24h', '7d', '30d'].map(p => (
@@ -53,18 +67,44 @@ export default function Logs() {
           </select>
 
           {/* Provider */}
+          <select
+            value={provider}
+            onChange={e => { setProvider(e.target.value); resetFilters() }}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200"
+          >
+            <option value="">All providers</option>
+            {(filterData?.providers ?? []).map((p: string) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+
+          {/* Virtual Key */}
+          <select
+            value={virtualKey}
+            onChange={e => { setVirtualKey(e.target.value); resetFilters() }}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200"
+          >
+            <option value="">All keys</option>
+            {(filterData?.virtual_keys ?? []).map((vk: { id: string; name: string } | string) => {
+              const id = typeof vk === 'string' ? vk : vk.id
+              const name = typeof vk === 'string' ? vk : vk.name
+              return <option key={id} value={name}>{name}</option>
+            })}
+          </select>
+
+          {/* Model filter */}
           <input
             type="text"
-            placeholder="Provider…"
-            value={provider}
-            onChange={e => { setProvider(e.target.value); setOffset(0) }}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 w-32"
+            placeholder="Model…"
+            value={model}
+            onChange={e => { setModel(e.target.value); resetFilters() }}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 w-36"
           />
 
           {/* Status */}
           <select
             value={status}
-            onChange={e => { setStatus(e.target.value); setOffset(0) }}
+            onChange={e => { setStatus(e.target.value); resetFilters() }}
             className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200"
           >
             <option value="">All status</option>
@@ -86,7 +126,7 @@ export default function Logs() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-gray-900 border-b border-gray-800">
             <tr>
-              {['Time', 'Provider', 'Model', 'Status', 'Latency', 'Tokens', 'Cost', 'Input'].map(h => (
+              {['Time', 'Provider', 'Model', 'Status', 'Latency', 'Tokens', 'Cost', 'VK', 'Input'].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wide font-medium">
                   {h}
                 </th>
@@ -147,6 +187,9 @@ export default function Logs() {
                     <td className="px-4 py-2.5 text-gray-300 tabular-nums text-xs">
                       {formatCost(log.cost_usd)}
                     </td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[120px] truncate">
+                      {log.virtual_key ?? '—'}
+                    </td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[200px] truncate">
                       {log.input_preview}
                     </td>
@@ -203,6 +246,7 @@ export default function Logs() {
             <Row label="Latency"  value={formatLatency(selectedLog.latency_ms)} />
             <Row label="Tokens"   value={`${selectedLog.prompt_tokens} + ${selectedLog.completion_tokens} = ${selectedLog.total_tokens}`} />
             <Row label="Cost"     value={formatCost(selectedLog.cost_usd)} />
+            {selectedLog.virtual_key && <Row label="Virtual Key" value={selectedLog.virtual_key} />}
             {selectedLog.finish_reason && <Row label="Finish" value={selectedLog.finish_reason} />}
             {selectedLog.error_message && (
               <div>

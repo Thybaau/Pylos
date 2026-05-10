@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use pylos_core::domain::config::BudgetConfig;
 use pylos_core::error::PylosError;
@@ -33,9 +33,10 @@ impl BudgetStore {
             .connect_with(options)
             .await?;
 
-        sqlx::migrate!("./migrations").run(&pool).await.map_err(|e| {
-            sqlx::Error::Migrate(Box::new(e))
-        })?;
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| sqlx::Error::Migrate(Box::new(e)))?;
 
         info!(path = %db_path.display(), "Budget store opened");
         Ok(Self { pool })
@@ -66,7 +67,11 @@ impl BudgetStore {
     }
 
     /// Initialise ou met à jour un budget depuis la config
-    pub async fn upsert_budget(&self, vk_id: &str, budget: &BudgetConfig) -> Result<(), sqlx::Error> {
+    pub async fn upsert_budget(
+        &self,
+        vk_id: &str,
+        budget: &BudgetConfig,
+    ) -> Result<(), sqlx::Error> {
         let period = detect_period(&budget.reset_duration.0);
         let reset_at = next_reset_ms(&budget.reset_duration.0);
 
@@ -127,45 +132,8 @@ impl BudgetStore {
     }
 
     /// Enregistre l'utilisation après une requête réussie
+    /// Gère le reset automatique si la période est expirée
     pub async fn record_usage(&self, vk_id: &str, cost_usd: f64) {
-        if cost_usd <= 0.0 {
-            return;
-        }
-
-        let now = now_ms();
-
-        // Met à jour tous les budgets actifs pour ce VK
-        // Reset si la période est expirée
-        let result = sqlx::query(
-            r#"
-            UPDATE vk_budgets
-            SET
-                current_usd = CASE
-                    WHEN reset_at <= ? THEN ?
-                    ELSE current_usd + ?
-                END,
-                reset_at = CASE
-                    WHEN reset_at <= ? THEN reset_at + (reset_at - (reset_at - 1)) -- placeholder, updated below
-                    ELSE reset_at
-                END
-            WHERE virtual_key_id = ?
-            "#,
-        )
-        .bind(now)
-        .bind(cost_usd)  // nouveau current_usd si reset
-        .bind(cost_usd)  // incrément si pas reset
-        .bind(now)
-        .bind(vk_id)
-        .execute(&self.pool)
-        .await;
-
-        if let Err(e) = result {
-            warn!(error = %e, vk_id = %vk_id, "Failed to record budget usage");
-        }
-    }
-
-    /// Version simplifiée avec reset propre
-    pub async fn record_usage_v2(&self, vk_id: &str, cost_usd: f64) {
         if cost_usd <= 0.0 {
             return;
         }
@@ -185,7 +153,7 @@ impl BudgetStore {
             let reset_at: i64 = row.try_get("reset_at").unwrap_or(0);
 
             if now >= reset_at {
-                // Reset + nouvelle période
+                // Période expirée → reset + nouvel incrément
                 let new_reset = reset_at + period_ms(&period);
                 let _ = sqlx::query(
                     "UPDATE vk_budgets SET current_usd = ?, reset_at = ? WHERE rowid = ?",
@@ -217,12 +185,14 @@ impl BudgetStore {
         .await
         .unwrap_or_default();
 
-        rows.iter().map(|row| BudgetUsage {
-            period: row.try_get("period").unwrap_or_default(),
-            max_usd: row.try_get("max_usd").unwrap_or(0.0),
-            current_usd: row.try_get("current_usd").unwrap_or(0.0),
-            reset_at_ms: row.try_get("reset_at").unwrap_or(0),
-        }).collect()
+        rows.iter()
+            .map(|row| BudgetUsage {
+                period: row.try_get("period").unwrap_or_default(),
+                max_usd: row.try_get("max_usd").unwrap_or(0.0),
+                current_usd: row.try_get("current_usd").unwrap_or(0.0),
+                reset_at_ms: row.try_get("reset_at").unwrap_or(0),
+            })
+            .collect()
     }
 }
 
@@ -257,7 +227,9 @@ impl BudgetPlugin {
 
 #[async_trait::async_trait]
 impl pylos_core::domain::traits::LlmPlugin for BudgetPlugin {
-    fn name(&self) -> &str { "budget" }
+    fn name(&self) -> &str {
+        "budget"
+    }
 
     async fn pre_hook(
         &self,
@@ -296,15 +268,18 @@ impl pylos_core::domain::traits::LlmPlugin for BudgetPlugin {
         // Calcule le coût réel depuis l'usage de la réponse
         let actual_cost = match response {
             pylos_core::domain::request::PylosResponse::ChatCompletion(r) => {
-                r.usage.as_ref().map(|u| {
-                    crate::log_store::estimate_cost_pub(
-                        // On utilise le provider depuis le modèle
-                        guess_provider_from_model(&r.model),
-                        &r.model,
-                        u.prompt_tokens,
-                        u.completion_tokens,
-                    )
-                }).unwrap_or(0.0)
+                r.usage
+                    .as_ref()
+                    .map(|u| {
+                        crate::log_store::estimate_cost_pub(
+                            // On utilise le provider depuis le modèle
+                            guess_provider_from_model(&r.model),
+                            &r.model,
+                            u.prompt_tokens,
+                            u.completion_tokens,
+                        )
+                    })
+                    .unwrap_or(0.0)
             }
             _ => 0.0,
         };
@@ -315,7 +290,7 @@ impl pylos_core::domain::traits::LlmPlugin for BudgetPlugin {
         drop(pending);
 
         if actual_cost > 0.0 {
-            self.store.record_usage_v2(&vk_id, actual_cost).await;
+            self.store.record_usage(&vk_id, actual_cost).await;
             debug!(vk_id = %vk_id, cost_usd = actual_cost, "Budget usage recorded");
         }
 
@@ -336,14 +311,20 @@ fn now_ms() -> i64 {
 
 fn detect_period(duration_str: &str) -> String {
     let s = duration_str.trim();
-    if s.ends_with('d') && s[..s.len()-1].parse::<u64>().unwrap_or(0) == 1 {
+    // Weekly : "7d" ou "1w"
+    if s == "1w" || s == "7d" || (s.ends_with('w') && s[..s.len() - 1].parse::<u64>().is_ok()) {
+        return "weekly".to_string();
+    }
+    if s.ends_with('d') && s[..s.len() - 1].parse::<u64>().unwrap_or(0) == 1 {
         "daily".to_string()
-    } else if s.ends_with('M') || (s.ends_with('d') && s[..s.len()-1].parse::<u64>().unwrap_or(0) >= 28) {
+    } else if s.ends_with('M')
+        || (s.ends_with('d') && s[..s.len() - 1].parse::<u64>().unwrap_or(0) >= 28)
+    {
         "monthly".to_string()
     } else if s == "total" || s.ends_with('Y') {
         "total".to_string()
     } else {
-        // Toute autre durée → utilise la durée en secondes comme identifiant
+        // Durée arbitraire → label basé sur la string
         format!("window_{}", s)
     }
 }
@@ -351,9 +332,10 @@ fn detect_period(duration_str: &str) -> String {
 fn period_ms(period: &str) -> i64 {
     match period {
         "daily" => 86_400_000,
+        "weekly" => 7 * 86_400_000,
         "monthly" => 30 * 86_400_000,
         "total" => i64::MAX / 2,
-        _ => 3_600_000, // 1h par défaut
+        _ => 3_600_000, // 1h par défaut pour les fenêtres custom
     }
 }
 
@@ -401,7 +383,9 @@ mod tests {
     use pylos_core::domain::config::{BudgetConfig, Duration};
 
     async fn make_store() -> BudgetStore {
-        BudgetStore::in_memory().await.expect("in-memory budget store")
+        BudgetStore::in_memory()
+            .await
+            .expect("in-memory budget store")
     }
 
     #[tokio::test]
@@ -426,7 +410,7 @@ mod tests {
         let store = make_store().await;
         let budget = BudgetConfig {
             id: "b1".into(),
-            max_limit: 1.0,  // très petit budget
+            max_limit: 1.0, // très petit budget
             reset_duration: Duration("1d".into()),
             current_usage: 0.0,
             virtual_key_id: Some("vk-2".into()),
@@ -434,7 +418,7 @@ mod tests {
         store.upsert_budget("vk-2", &budget).await.unwrap();
 
         // Record near-max usage
-        store.record_usage_v2("vk-2", 0.95).await;
+        store.record_usage("vk-2", 0.95).await;
 
         // Exceeds limit
         let result = store.check_budget("vk-2", 0.10).await;
@@ -447,7 +431,10 @@ mod tests {
         let store = make_store().await;
         // No budget registered for this VK — check should pass (no constraint)
         let result = store.check_budget("vk-unknown", 1000.0).await;
-        assert!(result.is_ok(), "Unknown VK should have no budget constraint");
+        assert!(
+            result.is_ok(),
+            "Unknown VK should have no budget constraint"
+        );
     }
 
     #[tokio::test]
@@ -461,7 +448,7 @@ mod tests {
             virtual_key_id: Some("vk-3".into()),
         };
         store.upsert_budget("vk-3", &budget).await.unwrap();
-        store.record_usage_v2("vk-3", 1.50).await;
+        store.record_usage("vk-3", 1.50).await;
 
         let usages = store.get_usage("vk-3").await;
         assert_eq!(usages.len(), 1);

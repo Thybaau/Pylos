@@ -6,15 +6,21 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tower::ServiceExt; // for oneshot
 
-use pylos_core::domain::openai::{ChatCompletionResponse, ChatCompletionChoice, ChatCompletionMessage, MessageRole, Usage};
+use pylos_application::{
+    BudgetStore, ConfigStore, InferenceOrchestrator, LogStore, ModelCatalog, RateLimitStore,
+};
+use pylos_core::domain::openai::{
+    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole, Usage,
+};
 use pylos_core::domain::provider::{ProviderConfig, ProviderKind};
-use pylos_core::domain::request::{PylosRequest, PylosResponse, StreamChunk, StreamChoice, StreamDelta};
-use pylos_core::domain::traits::{Provider, ChunkStream};
+use pylos_core::domain::request::{
+    PylosRequest, PylosResponse, StreamChoice, StreamChunk, StreamDelta,
+};
+use pylos_core::domain::traits::{ChunkStream, Provider};
 use pylos_core::error::PylosError;
-use pylos_application::{InferenceOrchestrator, ConfigStore, LogStore};
+use pylos_server::metrics::Metrics;
 use pylos_server::routes::create_router;
 use pylos_server::state::AppState;
-use pylos_server::metrics::Metrics;
 
 use async_trait::async_trait;
 
@@ -102,24 +108,30 @@ async fn test_chat_completions_unary() {
     let mock_provider = Arc::new(MockProvider);
     let mut config = ProviderConfig::new(ProviderKind::OpenAI, vec![]);
     config.timeout_ms = 1000;
-    
+
     let orchestrator = Arc::new(InferenceOrchestrator::new(
         vec![(mock_provider, config)],
         vec![],
     ));
-    
+
     // Minimal mock stores
     let config_store = Arc::new(ConfigStore::load(None).await.unwrap());
     let metrics = Arc::new(Metrics::new());
     let vk_registry = Arc::new(pylos_core::domain::virtual_key::VirtualKeyRegistry::new());
     let log_store = Arc::new(LogStore::new(None, 1, 100)); // In-memory log store
-    
+    let model_catalog = Arc::new(ModelCatalog::in_memory().await.unwrap());
+    let budget_store = Arc::new(BudgetStore::in_memory().await.unwrap());
+    let rate_limit_store = Arc::new(RateLimitStore::in_memory().await.unwrap());
+
     let state = AppState {
         orchestrator,
         config_store,
         metrics,
         vk_registry,
         log_store,
+        model_catalog,
+        budget_store,
+        rate_limit_store,
     };
 
     // 2. Create Router
@@ -152,29 +164,34 @@ async fn test_chat_completions_unary() {
     assert_eq!(body["choices"][0]["message"]["content"], "Hello from Mock!");
 }
 
-
 #[tokio::test]
 async fn test_chat_completions_stream() {
     // 1. Setup Mock State
     let mock_provider = Arc::new(MockProvider);
     let config = ProviderConfig::new(ProviderKind::OpenAI, vec![]);
-    
+
     let orchestrator = Arc::new(InferenceOrchestrator::new(
         vec![(mock_provider, config)],
         vec![],
     ));
-    
+
     let config_store = Arc::new(ConfigStore::load(None).await.unwrap());
     let metrics = Arc::new(Metrics::new());
     let vk_registry = Arc::new(pylos_core::domain::virtual_key::VirtualKeyRegistry::new());
     let log_store = Arc::new(LogStore::new(None, 1, 100));
-    
+    let model_catalog = Arc::new(ModelCatalog::in_memory().await.unwrap());
+    let budget_store = Arc::new(BudgetStore::in_memory().await.unwrap());
+    let rate_limit_store = Arc::new(RateLimitStore::in_memory().await.unwrap());
+
     let state = AppState {
         orchestrator,
         config_store,
         metrics,
         vk_registry,
         log_store,
+        model_catalog,
+        budget_store,
+        rate_limit_store,
     };
 
     // 2. Create Router

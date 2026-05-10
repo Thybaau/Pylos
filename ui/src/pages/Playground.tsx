@@ -471,15 +471,15 @@ export default function Playground() {
               <div className="w-12 h-12 rounded-2xl bg-gray-800 flex items-center justify-center">
                 <Zap size={20} className="text-blue-500" />
               </div>
-              <div className="text-center">
-                <div className="font-medium text-gray-400">Playground Pylos</div>
+                <div className="text-center">
+                <div className="font-medium text-gray-400">Pylos Playground</div>
                 <div className="text-sm mt-1">
-                  Sélectionne un modèle et envoie un message
+                  Select a model and send a message
                 </div>
               </div>
               {models.length > 0 && (
                 <div className="text-xs text-gray-700 mt-2">
-                  {models.filter(m => m.provider === 'ollama').length} modèles Ollama locaux disponibles
+                  {models.filter(m => m.provider === 'ollama').length} local Ollama models available
                 </div>
               )}
             </div>

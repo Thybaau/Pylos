@@ -351,14 +351,16 @@ pub async fn delete_virtual_key(
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub async fn get_virtual_key_budget(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    // Budget tracking persistant prévu dans une prochaine phase
+    let budget = state.budget_store.get_usage(&id).await;
+    let rate_limits = state.rate_limit_store.get_status(&id).await;
+
     Json(json!({
         "virtual_key_id": id,
-        "budget": [],
-        "rate_limits": []
+        "budget": budget,
+        "rate_limits": rate_limits,
     }))
 }
 

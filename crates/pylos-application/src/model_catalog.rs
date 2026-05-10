@@ -12,7 +12,7 @@ use tracing::info;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModelInfo {
-    pub id: String,           // "{provider}/{model_id}"
+    pub id: String, // "{provider}/{model_id}"
     pub provider: String,
     pub model_id: String,
     pub display_name: Option<String>,
@@ -45,9 +45,10 @@ impl ModelCatalog {
             .connect_with(options)
             .await?;
 
-        sqlx::migrate!("./migrations").run(&pool).await.map_err(|e| {
-            sqlx::Error::Migrate(Box::new(e))
-        })?;
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| sqlx::Error::Migrate(Box::new(e)))?;
 
         let catalog = Self { pool };
         catalog.seed_builtin_models().await;
@@ -62,7 +63,8 @@ impl ModelCatalog {
             .connect("sqlite::memory:")
             .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS model_catalog (
                 id                      TEXT PRIMARY KEY,
                 provider                TEXT NOT NULL,
@@ -80,7 +82,10 @@ impl ModelCatalog {
                 updated_at_ms           INTEGER NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_uniq ON model_catalog(provider, model_id);
-        "#).execute(&pool).await?;
+        "#,
+        )
+        .execute(&pool)
+        .await?;
 
         let catalog = Self { pool };
         catalog.seed_builtin_models().await;
@@ -120,17 +125,15 @@ impl ModelCatalog {
 
     /// Recherche un modèle par provider + model_id
     pub async fn get_model(&self, provider: &str, model_id: &str) -> Option<ModelInfo> {
-        sqlx::query(
-            "SELECT * FROM model_catalog WHERE provider = ? AND model_id = ?",
-        )
-        .bind(provider)
-        .bind(model_id)
-        .fetch_optional(&self.pool)
-        .await
-        .ok()
-        .flatten()
-        .as_ref()
-        .map(row_to_model_info)
+        sqlx::query("SELECT * FROM model_catalog WHERE provider = ? AND model_id = ?")
+            .bind(provider)
+            .bind(model_id)
+            .fetch_optional(&self.pool)
+            .await
+            .ok()
+            .flatten()
+            .as_ref()
+            .map(row_to_model_info)
     }
 
     /// Obtient le pricing d'un modèle (pour calcul coût précis)
@@ -146,7 +149,8 @@ impl ModelCatalog {
     /// Upsert un modèle dans le catalogue
     pub async fn upsert_model(&self, model: &ModelInfo) -> Result<(), sqlx::Error> {
         let now = now_ms();
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO model_catalog
                 (id, provider, model_id, display_name, context_window, max_output_tokens,
                  input_price_per_1m_usd, output_price_per_1m_usd,
@@ -165,7 +169,8 @@ impl ModelCatalog {
                 supports_embeddings = excluded.supports_embeddings,
                 is_deprecated = excluded.is_deprecated,
                 updated_at_ms = excluded.updated_at_ms
-        "#)
+        "#,
+        )
         .bind(&model.id)
         .bind(&model.provider)
         .bind(&model.model_id)
@@ -225,10 +230,16 @@ fn now_ms() -> i64 {
 
 #[allow(clippy::too_many_arguments)]
 fn m(
-    provider: &str, model_id: &str, display: &str,
-    ctx: u32, max_out: u32,
-    in_price: f64, out_price: f64,
-    vision: bool, tools: bool, embeddings: bool,
+    provider: &str,
+    model_id: &str,
+    display: &str,
+    ctx: u32,
+    max_out: u32,
+    in_price: f64,
+    out_price: f64,
+    vision: bool,
+    tools: bool,
+    embeddings: bool,
 ) -> ModelInfo {
     ModelInfo {
         id: format!("{}/{}", provider, model_id),
@@ -251,57 +262,412 @@ fn m(
 fn builtin_models() -> Vec<ModelInfo> {
     vec![
         // ── OpenAI ──────────────────────────────────────────────────────────
-        m("openai","gpt-4o","GPT-4o",128_000,16_384,5.0,15.0,true,true,false),
-        m("openai","gpt-4o-mini","GPT-4o Mini",128_000,16_384,0.15,0.60,true,true,false),
-        m("openai","gpt-4-turbo","GPT-4 Turbo",128_000,4_096,10.0,30.0,true,true,false),
-        m("openai","o1","o1",200_000,100_000,15.0,60.0,false,false,false),
-        m("openai","o1-mini","o1-mini",128_000,65_536,3.0,12.0,false,false,false),
-        m("openai","o3-mini","o3-mini",200_000,100_000,1.1,4.4,false,true,false),
-        m("openai","text-embedding-3-small","Embedding 3 Small",8_191,0,0.02,0.0,false,false,true),
-        m("openai","text-embedding-3-large","Embedding 3 Large",8_191,0,0.13,0.0,false,false,true),
-
+        m(
+            "openai", "gpt-4o", "GPT-4o", 128_000, 16_384, 5.0, 15.0, true, true, false,
+        ),
+        m(
+            "openai",
+            "gpt-4o-mini",
+            "GPT-4o Mini",
+            128_000,
+            16_384,
+            0.15,
+            0.60,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "openai",
+            "gpt-4-turbo",
+            "GPT-4 Turbo",
+            128_000,
+            4_096,
+            10.0,
+            30.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "openai", "o1", "o1", 200_000, 100_000, 15.0, 60.0, false, false, false,
+        ),
+        m(
+            "openai", "o1-mini", "o1-mini", 128_000, 65_536, 3.0, 12.0, false, false, false,
+        ),
+        m(
+            "openai", "o3-mini", "o3-mini", 200_000, 100_000, 1.1, 4.4, false, true, false,
+        ),
+        m(
+            "openai",
+            "text-embedding-3-small",
+            "Embedding 3 Small",
+            8_191,
+            0,
+            0.02,
+            0.0,
+            false,
+            false,
+            true,
+        ),
+        m(
+            "openai",
+            "text-embedding-3-large",
+            "Embedding 3 Large",
+            8_191,
+            0,
+            0.13,
+            0.0,
+            false,
+            false,
+            true,
+        ),
         // ── Anthropic ───────────────────────────────────────────────────────
-        m("anthropic","claude-opus-4-5","Claude Opus 4.5",200_000,32_000,15.0,75.0,true,true,false),
-        m("anthropic","claude-sonnet-4-5","Claude Sonnet 4.5",200_000,64_000,3.0,15.0,true,true,false),
-        m("anthropic","claude-haiku-3-5","Claude Haiku 3.5",200_000,8_096,0.8,4.0,true,true,false),
-        m("anthropic","claude-3-5-sonnet-20241022","Claude 3.5 Sonnet",200_000,8_096,3.0,15.0,true,true,false),
-        m("anthropic","claude-3-opus-20240229","Claude 3 Opus",200_000,4_096,15.0,75.0,true,true,false),
-        m("anthropic","claude-3-haiku-20240307","Claude 3 Haiku",200_000,4_096,0.25,1.25,true,true,false),
-
+        m(
+            "anthropic",
+            "claude-opus-4-5",
+            "Claude Opus 4.5",
+            200_000,
+            32_000,
+            15.0,
+            75.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "anthropic",
+            "claude-sonnet-4-5",
+            "Claude Sonnet 4.5",
+            200_000,
+            64_000,
+            3.0,
+            15.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "anthropic",
+            "claude-haiku-3-5",
+            "Claude Haiku 3.5",
+            200_000,
+            8_096,
+            0.8,
+            4.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "anthropic",
+            "claude-3-5-sonnet-20241022",
+            "Claude 3.5 Sonnet",
+            200_000,
+            8_096,
+            3.0,
+            15.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "anthropic",
+            "claude-3-opus-20240229",
+            "Claude 3 Opus",
+            200_000,
+            4_096,
+            15.0,
+            75.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "anthropic",
+            "claude-3-haiku-20240307",
+            "Claude 3 Haiku",
+            200_000,
+            4_096,
+            0.25,
+            1.25,
+            true,
+            true,
+            false,
+        ),
         // ── Google Gemini ────────────────────────────────────────────────────
-        m("gemini","gemini-2.5-pro","Gemini 2.5 Pro",1_000_000,65_536,7.0,21.0,true,true,false),
-        m("gemini","gemini-2.5-flash","Gemini 2.5 Flash",1_000_000,65_536,0.3,2.5,true,true,false),
-        m("gemini","gemini-2.0-flash","Gemini 2.0 Flash",1_000_000,8_192,0.1,0.4,true,true,false),
-        m("gemini","gemini-1.5-pro","Gemini 1.5 Pro",2_000_000,8_192,3.5,10.5,true,true,false),
-        m("gemini","text-embedding-004","Gemini Embedding",2_048,0,0.025,0.0,false,false,true),
-        m("gemini","gemini-embedding-001","Gemini Embedding 001",2_048,0,0.0,0.0,false,false,true),
-
+        m(
+            "gemini",
+            "gemini-2.5-pro",
+            "Gemini 2.5 Pro",
+            1_000_000,
+            65_536,
+            7.0,
+            21.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "gemini",
+            "gemini-2.5-flash",
+            "Gemini 2.5 Flash",
+            1_000_000,
+            65_536,
+            0.3,
+            2.5,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "gemini",
+            "gemini-2.0-flash",
+            "Gemini 2.0 Flash",
+            1_000_000,
+            8_192,
+            0.1,
+            0.4,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "gemini",
+            "gemini-1.5-pro",
+            "Gemini 1.5 Pro",
+            2_000_000,
+            8_192,
+            3.5,
+            10.5,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "gemini",
+            "text-embedding-004",
+            "Gemini Embedding",
+            2_048,
+            0,
+            0.025,
+            0.0,
+            false,
+            false,
+            true,
+        ),
+        m(
+            "gemini",
+            "gemini-embedding-001",
+            "Gemini Embedding 001",
+            2_048,
+            0,
+            0.0,
+            0.0,
+            false,
+            false,
+            true,
+        ),
         // ── Cohere ──────────────────────────────────────────────────────────
-        m("cohere","command-a-03-2025","Command A",256_000,8_000,2.5,10.0,false,true,false),
-        m("cohere","command-r-plus","Command R+",128_000,4_096,3.0,15.0,false,true,false),
-        m("cohere","command-r","Command R",128_000,4_096,0.15,0.60,false,true,false),
-        m("cohere","embed-v4.0","Embed v4",512,0,0.1,0.0,false,false,true),
-
+        m(
+            "cohere",
+            "command-a-03-2025",
+            "Command A",
+            256_000,
+            8_000,
+            2.5,
+            10.0,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "cohere",
+            "command-r-plus",
+            "Command R+",
+            128_000,
+            4_096,
+            3.0,
+            15.0,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "cohere",
+            "command-r",
+            "Command R",
+            128_000,
+            4_096,
+            0.15,
+            0.60,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "cohere",
+            "embed-v4.0",
+            "Embed v4",
+            512,
+            0,
+            0.1,
+            0.0,
+            false,
+            false,
+            true,
+        ),
         // ── Groq ────────────────────────────────────────────────────────────
-        m("groq","llama-3.3-70b-versatile","Llama 3.3 70B",128_000,32_768,0.59,0.79,false,true,false),
-        m("groq","llama-3.1-8b-instant","Llama 3.1 8B",128_000,8_192,0.05,0.08,false,true,false),
-        m("groq","gemma2-9b-it","Gemma 2 9B",8_192,8_192,0.2,0.2,false,true,false),
-        m("groq","mixtral-8x7b-32768","Mixtral 8x7B",32_768,32_768,0.24,0.24,false,true,false),
-
+        m(
+            "groq",
+            "llama-3.3-70b-versatile",
+            "Llama 3.3 70B",
+            128_000,
+            32_768,
+            0.59,
+            0.79,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "groq",
+            "llama-3.1-8b-instant",
+            "Llama 3.1 8B",
+            128_000,
+            8_192,
+            0.05,
+            0.08,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "groq",
+            "gemma2-9b-it",
+            "Gemma 2 9B",
+            8_192,
+            8_192,
+            0.2,
+            0.2,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "groq",
+            "mixtral-8x7b-32768",
+            "Mixtral 8x7B",
+            32_768,
+            32_768,
+            0.24,
+            0.24,
+            false,
+            true,
+            false,
+        ),
         // ── Mistral ─────────────────────────────────────────────────────────
-        m("mistral","mistral-large-latest","Mistral Large",128_000,8_192,3.0,9.0,false,true,false),
-        m("mistral","mistral-small-latest","Mistral Small",128_000,8_192,0.2,0.6,false,true,false),
-        m("mistral","codestral-latest","Codestral",256_000,8_192,0.3,0.9,false,true,false),
-
+        m(
+            "mistral",
+            "mistral-large-latest",
+            "Mistral Large",
+            128_000,
+            8_192,
+            3.0,
+            9.0,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "mistral",
+            "mistral-small-latest",
+            "Mistral Small",
+            128_000,
+            8_192,
+            0.2,
+            0.6,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "mistral",
+            "codestral-latest",
+            "Codestral",
+            256_000,
+            8_192,
+            0.3,
+            0.9,
+            false,
+            true,
+            false,
+        ),
         // ── xAI ─────────────────────────────────────────────────────────────
-        m("xai","grok-3","Grok 3",131_072,8_192,5.0,15.0,false,true,false),
-        m("xai","grok-3-mini","Grok 3 Mini",131_072,8_192,0.3,0.5,false,true,false),
-
+        m(
+            "xai", "grok-3", "Grok 3", 131_072, 8_192, 5.0, 15.0, false, true, false,
+        ),
+        m(
+            "xai",
+            "grok-3-mini",
+            "Grok 3 Mini",
+            131_072,
+            8_192,
+            0.3,
+            0.5,
+            false,
+            true,
+            false,
+        ),
         // ── Bedrock (quelques modèles courants) ─────────────────────────────
-        m("bedrock","anthropic.claude-3-5-sonnet-20241022-v2:0","Claude 3.5 Sonnet (Bedrock)",200_000,8_096,3.0,15.0,true,true,false),
-        m("bedrock","amazon.nova-pro-v1:0","Nova Pro",300_000,5_120,0.8,3.2,true,true,false),
-        m("bedrock","amazon.nova-lite-v1:0","Nova Lite",300_000,5_120,0.06,0.24,true,true,false),
-        m("bedrock","amazon.nova-micro-v1:0","Nova Micro",128_000,5_120,0.035,0.14,false,false,false),
+        m(
+            "bedrock",
+            "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "Claude 3.5 Sonnet (Bedrock)",
+            200_000,
+            8_096,
+            3.0,
+            15.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "bedrock",
+            "amazon.nova-pro-v1:0",
+            "Nova Pro",
+            300_000,
+            5_120,
+            0.8,
+            3.2,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "bedrock",
+            "amazon.nova-lite-v1:0",
+            "Nova Lite",
+            300_000,
+            5_120,
+            0.06,
+            0.24,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "bedrock",
+            "amazon.nova-micro-v1:0",
+            "Nova Micro",
+            128_000,
+            5_120,
+            0.035,
+            0.14,
+            false,
+            false,
+            false,
+        ),
     ]
 }
 
@@ -337,7 +703,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_pricing() {
         let catalog = ModelCatalog::in_memory().await.unwrap();
-        let (inp, out) = catalog.get_pricing("anthropic", "claude-3-5-sonnet-20241022").await;
+        let (inp, out) = catalog
+            .get_pricing("anthropic", "claude-3-5-sonnet-20241022")
+            .await;
         assert_eq!(inp, 3.0);
         assert_eq!(out, 15.0);
     }
@@ -345,7 +713,18 @@ mod tests {
     #[tokio::test]
     async fn test_upsert_custom_model() {
         let catalog = ModelCatalog::in_memory().await.unwrap();
-        let custom = m("ollama","llama3.2:3b","Llama 3.2 3B",128_000,8_192,0.0,0.0,false,true,false);
+        let custom = m(
+            "ollama",
+            "llama3.2:3b",
+            "Llama 3.2 3B",
+            128_000,
+            8_192,
+            0.0,
+            0.0,
+            false,
+            true,
+            false,
+        );
         catalog.upsert_model(&custom).await.unwrap();
         let found = catalog.get_model("ollama", "llama3.2:3b").await;
         assert!(found.is_some());

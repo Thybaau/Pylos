@@ -39,10 +39,10 @@ pub async fn virtual_key_middleware(
             match state.vk_registry.check_and_increment(token).await {
                 Ok(vk) => {
                     // Injecte le nom de la VK dans les extensions de la requête
-                    req.extensions_mut().insert(VirtualKeyInfo {
+                    req.extensions_mut().insert(Some(VirtualKeyInfo {
                         name: vk.name.clone(),
                         key: vk.key.clone(),
-                    });
+                    }));
                     next.run(req).await
                 }
                 Err(reason) => {
@@ -69,7 +69,8 @@ pub async fn virtual_key_middleware(
             }
         }
         _ => {
-            // Pas de VK ou clé provider directe — laisse passer
+            // Pas de VK ou clé provider directe — insère None pour que l'extractor fonctionne
+            req.extensions_mut().insert(None::<VirtualKeyInfo>);
             next.run(req).await
         }
     }

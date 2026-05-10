@@ -1,7 +1,8 @@
+use std::sync::Arc;
 use std::time::Instant;
 
 use axum::{
-    extract::State,
+    extract::{Extension, State},
     http::StatusCode,
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -11,18 +12,21 @@ use axum::{
 };
 use futures::StreamExt;
 use serde_json::json;
+use tokio::sync::{mpsc, Mutex as AsyncMutex};
 use tracing::error;
 
 use pylos_application::log_store::{build_log_entry, LogStatus};
 use pylos_core::domain::openai::ChatCompletionRequest;
-use pylos_core::domain::request::{PylosRequest, RequestContext};
+use pylos_core::domain::request::{PylosRequest, RequestContext, StreamChunk};
 use pylos_core::error::PylosError;
 
+use crate::middleware::virtual_key::VirtualKeyInfo;
 use crate::state::AppState;
 
 /// Handler POST /v1/chat/completions
 pub async fn chat_completions(
     State(state): State<AppState>,
+    Extension(vk_info): Extension<Option<VirtualKeyInfo>>,
     Json(payload): Json<ChatCompletionRequest>,
 ) -> Response {
     let is_stream = payload.stream.unwrap_or(false);
@@ -34,12 +38,15 @@ pub async fn chat_completions(
         .and_then(|m| m.content.clone());
 
     let request = PylosRequest::ChatCompletion(payload);
-    let ctx = RequestContext::default();
+    let mut ctx = RequestContext::default();
+    if let Some(vk) = &vk_info {
+        ctx.virtual_key = Some(vk.name.clone());
+    }
 
     if is_stream {
-        stream_response(state, request, ctx, model, input_preview).await
+        stream_response(state, request, ctx, model, input_preview, vk_info).await
     } else {
-        complete_response(state, request, ctx, model, input_preview).await
+        complete_response(state, request, ctx, model, input_preview, vk_info).await
     }
 }
 
@@ -49,6 +56,7 @@ async fn complete_response(
     ctx: RequestContext,
     model: String,
     input_preview: Option<String>,
+    vk_info: Option<VirtualKeyInfo>,
 ) -> Response {
     let start = Instant::now();
 
@@ -58,6 +66,7 @@ async fn complete_response(
             let output_preview = resp.choices.first().and_then(|c| c.message.content.clone());
             let finish_reason = resp.choices.first().and_then(|c| c.finish_reason.clone());
             let provider = guess_provider(&resp.model);
+            let vk_name = vk_info.map(|v| v.name);
 
             let entry = build_log_entry(
                 &provider,
@@ -70,7 +79,7 @@ async fn complete_response(
                 None,
                 input_preview,
                 output_preview,
-                None,
+                vk_name,
             );
 
             let state_clone = state.clone();
@@ -84,12 +93,12 @@ async fn complete_response(
             Json(resp).into_response()
         }
         Ok(pylos_core::domain::request::PylosResponse::TextCompletion(resp)) => {
-            // Ne devrait pas arriver via /v1/chat/completions mais au cas où
             Json(resp).into_response()
         }
         Err(e) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
             let provider = guess_provider(&model);
+            let vk_name = vk_info.map(|v| v.name);
             let entry = build_log_entry(
                 &provider,
                 &model,
@@ -101,7 +110,7 @@ async fn complete_response(
                 Some(e.to_string()),
                 input_preview,
                 None,
-                None,
+                vk_name,
             );
             let state_clone = state.clone();
             tokio::spawn(async move {
@@ -112,54 +121,115 @@ async fn complete_response(
     }
 }
 
+/// Accumulateur partagé entre les closures du stream SSE
+#[derive(Default)]
+struct StreamAccumulator {
+    output_parts: Vec<String>,
+    finish_reason: Option<String>,
+    completion_tokens: usize,
+}
+
+impl StreamAccumulator {
+    fn collect(&mut self, chunk: &StreamChunk) {
+        for choice in &chunk.choices {
+            if let Some(content) = &choice.delta.content {
+                // ~4 chars ≈ 1 token (approximation standard tiktoken)
+                self.completion_tokens += (content.len() / 4).max(1);
+                self.output_parts.push(content.clone());
+            }
+            if let Some(fr) = &choice.finish_reason {
+                self.finish_reason = Some(fr.clone());
+            }
+        }
+    }
+}
+
 async fn stream_response(
     state: AppState,
     request: PylosRequest,
     ctx: RequestContext,
     model: String,
     input_preview: Option<String>,
+    vk_info: Option<VirtualKeyInfo>,
 ) -> Response {
     let start = Instant::now();
 
     match state.orchestrator.stream(request, ctx).await {
         Ok(chunk_stream) => {
             let provider = guess_provider(&model);
-            let model_clone = model.clone();
-            let state_for_log = state.clone();
-            let input_prev = input_preview.clone();
+            let vk_name = vk_info.map(|v| v.name);
 
-            let sse_stream = chunk_stream.map(move |result| match result {
-                Ok(chunk) => {
-                    let data = serde_json::to_string(&chunk).unwrap_or_default();
-                    Ok::<Event, axum::Error>(Event::default().data(data))
+            // Accumulateur partagé entre le stream et le done_event
+            let accumulator = Arc::new(AsyncMutex::new(StreamAccumulator::default()));
+            let acc_stream = Arc::clone(&accumulator);
+
+            // Canal pour déclencher le logging après [DONE]
+            let (log_tx, mut log_rx) = mpsc::channel::<()>(1);
+            let log_tx = Arc::new(log_tx);
+            let log_tx_done = Arc::clone(&log_tx);
+
+            // Stream principal : accumule les chunks + émet les événements SSE
+            let sse_stream = chunk_stream.map(move |result| {
+                match &result {
+                    Ok(chunk) => {
+                        if let Ok(mut acc) = acc_stream.try_lock() {
+                            acc.collect(chunk);
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, "SSE chunk error");
+                    }
                 }
-                Err(e) => {
-                    error!(error = %e, "SSE chunk error");
-                    let err_data = json!({ "error": e.to_string() }).to_string();
-                    Ok::<Event, axum::Error>(Event::default().event("error").data(err_data))
-                }
+                let data = match result {
+                    Ok(chunk) => serde_json::to_string(&chunk).unwrap_or_default(),
+                    Err(e) => json!({ "error": e.to_string() }).to_string(),
+                };
+                Ok::<Event, axum::Error>(Event::default().data(data))
             });
 
-            let done_event = futures::stream::once(async {
+            // Événement terminal [DONE] — déclenche le logging
+            let done_event = futures::stream::once(async move {
+                let _ = log_tx_done.send(()).await;
                 Ok::<Event, axum::Error>(Event::default().data("[DONE]"))
             });
 
-            let latency = start.elapsed().as_secs_f64() * 1000.0;
+            // Task de logging : attend le signal [DONE] puis persiste
+            let state_for_log = state.clone();
+            let model_clone = model.clone();
+            let input_prev = input_preview.clone();
+            let acc_log = Arc::clone(&accumulator);
             tokio::spawn(async move {
-                let entry = build_log_entry(
-                    &provider,
-                    &model_clone,
-                    true,
-                    LogStatus::Success,
-                    latency,
-                    None,
-                    Some("stop".into()),
-                    None,
-                    input_prev,
-                    None,
-                    None,
-                );
-                state_for_log.log_store.push(entry).await;
+                if log_rx.recv().await.is_some() {
+                    let latency = start.elapsed().as_secs_f64() * 1000.0;
+                    let acc = acc_log.lock().await;
+                    let pseudo_usage = pylos_core::domain::openai::Usage {
+                        prompt_tokens: 0,
+                        completion_tokens: acc.completion_tokens as i32,
+                        total_tokens: acc.completion_tokens as i32,
+                    };
+                    let output_preview = if acc.output_parts.is_empty() {
+                        None
+                    } else {
+                        Some(acc.output_parts.join(""))
+                    };
+                    let finish = acc.finish_reason.clone().or_else(|| Some("stop".into()));
+                    drop(acc);
+
+                    let entry = build_log_entry(
+                        &provider,
+                        &model_clone,
+                        true,
+                        LogStatus::Success,
+                        latency,
+                        Some(&pseudo_usage),
+                        finish,
+                        None,
+                        input_prev,
+                        output_preview,
+                        vk_name,
+                    );
+                    state_for_log.log_store.push(entry).await;
+                }
             });
 
             Sse::new(sse_stream.chain(done_event))
@@ -169,6 +239,7 @@ async fn stream_response(
         Err(e) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
             let provider = guess_provider(&model);
+            let vk_name = vk_info.map(|v| v.name);
             let entry = build_log_entry(
                 &provider,
                 &model,
@@ -180,7 +251,7 @@ async fn stream_response(
                 Some(e.to_string()),
                 input_preview,
                 None,
-                None,
+                vk_name,
             );
             tokio::spawn(async move {
                 state.log_store.push(entry).await;
@@ -218,7 +289,6 @@ pub fn error_response(error: &PylosError) -> Response {
 
 /// Déduit le provider depuis le nom du modèle
 fn guess_provider(model: &str) -> String {
-    // Bedrock : préfixes régionaux ou noms de familles AWS
     if model.starts_with("us.")
         || model.starts_with("eu.")
         || model.starts_with("ap.")
@@ -228,23 +298,18 @@ fn guess_provider(model: &str) -> String {
     {
         return "bedrock".to_string();
     }
-    // Claude via Bedrock cross-region
     if model.starts_with("anthropic.") {
         return "bedrock".to_string();
     }
-    // Anthropic direct
     if model.contains("claude") {
         return "anthropic".to_string();
     }
-    // OpenAI
     if model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3") {
         return "openai".to_string();
     }
-    // OpenRouter : format "provider/model"
     if model.contains('/') {
         return "openrouter".to_string();
     }
-    // Ollama : modèles locaux (llama3.1:8b, codestral:22b, qwen2.5, etc.)
     if model.contains(':')
         || model.contains("llama")
         || model.contains("qwen")

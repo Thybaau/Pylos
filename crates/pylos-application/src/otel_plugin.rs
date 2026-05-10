@@ -1,4 +1,3 @@
-
 use async_trait::async_trait;
 use tracing::{debug, info};
 
@@ -49,7 +48,9 @@ const OTEL_START_KEY: &str = "__otel_start_ns";
 
 #[async_trait]
 impl LlmPlugin for OtelPlugin {
-    fn name(&self) -> &str { "otel" }
+    fn name(&self) -> &str {
+        "otel"
+    }
 
     async fn pre_hook(
         &self,
@@ -158,8 +159,12 @@ pub struct OtelConfig {
     pub sample_rate: f64,
 }
 
-fn default_service_name() -> String { "pylos".to_string() }
-fn default_sample_rate() -> f64 { 1.0 }
+fn default_service_name() -> String {
+    "pylos".to_string()
+}
+fn default_sample_rate() -> f64 {
+    1.0
+}
 
 impl Default for OtelConfig {
     fn default() -> Self {
@@ -183,8 +188,7 @@ impl OtelConfig {
         } else {
             info!(service = %self.service_name, "OTel plugin initialized (no OTLP endpoint — tracing to logs only)");
         }
-        OtelPlugin::new(self.service_name.clone())
-            .with_log_content(self.log_content)
+        OtelPlugin::new(self.service_name.clone()).with_log_content(self.log_content)
     }
 }
 
@@ -201,7 +205,11 @@ fn operation_name(request: &PylosRequest) -> &'static str {
 }
 
 fn guess_system(model: &str) -> &'static str {
-    if model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3") || model.starts_with("o4") {
+    if model.starts_with("gpt")
+        || model.starts_with("o1")
+        || model.starts_with("o3")
+        || model.starts_with("o4")
+    {
         "openai"
     } else if model.contains("claude") {
         "anthropic"
@@ -224,21 +232,23 @@ fn extract_usage(response: &PylosResponse) -> (String, i32, i32) {
     match response {
         PylosResponse::ChatCompletion(r) => {
             let model = r.model.clone();
-            let (inp, out) = r.usage.as_ref()
+            let (inp, out) = r
+                .usage
+                .as_ref()
                 .map(|u| (u.prompt_tokens, u.completion_tokens))
                 .unwrap_or((0, 0));
             (model, inp, out)
         }
         PylosResponse::TextCompletion(r) => {
             let model = r.model.clone();
-            let (inp, out) = r.usage.as_ref()
+            let (inp, out) = r
+                .usage
+                .as_ref()
                 .map(|u| (u.prompt_tokens, u.completion_tokens))
                 .unwrap_or((0, 0));
             (model, inp, out)
         }
-        PylosResponse::Embedding(r) => {
-            (r.model.clone(), r.usage.prompt_tokens, 0)
-        }
+        PylosResponse::Embedding(r) => (r.model.clone(), r.usage.prompt_tokens, 0),
     }
 }
 

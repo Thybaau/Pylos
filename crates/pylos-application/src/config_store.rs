@@ -202,7 +202,7 @@ impl ConfigStore {
         })
     }
 
-    /// Met à jour un provider en mémoire (sans toucher au fichier)
+    /// Met à jour un provider en mémoire et persiste sur disque
     pub async fn upsert_provider(
         &self,
         name: String,
@@ -215,11 +215,12 @@ impl ConfigStore {
         state.config.providers.insert(name.clone(), provider);
         state.provider_hashes.insert(name, new_hash);
         state.runtime_providers = build_runtime_providers(&state.config);
+        persist_config_locked(&state).await;
 
         Ok(())
     }
 
-    /// Supprime un provider en mémoire
+    /// Supprime un provider en mémoire et persiste sur disque
     /// Retourne true si le provider existait, false sinon
     pub async fn remove_provider(&self, name: &str) -> Result<bool, PylosError> {
         let mut state = self.state.write().await;
@@ -227,11 +228,12 @@ impl ConfigStore {
         if existed {
             state.provider_hashes.remove(name);
             state.runtime_providers = build_runtime_providers(&state.config);
+            persist_config_locked(&state).await;
         }
         Ok(existed)
     }
 
-    /// Ajoute une virtual key en mémoire
+    /// Ajoute une virtual key en mémoire et persiste sur disque
     pub async fn add_virtual_key(
         &self,
         vk: pylos_core::domain::config::VirtualKeyConfig,
@@ -251,10 +253,11 @@ impl ConfigStore {
             )));
         }
         state.config.governance.virtual_keys.push(vk);
+        persist_config_locked(&state).await;
         Ok(())
     }
 
-    /// Modifie une virtual key existante via une closure
+    /// Modifie une virtual key existante via une closure et persiste sur disque
     /// Retourne true si trouvée, false sinon
     pub async fn update_virtual_key(
         &self,
@@ -270,18 +273,23 @@ impl ConfigStore {
             .find(|v| v.id == id)
         {
             mutator(vk);
+            persist_config_locked(&state).await;
             Ok(true)
         } else {
             Ok(false)
         }
     }
 
-    /// Supprime une virtual key en mémoire
+    /// Supprime une virtual key en mémoire et persiste sur disque
     pub async fn remove_virtual_key(&self, id: &str) -> Result<bool, PylosError> {
         let mut state = self.state.write().await;
         let before = state.config.governance.virtual_keys.len();
         state.config.governance.virtual_keys.retain(|v| v.id != id);
-        Ok(state.config.governance.virtual_keys.len() < before)
+        let removed = state.config.governance.virtual_keys.len() < before;
+        if removed {
+            persist_config_locked(&state).await;
+        }
+        Ok(removed)
     }
 }
 
@@ -293,9 +301,32 @@ pub struct ReloadSummary {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Auto-détection des providers via variables d'environnement
-// Identique à config.autoDetectProviders() dans bifrost
+// Persistance sur disque
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Persiste la config actuelle sur disque.
+/// Appelé avec le write-lock déjà tenu — donc prend une ref sur ConfigState.
+/// En cas d'échec (pas de fichier configuré, erreur I/O), log un warning et continue.
+async fn persist_config_locked(state: &ConfigState) {
+    let Some(path) = &state.file_path else {
+        debug!("No config file path — skipping persist (auto-detected config)");
+        return;
+    };
+
+    let json = match serde_json::to_string_pretty(&state.config) {
+        Ok(j) => j,
+        Err(e) => {
+            warn!(error = %e, "Failed to serialize config for persistence");
+            return;
+        }
+    };
+
+    if let Err(e) = tokio::fs::write(path, json.as_bytes()).await {
+        warn!(path = %path.display(), error = %e, "Failed to persist config to disk");
+    } else {
+        debug!(path = %path.display(), "Config persisted to disk");
+    }
+}
 
 fn auto_detect_config() -> PylosConfig {
     let mut config = PylosConfig::default();
