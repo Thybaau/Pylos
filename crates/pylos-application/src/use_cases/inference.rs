@@ -93,8 +93,10 @@ impl InferenceOrchestrator {
                 model: tc.model.clone(),
                 messages: vec![ChatCompletionMessage {
                     role: MessageRole::User,
-                    content: prompt.clone(),
+                    content: Some(prompt.clone()),
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 }],
                 temperature: tc.temperature,
                 top_p: tc.top_p,
@@ -106,6 +108,13 @@ impl InferenceOrchestrator {
                 frequency_penalty: tc.frequency_penalty,
                 logit_bias: None,
                 user: tc.user.clone(),
+                tools: None,
+                tool_choice: None,
+                response_format: None,
+                seed: None,
+                top_k: None,
+                min_p: None,
+                repetition_penalty: None,
             };
             let original_model = tc.model.clone();
             request = PylosRequest::ChatCompletion(chat_req);
@@ -178,7 +187,7 @@ impl InferenceOrchestrator {
                             let text = chat_resp
                                 .choices
                                 .first()
-                                .map(|c| c.message.content.clone())
+                                .and_then(|c| c.message.content.clone())
                                 .unwrap_or_default();
                             let finish = chat_resp
                                 .choices

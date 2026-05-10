@@ -31,7 +31,7 @@ pub async fn chat_completions(
         .messages
         .iter()
         .find(|m| matches!(m.role, pylos_core::domain::openai::MessageRole::User))
-        .map(|m| m.content.clone());
+        .and_then(|m| m.content.clone());
 
     let request = PylosRequest::ChatCompletion(payload);
     let ctx = RequestContext::default();
@@ -55,7 +55,7 @@ async fn complete_response(
     match state.orchestrator.complete(request, ctx).await {
         Ok(pylos_core::domain::request::PylosResponse::ChatCompletion(resp)) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
-            let output_preview = resp.choices.first().map(|c| c.message.content.clone());
+            let output_preview = resp.choices.first().and_then(|c| c.message.content.clone());
             let finish_reason = resp.choices.first().and_then(|c| c.finish_reason.clone());
             let provider = guess_provider(&resp.model);
 

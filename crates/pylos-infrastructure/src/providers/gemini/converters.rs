@@ -236,6 +236,8 @@ pub(crate) fn from_gemini_response(resp: GeminiResponse, model: &str) -> PylosRe
                 role: MessageRole::Assistant,
                 content: Some(content_text),
                 name: None,
+                tool_calls: None,
+                tool_call_id: None,
             },
             finish_reason: Some(finish_reason),
         }],
@@ -398,8 +400,10 @@ mod tests {
                     };
                     ChatCompletionMessage {
                         role: r,
-                        content: content.to_string(),
+                        content: Some(content.to_string()),
                         name: None,
+                        tool_calls: None,
+                        tool_call_id: None,
                     }
                 })
                 .collect(),
@@ -413,6 +417,13 @@ mod tests {
             user: None,
             stop: None,
             logit_bias: None,
+            tools: None,
+            tool_choice: None,
+            response_format: None,
+            seed: None,
+            top_k: None,
+            min_p: None,
+            repetition_penalty: None,
         }
     }
 
