@@ -407,13 +407,17 @@ mod tests {
             messages: vec![
                 ChatCompletionMessage {
                     role: MessageRole::System,
-                    content: "Be helpful".to_string(),
+                    content: Some("Be helpful".to_string()),
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 ChatCompletionMessage {
                     role: MessageRole::User,
-                    content: "Hello".to_string(),
+                    content: Some("Hello".to_string()),
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
             ],
             stream: Some(false),
@@ -426,6 +430,13 @@ mod tests {
             user: None,
             stop: None,
             logit_bias: None,
+            tools: None,
+            tool_choice: None,
+            response_format: None,
+            seed: None,
+            top_k: None,
+            min_p: None,
+            repetition_penalty: None,
         };
         let cohere_req = to_cohere_request(&req, false);
         assert_eq!(cohere_req.messages[0].role, "system");
