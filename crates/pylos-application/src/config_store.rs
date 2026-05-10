@@ -1,0 +1,522 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use sha2::{Digest, Sha256};
+use tokio::sync::RwLock;
+use tracing::{debug, info, warn};
+
+use pylos_core::domain::config::{
+    EnvVar, NetworkConfig, ProviderConfig, ProviderKeyConfig, PylosConfig,
+};
+use pylos_core::domain::provider::{ProviderConfig as RuntimeConfig, ProviderKey, ProviderKind};
+use pylos_core::error::PylosError;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Empreinte hash pour la réconciliation fichier ↔ mémoire
+// Identique au mécanisme hash-based de bifrost
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn hash_config(cfg: &PylosConfig) -> String {
+    // On sérialise sans les compteurs d'usage pour qu'un changement de compteur
+    // ne déclenche pas une resync (identique au comportement bifrost)
+    let mut cfg_clone = cfg.clone();
+    for budget in &mut cfg_clone.governance.budgets {
+        budget.current_usage = 0.0;
+    }
+    let json = serde_json::to_string(&cfg_clone).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(json.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn hash_provider(name: &str, provider: &ProviderConfig) -> String {
+    let json = serde_json::to_string(provider).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(name.as_bytes());
+    hasher.update(json.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ConfigStore — source de vérité en mémoire avec hot-reload
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// État interne du store
+struct ConfigState {
+    /// Config complète résolue
+    config: PylosConfig,
+    /// Hash de la config en mémoire (pour détecter les changements)
+    config_hash: String,
+    /// Hash par provider (pour le hot-reload partiel)
+    provider_hashes: HashMap<String, String>,
+    /// Providers runtime (avec clés résolues, prêts pour l'inférence)
+    runtime_providers: Vec<(Arc<dyn pylos_core::domain::traits::Provider>, RuntimeConfig)>,
+    /// Chemin du fichier source
+    file_path: Option<PathBuf>,
+}
+
+/// Store de configuration partagé et rechargeable à chaud
+/// Inspiré du ConfigStore de bifrost (framework/configstore/)
+#[derive(Clone)]
+pub struct ConfigStore {
+    state: Arc<RwLock<ConfigState>>,
+}
+
+impl ConfigStore {
+    /// Charge la config depuis un fichier pylos.json
+    /// Si le fichier n'existe pas → auto-détection des providers via env vars
+    pub async fn load(file_path: Option<&Path>) -> Result<Self, PylosError> {
+        let (config, path) = match file_path {
+            Some(p) if p.exists() => {
+                info!(path = %p.display(), "Loading config from file");
+                let raw = tokio::fs::read_to_string(p).await.map_err(|e| {
+                    PylosError::Internal(format!("Failed to read config file: {}", e))
+                })?;
+                let cfg: PylosConfig = serde_json::from_str(&raw).map_err(|e| {
+                    PylosError::Internal(format!(
+                        "Invalid config file {}: {}",
+                        p.display(),
+                        e
+                    ))
+                })?;
+                info!(
+                    providers = cfg.providers.len(),
+                    virtual_keys = cfg.governance.virtual_keys.len(),
+                    plugins = cfg.plugins.len(),
+                    "Config loaded"
+                );
+                (cfg, Some(p.to_path_buf()))
+            }
+            Some(p) => {
+                warn!(path = %p.display(), "Config file not found, using auto-detection");
+                (auto_detect_config(), None)
+            }
+            None => {
+                info!("No config file specified, using auto-detection from environment");
+                (auto_detect_config(), None)
+            }
+        };
+
+        // Validation de base
+        validate_config(&config)?;
+
+        let config_hash = hash_config(&config);
+        let mut provider_hashes = HashMap::new();
+        for (name, provider) in &config.providers {
+            provider_hashes.insert(name.clone(), hash_provider(name, provider));
+        }
+
+        // Construction des runtime providers depuis la config
+        let runtime_providers = build_runtime_providers(&config);
+
+        let state = ConfigState {
+            config,
+            config_hash,
+            provider_hashes,
+            runtime_providers,
+            file_path: path,
+        };
+
+        Ok(Self {
+            state: Arc::new(RwLock::new(state)),
+        })
+    }
+
+    /// Accès lecture à la config complète
+    pub async fn get(&self) -> PylosConfig {
+        self.state.read().await.config.clone()
+    }
+
+    /// Providers runtime prêts pour l'inférence
+    pub async fn runtime_providers(
+        &self,
+    ) -> Vec<(Arc<dyn pylos_core::domain::traits::Provider>, RuntimeConfig)> {
+        self.state.read().await.runtime_providers.clone()
+    }
+
+    /// Recharge la config depuis le fichier sur disque (hot reload)
+    /// Même logique que bifrost : hash-based reconciliation
+    /// Seuls les providers dont le hash a changé sont mis à jour
+    pub async fn reload(&self) -> Result<ReloadSummary, PylosError> {
+        let file_path = {
+            let state = self.state.read().await;
+            state.file_path.clone()
+        };
+
+        let Some(path) = file_path else {
+            return Err(PylosError::InvalidRequest(
+                "No config file to reload (auto-detected config)".into(),
+            ));
+        };
+
+        let raw = tokio::fs::read_to_string(&path).await.map_err(|e| {
+            PylosError::Internal(format!("Failed to read config file: {}", e))
+        })?;
+
+        let new_config: PylosConfig = serde_json::from_str(&raw).map_err(|e| {
+            PylosError::Internal(format!("Invalid config: {}", e))
+        })?;
+
+        validate_config(&new_config)?;
+
+        let new_hash = hash_config(&new_config);
+
+        let mut state = self.state.write().await;
+
+        if new_hash == state.config_hash {
+            debug!("Config unchanged (hash match), skipping reload");
+            return Ok(ReloadSummary {
+                changed: false,
+                providers_reloaded: vec![],
+            });
+        }
+
+        // Détecte quels providers ont changé
+        let mut providers_reloaded = vec![];
+        for (name, provider) in &new_config.providers {
+            let new_phash = hash_provider(name, provider);
+            let old_phash = state.provider_hashes.get(name).cloned().unwrap_or_default();
+            if new_phash != old_phash {
+                providers_reloaded.push(name.clone());
+                state.provider_hashes.insert(name.clone(), new_phash);
+            }
+        }
+
+        // Rebuild des runtime providers
+        let runtime = build_runtime_providers(&new_config);
+
+        info!(
+            providers_changed = providers_reloaded.len(),
+            "Config reloaded"
+        );
+
+        state.config = new_config;
+        state.config_hash = new_hash;
+        state.runtime_providers = runtime;
+
+        Ok(ReloadSummary {
+            changed: true,
+            providers_reloaded,
+        })
+    }
+
+    /// Met à jour un provider en mémoire (sans toucher au fichier)
+    /// Équivalent de ReloadProvider() dans bifrost
+    pub async fn upsert_provider(
+        &self,
+        name: String,
+        provider: ProviderConfig,
+    ) -> Result<(), PylosError> {
+        validate_provider(&name, &provider)?;
+        let new_hash = hash_provider(&name, &provider);
+
+        let mut state = self.state.write().await;
+        state.config.providers.insert(name.clone(), provider);
+        state.provider_hashes.insert(name, new_hash);
+
+        // Rebuild des runtime providers
+        state.runtime_providers = build_runtime_providers(&state.config);
+
+        Ok(())
+    }
+}
+
+/// Résultat d'un hot reload
+#[derive(Debug)]
+pub struct ReloadSummary {
+    pub changed: bool,
+    pub providers_reloaded: Vec<String>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-détection des providers via variables d'environnement
+// Identique à config.autoDetectProviders() dans bifrost
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn auto_detect_config() -> PylosConfig {
+    let mut config = PylosConfig::default();
+    let mut detected = vec![];
+
+    // OpenAI
+    if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+        if !key.is_empty() {
+            let base_url = std::env::var("OPENAI_BASE_URL").ok();
+            let mut provider = ProviderConfig {
+                keys: vec![ProviderKeyConfig {
+                    name: "default".into(),
+                    value: EnvVar::Literal(key),
+                    models: vec!["*".into()],
+                    weight: 1.0,
+                }],
+                network: NetworkConfig {
+                    base_url,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            config.providers.insert("openai".into(), provider);
+            detected.push("openai");
+        }
+    }
+
+    // Anthropic
+    if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+        if !key.is_empty() {
+            config.providers.insert(
+                "anthropic".into(),
+                ProviderConfig {
+                    keys: vec![ProviderKeyConfig {
+                        name: "default".into(),
+                        value: EnvVar::Literal(key),
+                        models: vec!["*".into()],
+                        weight: 1.0,
+                    }],
+                    ..Default::default()
+                },
+            );
+            detected.push("anthropic");
+        }
+    }
+
+    // Mistral
+    if let Ok(key) = std::env::var("MISTRAL_API_KEY") {
+        if !key.is_empty() {
+            config.providers.insert(
+                "mistral".into(),
+                ProviderConfig {
+                    keys: vec![ProviderKeyConfig {
+                        name: "default".into(),
+                        value: EnvVar::Literal(key),
+                        models: vec!["*".into()],
+                        weight: 1.0,
+                    }],
+                    network: NetworkConfig {
+                        base_url: Some("https://api.mistral.ai/v1".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+            detected.push("mistral");
+        }
+    }
+
+    // Groq
+    if let Ok(key) = std::env::var("GROQ_API_KEY") {
+        if !key.is_empty() {
+            config.providers.insert(
+                "groq".into(),
+                ProviderConfig {
+                    keys: vec![ProviderKeyConfig {
+                        name: "default".into(),
+                        value: EnvVar::Literal(key),
+                        models: vec!["*".into()],
+                        weight: 1.0,
+                    }],
+                    network: NetworkConfig {
+                        base_url: Some("https://api.groq.com/openai/v1".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+            detected.push("groq");
+        }
+    }
+
+    if detected.is_empty() {
+        warn!("No providers detected. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, MISTRAL_API_KEY, or GROQ_API_KEY");
+    } else {
+        info!(providers = ?detected, "Auto-detected providers from environment");
+    }
+
+    config
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Construction des runtime providers depuis la config
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn build_runtime_providers(
+    config: &PylosConfig,
+) -> Vec<(Arc<dyn pylos_core::domain::traits::Provider>, RuntimeConfig)> {
+    use pylos_core::domain::provider::{ProviderConfig as RuntimeCfg, ProviderKey, ProviderKind};
+    use pylos_infrastructure::{AnthropicProvider, OpenAIProvider};
+
+    let mut providers = vec![];
+
+    for (name, provider_cfg) in &config.providers {
+        // Résolution des clés (env.VAR → valeur réelle)
+        let keys: Vec<ProviderKey> = provider_cfg
+            .keys
+            .iter()
+            .filter_map(|k| {
+                k.value.resolve().map(|v| {
+                    ProviderKey::new(v).with_weight(k.weight)
+                })
+            })
+            .collect();
+
+        if keys.is_empty() {
+            warn!(provider = %name, "No resolvable keys, skipping provider");
+            continue;
+        }
+
+        let kind = match name.as_str() {
+            "openai" => ProviderKind::OpenAI,
+            "anthropic" => ProviderKind::Anthropic,
+            "mistral" | "groq" | "openrouter" | "cerebras" | "ollama" | "vllm" => {
+                ProviderKind::Custom(name.clone())
+            }
+            other => ProviderKind::Custom(other.to_string()),
+        };
+
+        let mut runtime_cfg = RuntimeCfg::new(kind, keys);
+        runtime_cfg.base_url = provider_cfg.network.base_url.clone();
+        runtime_cfg.timeout_ms = provider_cfg.network.timeout_secs * 1000;
+        runtime_cfg.max_retries = provider_cfg.network.max_retries;
+        runtime_cfg.retry_backoff_initial_ms = provider_cfg.network.retry_backoff_initial_ms;
+        runtime_cfg.retry_backoff_max_ms = provider_cfg.network.retry_backoff_max_ms;
+
+        let provider: Arc<dyn pylos_core::domain::traits::Provider> = match name.as_str() {
+            "anthropic" => Arc::new(AnthropicProvider::new()),
+            // Tout le reste utilise l'adapter OpenAI-compatible
+            _ => Arc::new(OpenAIProvider::new()),
+        };
+
+        info!(
+            provider = %name,
+            keys = provider_cfg.keys.len(),
+            "Provider registered"
+        );
+        providers.push((provider, runtime_cfg));
+    }
+
+    providers
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Validation
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn validate_config(config: &PylosConfig) -> Result<(), PylosError> {
+    // Version supportée
+    if config.version > 2 {
+        return Err(PylosError::InvalidRequest(format!(
+            "Unsupported config version: {}. Supported: 1, 2",
+            config.version
+        )));
+    }
+
+    // Validation de chaque provider
+    for (name, provider) in &config.providers {
+        validate_provider(name, provider)?;
+    }
+
+    // Validation des virtual keys
+    let vk_ids: std::collections::HashSet<_> =
+        config.governance.virtual_keys.iter().map(|v| &v.id).collect();
+    if vk_ids.len() != config.governance.virtual_keys.len() {
+        return Err(PylosError::InvalidRequest(
+            "Duplicate virtual key IDs in config".into(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_provider(name: &str, provider: &ProviderConfig) -> Result<(), PylosError> {
+    if name.is_empty() {
+        return Err(PylosError::InvalidRequest("Provider name cannot be empty".into()));
+    }
+    for key in &provider.keys {
+        if key.name.is_empty() {
+            return Err(PylosError::InvalidRequest(format!(
+                "Key name cannot be empty in provider '{}'",
+                name
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn make_config_file(content: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+        f
+    }
+
+    #[tokio::test]
+    async fn test_load_from_file() {
+        let f = make_config_file(r#"{
+            "providers": {
+                "openai": {
+                    "keys": [{"name": "k1", "value": "sk-test"}]
+                }
+            }
+        }"#);
+        let store = ConfigStore::load(Some(f.path())).await.unwrap();
+        let cfg = store.get().await;
+        assert!(cfg.providers.contains_key("openai"));
+    }
+
+    #[tokio::test]
+    async fn test_load_no_file_auto_detect() {
+        // Sans fichier et sans env vars — doit fonctionner sans erreur
+        let store = ConfigStore::load(None).await.unwrap();
+        let cfg = store.get().await;
+        // Pas de provider configuré (pas de clés dans l'env de test)
+        let _ = cfg;
+    }
+
+    #[tokio::test]
+    async fn test_hot_reload_unchanged() {
+        let f = make_config_file(r#"{
+            "providers": {
+                "openai": {"keys": [{"name": "k1", "value": "sk-test"}]}
+            }
+        }"#);
+        let store = ConfigStore::load(Some(f.path())).await.unwrap();
+        let summary = store.reload().await.unwrap();
+        assert!(!summary.changed, "Hash unchanged, reload should be no-op");
+    }
+
+    #[tokio::test]
+    async fn test_validation_rejects_duplicate_vk_ids() {
+        let f = make_config_file(r#"{
+            "governance": {
+                "virtual_keys": [
+                    {"id": "vk-1", "name": "A"},
+                    {"id": "vk-1", "name": "B"}
+                ]
+            }
+        }"#);
+        let result = ConfigStore::load(Some(f.path())).await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hash_ignores_budget_usage() {
+        let mut cfg = PylosConfig::default();
+        cfg.governance.budgets.push(pylos_core::domain::config::BudgetConfig {
+            id: "b1".into(),
+            max_limit: 100.0,
+            reset_duration: pylos_core::domain::config::Duration("1d".into()),
+            current_usage: 0.0,
+            virtual_key_id: None,
+        });
+        let h1 = hash_config(&cfg);
+
+        cfg.governance.budgets[0].current_usage = 42.5;
+        let h2 = hash_config(&cfg);
+
+        assert_eq!(h1, h2, "Hash should be identical regardless of current_usage");
+    }
+}

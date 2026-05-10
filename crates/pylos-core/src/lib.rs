@@ -5,7 +5,13 @@ pub use error::PylosError;
 pub type Result<T> = std::result::Result<T, PylosError>;
 
 // Re-exports pratiques
-pub use domain::provider::{ProviderConfig, ProviderKey, ProviderKind, RoutingTarget};
+pub use domain::config::{
+    BudgetConfig, ConcurrencyConfig, EnvVar, GovernanceConfig, NetworkConfig, PluginConfig,
+    ProviderConfig, ProviderKeyConfig, PylosConfig, RateLimitConfig, RoutingRuleConfig,
+    ServerConfig, VirtualKeyConfig,
+};
+pub use domain::provider::ProviderConfig as RuntimeProviderConfig;
+pub use domain::provider::{ProviderKey, ProviderKind, RoutingTarget};
 pub use domain::request::{PylosRequest, PylosResponse, RequestContext, StreamChunk};
 pub use domain::traits::{ChunkStream, LlmPlugin, Provider};
 pub use domain::virtual_key::{VirtualKey, VirtualKeyRegistry, VIRTUAL_KEY_PREFIX};
