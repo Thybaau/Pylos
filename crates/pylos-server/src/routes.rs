@@ -19,6 +19,8 @@ pub fn create_router(state: AppState) -> Router {
         ));
 
     Router::new()
+        // Racine — résumé lisible
+        .route("/", get(health::root))
         // Health (pas de middleware d'auth)
         .route("/health", get(health::health_check))
         // Observabilité (pas de middleware d'auth)
