@@ -33,7 +33,11 @@ pub enum ToolChoice {
     /// "none" | "auto" | "required"
     Mode(String),
     /// Forcer un outil spécifique
-    Specific { #[serde(rename = "type")] tool_type: String, function: ToolChoiceFunction },
+    Specific {
+        #[serde(rename = "type")]
+        tool_type: String,
+        function: ToolChoiceFunction,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -306,4 +310,3 @@ pub struct TextCompletionChoice {
     pub finish_reason: Option<String>,
     pub logprobs: Option<serde_json::Value>,
 }
-

@@ -72,7 +72,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /build/target/release/pylos-server /app/pylos-server
 
 # Utilisateur non-root pour la sécurité
-RUN useradd --system --uid 1001 --no-create-home pylos
+RUN useradd --system --uid 1001 --no-create-home pylos && \
+    mkdir -p /data && chown pylos:pylos /data
 USER pylos
 
 # Variables d'environnement par défaut

@@ -25,7 +25,9 @@ pub(crate) fn convert_messages(
         match msg.role {
             // Les messages system sont extraits séparément (format Bedrock)
             MessageRole::System => {
-                system_blocks.push(SystemContentBlock::Text(msg.content.clone().unwrap_or_default()));
+                system_blocks.push(SystemContentBlock::Text(
+                    msg.content.clone().unwrap_or_default(),
+                ));
             }
 
             MessageRole::User => {
@@ -54,7 +56,9 @@ pub(crate) fn convert_messages(
             MessageRole::Tool | MessageRole::Function => {
                 let tool_result = ToolResultBlock::builder()
                     .tool_use_id(msg.name.clone().unwrap_or_default())
-                    .content(ToolResultContentBlock::Text(msg.content.clone().unwrap_or_default()))
+                    .content(ToolResultContentBlock::Text(
+                        msg.content.clone().unwrap_or_default(),
+                    ))
                     .build()
                     .map_err(|e| PylosError::Internal(e.to_string()))?;
 
@@ -246,11 +250,15 @@ mod tests {
                 role: MessageRole::System,
                 content: Some("You are helpful.".into()),
                 name: None,
+                tool_calls: None,
+                tool_call_id: None,
             },
             ChatCompletionMessage {
                 role: MessageRole::User,
                 content: Some("Hello".into()),
                 name: None,
+                tool_calls: None,
+                tool_call_id: None,
             },
         ];
 
@@ -267,11 +275,15 @@ mod tests {
                 role: MessageRole::User,
                 content: Some("Hi".into()),
                 name: None,
+                tool_calls: None,
+                tool_call_id: None,
             },
             ChatCompletionMessage {
                 role: MessageRole::Assistant,
                 content: Some("Hello!".into()),
                 name: None,
+                tool_calls: None,
+                tool_call_id: None,
             },
         ];
 
@@ -299,10 +311,16 @@ mod tests {
             frequency_penalty: None,
             logit_bias: None,
             user: None,
+            tools: None,
+            tool_choice: None,
+            response_format: None,
+            seed: None,
+            top_k: None,
+            min_p: None,
+            repetition_penalty: None,
         };
 
         let config = build_inference_config(&req);
-        // max_tokens devrait avoir le défaut de 4096
         assert_eq!(config.max_tokens(), Some(4096));
     }
 }

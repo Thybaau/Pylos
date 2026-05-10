@@ -39,8 +39,10 @@ services:
       AWS_REGION: "${AWS_REGION:-us-east-1}"
       AWS_ROLE_ARN: "${AWS_ROLE_ARN:-}"
       PYLOS_CONFIG: "/app/pylos.json"
+      PYLOS_DATA_DIR: "/data"
     volumes:
       - ./pylos.json:/app/pylos.json:ro
+      - pylos-data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -118,6 +120,7 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+  pylos-data:
 
 networks:
   pylos-net:
