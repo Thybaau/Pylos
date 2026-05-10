@@ -1,4 +1,4 @@
-use crate::interfaces::http::{config, health, inference, logs, metrics};
+use crate::interfaces::http::{config, health, inference, logs, metrics, models};
 use crate::middleware::virtual_key_middleware;
 use crate::state::AppState;
 use axum::{
@@ -40,6 +40,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(health::health_check))
         // Observabilité
         .route("/metrics", get(metrics::metrics))
+        // Models catalog
+        .route("/v1/models", get(models::list_models))
         // Inférence
         .merge(inference_routes)
         // Logs API

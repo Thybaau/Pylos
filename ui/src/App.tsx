@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Sidebar } from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
+import Playground from './pages/Playground'
 import Logs from './pages/Logs'
 import Providers from './pages/Providers'
 import VirtualKeys from './pages/VirtualKeys'
@@ -21,13 +22,14 @@ export default function App() {
       <BrowserRouter>
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-hidden">
             <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/logs"      element={<Logs />} />
-              <Route path="/providers" element={<Providers />} />
-              <Route path="/keys"      element={<VirtualKeys />} />
+              <Route path="/" element={<Navigate to="/playground" replace />} />
+              <Route path="/dashboard"  element={<Dashboard />} />
+              <Route path="/playground" element={<Playground />} />
+              <Route path="/logs"       element={<Logs />} />
+              <Route path="/providers"  element={<Providers />} />
+              <Route path="/keys"       element={<VirtualKeys />} />
             </Routes>
           </main>
         </div>

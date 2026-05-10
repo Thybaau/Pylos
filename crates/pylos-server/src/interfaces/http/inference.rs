@@ -215,12 +215,31 @@ fn error_response(error: &PylosError) -> Response {
 
 /// Déduit le provider depuis le nom du modèle (heuristique)
 fn guess_provider(model: &str) -> String {
-    if model.contains("claude") || model.contains("anthropic") {
-        if model.starts_with("us.") || model.starts_with("eu.") || model.starts_with("ap.") {
-            "bedrock".to_string()
-        } else {
-            "anthropic".to_string()
-        }
+    if model.starts_with("us.") || model.starts_with("eu.") || model.starts_with("ap.")
+        || model.starts_with("amazon.") || model.contains("nova") || model.contains("titan")
+    {
+        return "bedrock".to_string();
+    }
+    if model.contains("claude") {
+        return "anthropic".to_string();
+    }
+    if model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3") {
+        return "openai".to_string();
+    }
+    if model.contains('/') {
+        return "openrouter".to_string();
+    }
+    // Ollama : modèles sans préfixe de provider (llama3.1:8b, codestral:22b, etc.)
+    if model.contains(':') || model.contains("llama") || model.contains("qwen")
+        || model.contains("codestral") || model.contains("deepseek")
+        || model.contains("starcoder") || model.contains("nomic")
+        || model.contains("mistral") || model.contains("gemma")
+        || model.contains("phi") || model.contains("falcon")
+    {
+        return "ollama".to_string();
+    }
+    "unknown".to_string()
+}
     } else if model.contains("nova")
         || model.starts_with("amazon.")
         || model.starts_with("us.amazon")

@@ -2124,6 +2124,7 @@ dependencies = [
  "pylos-application",
  "pylos-core",
  "pylos-infrastructure",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

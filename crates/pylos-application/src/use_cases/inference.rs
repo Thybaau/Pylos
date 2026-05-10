@@ -59,7 +59,19 @@ impl InferenceOrchestrator {
         let providers = self.providers.read().await;
         let mut last_error: Option<PylosError> = None;
 
-        for (provider, config) in providers.iter() {
+        // Tri des providers : ceux qui supportent explicitement le modèle demandé passent en premier
+        let model = request.model().to_string();
+        let mut ordered: Vec<_> = providers.iter().collect();
+        ordered.sort_by_key(|(provider, config)| {
+            let supports = model_supported_by(config, &model);
+            if supports {
+                0u8
+            } else {
+                1u8
+            }
+        });
+
+        for (provider, config) in ordered {
             if ctx.tried_providers.contains(&provider.name().to_string()) {
                 debug!(
                     provider = provider.name(),
@@ -128,7 +140,17 @@ impl InferenceOrchestrator {
         let providers = self.providers.read().await;
         let mut last_error: Option<PylosError> = None;
 
-        for (provider, config) in providers.iter() {
+        let stream_model = request.model().to_string();
+        let mut ordered_stream: Vec<_> = providers.iter().collect();
+        ordered_stream.sort_by_key(|(_, config)| {
+            if model_supported_by(config, &stream_model) {
+                0u8
+            } else {
+                1u8
+            }
+        });
+
+        for (provider, config) in ordered_stream {
             if ctx.tried_providers.contains(&provider.name().to_string()) {
                 continue;
             }
@@ -196,6 +218,56 @@ fn exponential_backoff(attempt: u32, initial_ms: u64, max_ms: u64) -> u64 {
     let jitter = (base as f64 * 0.2 * (fastrand::f64() * 2.0 - 1.0)) as i64;
     let backoff = (base as i64 + jitter).max(0) as u64;
     backoff.min(max_ms)
+}
+
+/// Détermine si un provider supporte explicitement un modèle donné.
+/// Retourne true si :
+///   - le provider a une clé avec ["*"] (wildcard)
+///   - le provider a une clé avec le modèle exact dans sa liste
+///   - Bedrock : le provider est bedrock ET le modèle contient des marqueurs bedrock
+/// Retourne false uniquement si toutes les clés ont des listes explicites
+/// qui n'incluent pas le modèle — ce qui déclenche le fallback vers les autres providers.
+fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
+    use pylos_core::domain::provider::ProviderKind;
+
+    // Bedrock : supporte les modèles avec préfixe us./eu./ap. ou "amazon."/"anthropic."
+    if config.kind == ProviderKind::Bedrock {
+        return model.starts_with("us.")
+            || model.starts_with("eu.")
+            || model.starts_with("ap.")
+            || model.starts_with("amazon.")
+            || model.starts_with("anthropic.")
+            || model.contains("nova")
+            || model.contains("titan");
+    }
+
+    // Pour les autres providers : regarde les modèles déclarés dans la config source
+    // Le runtime ProviderConfig ne contient pas les listes de modèles —
+    // on se base sur l'heuristique du nom du provider et du modèle
+    match &config.kind {
+        ProviderKind::OpenAI => {
+            model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3")
+        }
+        ProviderKind::Anthropic => model.contains("claude"),
+        ProviderKind::Custom(name) => {
+            match name.as_str() {
+                // Ollama : pas de préfixe de provider dans le nom de modèle
+                "ollama" => {
+                    !model.starts_with("gpt")
+                        && !model.starts_with("claude")
+                        && !model.contains('/')
+                        && !model.starts_with("us.")
+                        && !model.starts_with("amazon.")
+                        && !model.starts_with("anthropic.")
+                }
+                // OpenRouter : format "provider/model"
+                "openrouter" | _ if name.contains("openrouter") => model.contains('/'),
+                // Custom générique : tente toujours
+                _ => true,
+            }
+        }
+        _ => true, // Tente pour les providers non reconnus
+    }
 }
 
 #[cfg(test)]

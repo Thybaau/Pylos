@@ -8,14 +8,16 @@ import {
   Zap,
   ChevronLeft,
   ChevronRight,
+  FlaskConical,
 } from 'lucide-react'
 import { useState } from 'react'
 
 const NAV = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/logs',      icon: ScrollText,      label: 'Logs' },
-  { to: '/providers', icon: Server,          label: 'Providers' },
-  { to: '/keys',      icon: KeyRound,        label: 'Virtual Keys' },
+  { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/playground', icon: FlaskConical,    label: 'Playground' },
+  { to: '/logs',       icon: ScrollText,      label: 'Logs' },
+  { to: '/providers',  icon: Server,          label: 'Providers' },
+  { to: '/keys',       icon: KeyRound,        label: 'Virtual Keys' },
 ]
 
 export function Sidebar() {
