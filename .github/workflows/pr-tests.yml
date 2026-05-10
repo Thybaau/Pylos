@@ -66,7 +66,7 @@ jobs:
       - name: Add comment to PR
         if: github.event.pull_request.number
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.JZACH_GH_PAT }}
         run: |
           gh pr comment ${{ github.event.pull_request.number }} --body "🧪 **Test run starting for Pylos...**
 
@@ -87,7 +87,7 @@ jobs:
       - name: Report test results
         if: always() && github.event.pull_request.number
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.JZACH_GH_PAT }}
         run: |
           if [ "${{ job.status }}" = "success" ]; then
             gh pr comment ${{ github.event.pull_request.number }} --body "✅ **All Pylos tests passed successfully!**
