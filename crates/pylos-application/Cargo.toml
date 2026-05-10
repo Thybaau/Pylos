@@ -9,3 +9,4 @@ tokio = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+fastrand = "2"

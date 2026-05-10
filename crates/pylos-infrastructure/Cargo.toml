@@ -6,8 +6,12 @@ edition = "2021"
 [dependencies]
 pylos-core = { path = "../pylos-core" }
 reqwest = { workspace = true }
+tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+futures = { workspace = true }
 tracing = { workspace = true }
+eventsource-stream = "0.2"
+fastrand = "2"
