@@ -1,0 +1,247 @@
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { logsApi, type LogEntry } from '../lib/api'
+import { formatTimestamp, formatLatency, formatCost, formatNumber, providerColor } from '../lib/utils'
+import { RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
+
+const LIMIT = 50
+
+export default function Logs() {
+  const [offset, setOffset] = useState(0)
+  const [period, setPeriod] = useState('1h')
+  const [provider, setProvider] = useState('')
+  const [status, setStatus] = useState('')
+  const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null)
+
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['logs', offset, period, provider, status],
+    queryFn: () => logsApi.getLogs({
+      limit: LIMIT,
+      offset,
+      period,
+      ...(provider && { provider }),
+      ...(status && { status }),
+    }),
+    refetchInterval: 10_000,
+  })
+
+  const total = data?.pagination.total_count ?? 0
+  const totalPages = Math.ceil(total / LIMIT)
+  const currentPage = Math.floor(offset / LIMIT) + 1
+
+  return (
+    <div className="p-6 h-full flex flex-col gap-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Logs</h1>
+          <p className="text-sm text-gray-400">
+            {total.toLocaleString()} requests
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Period */}
+          <select
+            value={period}
+            onChange={e => { setPeriod(e.target.value); setOffset(0) }}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200"
+          >
+            {['1h', '6h', '24h', '7d', '30d'].map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+
+          {/* Provider */}
+          <input
+            type="text"
+            placeholder="Provider…"
+            value={provider}
+            onChange={e => { setProvider(e.target.value); setOffset(0) }}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 w-32"
+          />
+
+          {/* Status */}
+          <select
+            value={status}
+            onChange={e => { setStatus(e.target.value); setOffset(0) }}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200"
+          >
+            <option value="">All status</option>
+            <option value="success">Success</option>
+            <option value="error">Error</option>
+          </select>
+
+          <button
+            onClick={() => refetch()}
+            className="p-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-white"
+          >
+            <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto rounded-xl border border-gray-800 bg-gray-900">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-gray-900 border-b border-gray-800">
+            <tr>
+              {['Time', 'Provider', 'Model', 'Status', 'Latency', 'Tokens', 'Cost', 'Input'].map(h => (
+                <th key={h} className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wide font-medium">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading
+              ? Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i} className="border-b border-gray-800/50">
+                    {Array.from({ length: 8 }).map((_, j) => (
+                      <td key={j} className="px-4 py-3">
+                        <div className="h-3 bg-gray-800 rounded animate-pulse w-16" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              : data?.logs.map(log => (
+                  <tr
+                    key={log.id}
+                    onClick={() => setSelectedLog(selectedLog?.id === log.id ? null : log)}
+                    className={`border-b border-gray-800/50 cursor-pointer transition-colors
+                      ${selectedLog?.id === log.id
+                        ? 'bg-blue-500/10'
+                        : 'hover:bg-gray-800/50'
+                      }`}
+                  >
+                    <td className="px-4 py-2.5 text-gray-400 font-mono text-xs">
+                      {formatTimestamp(log.timestamp)}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span
+                        className="inline-flex items-center gap-1.5 text-xs font-medium"
+                        style={{ color: providerColor(log.provider) }}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: providerColor(log.provider) }} />
+                        {log.provider}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-300 font-mono text-xs max-w-[180px] truncate">
+                      {log.model}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full
+                        ${log.status === 'success'
+                          ? 'bg-green-500/15 text-green-400'
+                          : 'bg-red-500/15 text-red-400'
+                        }`}>
+                        {log.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-300 tabular-nums text-xs">
+                      {formatLatency(log.latency_ms)}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-300 tabular-nums text-xs">
+                      {formatNumber(log.total_tokens)}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-300 tabular-nums text-xs">
+                      {formatCost(log.cost_usd)}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[200px] truncate">
+                      {log.input_preview}
+                    </td>
+                  </tr>
+                ))
+            }
+          </tbody>
+        </table>
+
+        {!isLoading && !data?.logs.length && (
+          <div className="text-center py-16 text-gray-600">
+            No logs found — send some requests to get started
+          </div>
+        )}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-gray-500">
+          <span>Page {currentPage} / {totalPages} ({total.toLocaleString()} total)</span>
+          <div className="flex gap-2">
+            <button
+              disabled={offset === 0}
+              onClick={() => setOffset(Math.max(0, offset - LIMIT))}
+              className="p-1.5 rounded-lg bg-gray-800 border border-gray-700 disabled:opacity-40"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              disabled={offset + LIMIT >= total}
+              onClick={() => setOffset(offset + LIMIT)}
+              className="p-1.5 rounded-lg bg-gray-800 border border-gray-700 disabled:opacity-40"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Log detail panel */}
+      {selectedLog && (
+        <div className="fixed right-0 top-0 h-full w-[400px] bg-gray-900 border-l border-gray-800
+          shadow-2xl overflow-y-auto z-50 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-white">Log Detail</h3>
+            <button onClick={() => setSelectedLog(null)} className="text-gray-500 hover:text-white text-lg">✕</button>
+          </div>
+
+          <div className="space-y-3 text-sm">
+            <Row label="ID"       value={selectedLog.id} mono />
+            <Row label="Provider" value={selectedLog.provider} />
+            <Row label="Model"    value={selectedLog.model} mono />
+            <Row label="Status"   value={selectedLog.status} />
+            <Row label="Latency"  value={formatLatency(selectedLog.latency_ms)} />
+            <Row label="Tokens"   value={`${selectedLog.prompt_tokens} + ${selectedLog.completion_tokens} = ${selectedLog.total_tokens}`} />
+            <Row label="Cost"     value={formatCost(selectedLog.cost_usd)} />
+            {selectedLog.finish_reason && <Row label="Finish" value={selectedLog.finish_reason} />}
+            {selectedLog.error_message && (
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Error</div>
+                <div className="bg-red-900/20 border border-red-800/50 rounded p-2 text-red-300 text-xs font-mono break-all">
+                  {selectedLog.error_message}
+                </div>
+              </div>
+            )}
+            {selectedLog.input_preview && (
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Input</div>
+                <div className="bg-gray-800 rounded p-2 text-gray-300 text-xs break-words">
+                  {selectedLog.input_preview}
+                </div>
+              </div>
+            )}
+            {selectedLog.output_preview && (
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Output</div>
+                <div className="bg-gray-800 rounded p-2 text-gray-300 text-xs break-words">
+                  {selectedLog.output_preview}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-gray-500 shrink-0">{label}</span>
+      <span className={`text-gray-200 text-right break-all ${mono ? 'font-mono text-xs' : ''}`}>
+        {value}
+      </span>
+    </div>
+  )
+}

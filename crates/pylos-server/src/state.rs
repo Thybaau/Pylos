@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use pylos_application::{ConfigStore, InferenceOrchestrator};
+use pylos_application::{ConfigStore, InferenceOrchestrator, LogStore};
 
 use crate::metrics::Metrics;
 
@@ -12,16 +12,14 @@ pub struct AppState {
     pub config_store: Arc<ConfigStore>,
     pub metrics: Arc<Metrics>,
     pub vk_registry: Arc<pylos_core::domain::virtual_key::VirtualKeyRegistry>,
+    pub log_store: Arc<LogStore>,
 }
 
 impl AppState {
-    /// Construit l'AppState depuis le fichier de config et/ou les variables d'env
     pub async fn from_config(config_path: Option<PathBuf>) -> anyhow::Result<Self> {
-        // Chargement de la config (fichier ou auto-détection)
         let config_store = ConfigStore::load(config_path.as_deref()).await?;
         let config_store = Arc::new(config_store);
 
-        // Construction des providers runtime depuis la config
         let providers = config_store.runtime_providers().await;
 
         if providers.is_empty() {
@@ -34,15 +32,14 @@ impl AppState {
 
         let orchestrator = Arc::new(InferenceOrchestrator::new(providers, vec![]));
         let metrics = Arc::new(Metrics::new());
+        let log_store = Arc::new(LogStore::new(10_000));
 
-        // Synchronisation des virtual keys depuis la config vers le registre en mémoire
         let vk_registry = Arc::new(pylos_core::domain::virtual_key::VirtualKeyRegistry::new());
         let cfg = config_store.get().await;
         for vk_cfg in &cfg.governance.virtual_keys {
             if !vk_cfg.is_active {
                 continue;
             }
-            // Génère la valeur de la clé si non définie
             let key_value = vk_cfg
                 .value
                 .as_ref()
@@ -70,6 +67,7 @@ impl AppState {
             config_store,
             metrics,
             vk_registry,
+            log_store,
         })
     }
 }
