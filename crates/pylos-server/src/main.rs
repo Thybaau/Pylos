@@ -1,13 +1,7 @@
-mod interfaces;
-mod metrics;
-mod middleware;
-mod routes;
-mod state;
-
 use std::path::PathBuf;
 
-use crate::routes::create_router;
-use crate::state::AppState;
+use pylos_server::routes::create_router;
+use pylos_server::state::AppState;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
