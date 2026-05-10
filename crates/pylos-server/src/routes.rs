@@ -1,9 +1,9 @@
+use crate::interfaces::http::{health, inference};
+use crate::state::AppState;
 use axum::{
     routing::{get, post},
     Router,
 };
-use crate::interfaces::http::{health, inference};
-use crate::state::AppState;
 
 pub fn create_router(state: AppState) -> Router {
     Router::new()

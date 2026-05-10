@@ -1,4 +1,3 @@
-
 #[derive(Clone)]
 pub struct AppState {
     // Les Use Cases seront ajoutés ici

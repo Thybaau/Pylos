@@ -2,10 +2,10 @@ mod interfaces;
 mod routes;
 mod state;
 
+use crate::routes::create_router;
+use crate::state::AppState;
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use crate::state::AppState;
-use crate::routes::create_router;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
     // Lancement du serveur
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("Pylos Server listening on {}", addr);
-    
+
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
 
