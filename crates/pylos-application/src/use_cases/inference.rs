@@ -4,6 +4,11 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+use pylos_core::domain::embedding::{EmbeddingRequest, EmbeddingResponse};
+use pylos_core::domain::openai::{
+    ChatCompletionMessage, ChatCompletionRequest, MessageRole, TextCompletionChoice,
+    TextCompletionResponse,
+};
 use pylos_core::domain::provider::ProviderConfig;
 use pylos_core::domain::request::{PylosRequest, PylosResponse, RequestContext};
 use pylos_core::domain::traits::{ChunkStream, LlmPlugin, Provider};
@@ -35,13 +40,81 @@ impl InferenceOrchestrator {
         info!("Inference providers updated (hot-reload)");
     }
 
+    /// Calcule des embeddings avec fallback entre providers
+    pub async fn embed(&self, request: EmbeddingRequest) -> Result<EmbeddingResponse, PylosError> {
+        let providers = self.providers.read().await;
+        let mut last_error: Option<PylosError> = None;
+
+        let model = request.model.clone();
+        let mut ordered: Vec<_> = providers.iter().collect();
+        ordered.sort_by_key(|(_provider, config)| {
+            if model_supported_by(config, &model) {
+                0u8
+            } else {
+                1u8
+            }
+        });
+
+        for (provider, config) in ordered {
+            match provider.embed(&request, config).await {
+                Ok(resp) => {
+                    info!(provider = provider.name(), model = %model, "Embedding successful");
+                    return Ok(resp);
+                }
+                Err(PylosError::Unsupported(_)) => {
+                    debug!(
+                        provider = provider.name(),
+                        "Provider does not support embeddings, skipping"
+                    );
+                    continue;
+                }
+                Err(e) => {
+                    warn!(provider = provider.name(), error = %e, "Embedding failed, trying fallback");
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            PylosError::AllProvidersFailed("No provider supports embeddings".into())
+        }))
+    }
+
     /// Envoie une requête non-streaming avec pre/post hooks et fallback
     pub async fn complete(
         &self,
         mut request: PylosRequest,
         mut ctx: RequestContext,
     ) -> Result<PylosResponse, PylosError> {
-        // Pre-hooks (ordre d'enregistrement — comme bifrost)
+        // Convertit TextCompletion en ChatCompletion (compat)
+        let text_completion_prompt = if let PylosRequest::TextCompletion(ref tc) = request {
+            let prompt = tc.prompt.first().to_string();
+            let chat_req = ChatCompletionRequest {
+                model: tc.model.clone(),
+                messages: vec![ChatCompletionMessage {
+                    role: MessageRole::User,
+                    content: prompt.clone(),
+                    name: None,
+                }],
+                temperature: tc.temperature,
+                top_p: tc.top_p,
+                n: tc.n,
+                stream: Some(false),
+                stop: tc.stop.clone(),
+                max_tokens: tc.max_tokens,
+                presence_penalty: tc.presence_penalty,
+                frequency_penalty: tc.frequency_penalty,
+                logit_bias: None,
+                user: tc.user.clone(),
+            };
+            let original_model = tc.model.clone();
+            request = PylosRequest::ChatCompletion(chat_req);
+            Some((original_model, prompt))
+        } else {
+            None
+        };
+
+        // Pre-hooks
         for plugin in &self.plugins {
             match plugin.pre_hook(&mut request, &mut ctx).await {
                 Ok(Some(short_circuit)) => {
@@ -62,7 +135,7 @@ impl InferenceOrchestrator {
         // Tri des providers : ceux qui supportent explicitement le modèle demandé passent en premier
         let model = request.model().to_string();
         let mut ordered: Vec<_> = providers.iter().collect();
-        ordered.sort_by_key(|(provider, config)| {
+        ordered.sort_by_key(|(_provider, config)| {
             let supports = model_supported_by(config, &model);
             if supports {
                 0u8
@@ -87,7 +160,7 @@ impl InferenceOrchestrator {
                 .await
             {
                 Ok(mut response) => {
-                    // Post-hooks (ordre inverse — LIFO comme bifrost)
+                    // Post-hooks (ordre inverse — LIFO)
                     for plugin in self.plugins.iter().rev() {
                         if let Err(e) = plugin.post_hook(&request, &mut response, &mut ctx).await {
                             warn!(plugin = plugin.name(), error = %e, "Post-hook error (ignored)");
@@ -98,6 +171,35 @@ impl InferenceOrchestrator {
                         model = request.model(),
                         "Inference successful"
                     );
+
+                    // Si c'était une TextCompletion, convertit la réponse ChatCompletion en TextCompletion
+                    if let Some((model, _prompt)) = &text_completion_prompt {
+                        if let PylosResponse::ChatCompletion(ref chat_resp) = response {
+                            let text = chat_resp
+                                .choices
+                                .first()
+                                .map(|c| c.message.content.clone())
+                                .unwrap_or_default();
+                            let finish = chat_resp
+                                .choices
+                                .first()
+                                .and_then(|c| c.finish_reason.clone());
+                            return Ok(PylosResponse::TextCompletion(TextCompletionResponse {
+                                id: chat_resp.id.clone(),
+                                object: "text_completion".to_string(),
+                                created: chat_resp.created,
+                                model: model.clone(),
+                                choices: vec![TextCompletionChoice {
+                                    text,
+                                    index: 0,
+                                    finish_reason: finish,
+                                    logprobs: None,
+                                }],
+                                usage: chat_resp.usage.clone(),
+                            }));
+                        }
+                    }
+
                     return Ok(response);
                 }
                 Err(e) => {
@@ -225,6 +327,7 @@ fn exponential_backoff(attempt: u32, initial_ms: u64, max_ms: u64) -> u64 {
 ///   - le provider a une clé avec ["*"] (wildcard)
 ///   - le provider a une clé avec le modèle exact dans sa liste
 ///   - Bedrock : le provider est bedrock ET le modèle contient des marqueurs bedrock
+///
 /// Retourne false uniquement si toutes les clés ont des listes explicites
 /// qui n'incluent pas le modèle — ce qui déclenche le fallback vers les autres providers.
 fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
@@ -241,32 +344,59 @@ fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
             || model.contains("titan");
     }
 
-    // Pour les autres providers : regarde les modèles déclarés dans la config source
-    // Le runtime ProviderConfig ne contient pas les listes de modèles —
-    // on se base sur l'heuristique du nom du provider et du modèle
+    // Pour les autres providers : heuristique sur le nom du provider et du modèle
     match &config.kind {
         ProviderKind::OpenAI => {
-            model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3")
+            model.starts_with("gpt")
+                || model.starts_with("o1")
+                || model.starts_with("o3")
+                || model.starts_with("o4")
         }
         ProviderKind::Anthropic => model.contains("claude"),
-        ProviderKind::Custom(name) => {
-            match name.as_str() {
-                // Ollama : pas de préfixe de provider dans le nom de modèle
-                "ollama" => {
-                    !model.starts_with("gpt")
-                        && !model.starts_with("claude")
-                        && !model.contains('/')
-                        && !model.starts_with("us.")
-                        && !model.starts_with("amazon.")
-                        && !model.starts_with("anthropic.")
-                }
-                // OpenRouter : format "provider/model"
-                "openrouter" | _ if name.contains("openrouter") => model.contains('/'),
-                // Custom générique : tente toujours
-                _ => true,
-            }
+        ProviderKind::Gemini => {
+            model.starts_with("gemini") || model.starts_with("google/") || model.contains("learnlm")
         }
-        _ => true, // Tente pour les providers non reconnus
+        ProviderKind::Cohere => {
+            model.starts_with("command")
+                || model.starts_with("embed-")
+                || model.starts_with("rerank-")
+        }
+        ProviderKind::Groq => {
+            model.contains("llama")
+                || model.contains("mixtral")
+                || model.contains("whisper")
+                || model.contains("gemma")
+        }
+        ProviderKind::Mistral => {
+            model.starts_with("mistral")
+                || model.starts_with("codestral")
+                || model.starts_with("open-")
+                || model.starts_with("pixtral")
+        }
+        ProviderKind::Cerebras => model.starts_with("llama") || model.starts_with("qwen"),
+        ProviderKind::Perplexity => model.contains("sonar") || model.starts_with("llama-"),
+        ProviderKind::Fireworks => {
+            model.contains("firefunction")
+                || model.contains("fireworks")
+                || model.starts_with("accounts/fireworks/")
+        }
+        ProviderKind::XAI => model.starts_with("grok"),
+        ProviderKind::Nebius => {
+            model.contains("llama") || model.contains("qwen") || model.contains("deepseek")
+        }
+        ProviderKind::Ollama => {
+            !model.starts_with("gpt")
+                && !model.starts_with("claude")
+                && !model.starts_with("gemini")
+                && !model.starts_with("command")
+                && !model.contains('/')
+                && !model.starts_with("us.")
+                && !model.starts_with("amazon.")
+                && !model.starts_with("anthropic.")
+        }
+        ProviderKind::OpenRouter => model.contains('/'),
+        ProviderKind::Custom(_) | ProviderKind::Vertex => true,
+        _ => true,
     }
 }
 

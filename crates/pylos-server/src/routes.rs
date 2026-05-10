@@ -1,4 +1,6 @@
-use crate::interfaces::http::{config, health, inference, logs, metrics, models};
+use crate::interfaces::http::{
+    completions, config, embeddings, health, inference, logs, metrics, models,
+};
 use crate::middleware::virtual_key_middleware;
 use crate::state::AppState;
 use axum::{
@@ -13,6 +15,8 @@ pub fn create_router(state: AppState) -> Router {
     // Routes d'inférence — protégées par le middleware Virtual Key
     let inference_routes = Router::new()
         .route("/v1/chat/completions", post(inference::chat_completions))
+        .route("/v1/completions", post(completions::text_completions))
+        .route("/v1/embeddings", post(embeddings::create_embeddings))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             virtual_key_middleware,
@@ -26,19 +30,36 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/logs/histogram/tokens", get(logs::get_token_histogram))
         .route("/api/logs/filterdata", get(logs::get_filter_data));
 
-    // Routes de gestion de la config (hot-reload, providers, virtual keys)
+    // Routes de gestion de la config
     let config_routes = Router::new()
         .route("/config", get(config::get_config))
         .route("/config/reload", post(config::reload_config))
-        .route("/providers", get(config::list_providers))
-        .route("/providers/:name", put(config::upsert_provider))
-        .route("/virtual-keys", get(config::list_virtual_keys));
+        // Providers CRUD
+        .route(
+            "/providers",
+            get(config::list_providers).post(config::create_provider),
+        )
+        .route(
+            "/providers/:name",
+            put(config::upsert_provider).delete(config::delete_provider),
+        )
+        // Virtual Keys CRUD
+        .route(
+            "/virtual-keys",
+            get(config::list_virtual_keys).post(config::create_virtual_key),
+        )
+        .route(
+            "/virtual-keys/:id",
+            put(config::update_virtual_key).delete(config::delete_virtual_key),
+        )
+        .route(
+            "/virtual-keys/:id/budget",
+            get(config::get_virtual_key_budget),
+        );
 
     Router::new()
-        // Racine et health
         .route("/", get(health::root))
         .route("/health", get(health::health_check))
-        // Observabilité
         .route("/metrics", get(metrics::metrics))
         // Models catalog
         .route("/v1/models", get(models::list_models))

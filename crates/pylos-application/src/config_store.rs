@@ -203,7 +203,6 @@ impl ConfigStore {
     }
 
     /// Met à jour un provider en mémoire (sans toucher au fichier)
-    /// Équivalent de ReloadProvider() dans bifrost
     pub async fn upsert_provider(
         &self,
         name: String,
@@ -215,11 +214,74 @@ impl ConfigStore {
         let mut state = self.state.write().await;
         state.config.providers.insert(name.clone(), provider);
         state.provider_hashes.insert(name, new_hash);
-
-        // Rebuild des runtime providers
         state.runtime_providers = build_runtime_providers(&state.config);
 
         Ok(())
+    }
+
+    /// Supprime un provider en mémoire
+    /// Retourne true si le provider existait, false sinon
+    pub async fn remove_provider(&self, name: &str) -> Result<bool, PylosError> {
+        let mut state = self.state.write().await;
+        let existed = state.config.providers.remove(name).is_some();
+        if existed {
+            state.provider_hashes.remove(name);
+            state.runtime_providers = build_runtime_providers(&state.config);
+        }
+        Ok(existed)
+    }
+
+    /// Ajoute une virtual key en mémoire
+    pub async fn add_virtual_key(
+        &self,
+        vk: pylos_core::domain::config::VirtualKeyConfig,
+    ) -> Result<(), PylosError> {
+        let mut state = self.state.write().await;
+        // Vérifie l'unicité de l'ID
+        if state
+            .config
+            .governance
+            .virtual_keys
+            .iter()
+            .any(|v| v.id == vk.id)
+        {
+            return Err(PylosError::InvalidRequest(format!(
+                "Virtual key '{}' already exists",
+                vk.id
+            )));
+        }
+        state.config.governance.virtual_keys.push(vk);
+        Ok(())
+    }
+
+    /// Modifie une virtual key existante via une closure
+    /// Retourne true si trouvée, false sinon
+    pub async fn update_virtual_key(
+        &self,
+        id: &str,
+        mutator: impl FnOnce(&mut pylos_core::domain::config::VirtualKeyConfig),
+    ) -> Result<bool, PylosError> {
+        let mut state = self.state.write().await;
+        if let Some(vk) = state
+            .config
+            .governance
+            .virtual_keys
+            .iter_mut()
+            .find(|v| v.id == id)
+        {
+            mutator(vk);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Supprime une virtual key en mémoire
+    pub async fn remove_virtual_key(&self, id: &str) -> Result<bool, PylosError> {
+        let mut state = self.state.write().await;
+        let before = state.config.governance.virtual_keys.len();
+        state.config.governance.virtual_keys.retain(|v| v.id != id);
+        Ok(state.config.governance.virtual_keys.len() < before)
     }
 }
 
@@ -250,6 +312,7 @@ fn auto_detect_config() -> PylosConfig {
                     models: vec!["*".into()],
                     weight: 1.0,
                     bedrock_key_config: None,
+                    azure_config: None,
                 }],
                 network: NetworkConfig {
                     base_url,
@@ -274,6 +337,7 @@ fn auto_detect_config() -> PylosConfig {
                         models: vec!["*".into()],
                         weight: 1.0,
                         bedrock_key_config: None,
+                        azure_config: None,
                     }],
                     ..Default::default()
                 },
@@ -294,6 +358,7 @@ fn auto_detect_config() -> PylosConfig {
                         models: vec!["*".into()],
                         weight: 1.0,
                         bedrock_key_config: None,
+                        azure_config: None,
                     }],
                     network: NetworkConfig {
                         base_url: Some("https://api.mistral.ai/v1".into()),
@@ -318,6 +383,7 @@ fn auto_detect_config() -> PylosConfig {
                         models: vec!["*".into()],
                         weight: 1.0,
                         bedrock_key_config: None,
+                        azure_config: None,
                     }],
                     network: NetworkConfig {
                         base_url: Some("https://api.groq.com/openai/v1".into()),
@@ -379,6 +445,7 @@ fn auto_detect_config() -> PylosConfig {
                     models: vec!["*".into()],
                     weight: 1.0,
                     bedrock_key_config: Some(bedrock_cfg),
+                    azure_config: None,
                 }],
                 ..Default::default()
             },
@@ -402,8 +469,13 @@ fn auto_detect_config() -> PylosConfig {
 fn build_runtime_providers(
     config: &PylosConfig,
 ) -> Vec<(Arc<dyn pylos_core::domain::traits::Provider>, RuntimeConfig)> {
-    use pylos_core::domain::provider::{ProviderConfig as RuntimeCfg, ProviderKey, ProviderKind};
-    use pylos_infrastructure::{AnthropicProvider, BedrockProvider, OpenAIProvider};
+    use pylos_core::domain::provider::{
+        AzureConfig, ProviderConfig as RuntimeCfg, ProviderKey, ProviderKind,
+    };
+    use pylos_infrastructure::{
+        AnthropicProvider, AzureProvider, BedrockProvider, CohereProvider, GeminiProvider,
+        OpenAIProvider,
+    };
 
     let mut providers = vec![];
 
@@ -471,6 +543,54 @@ fn build_runtime_providers(
             continue;
         }
 
+        // ── Cas Azure OpenAI ──
+        if name == "azure" || provider_cfg.keys.iter().any(|k| k.azure_config.is_some()) {
+            let keys: Vec<ProviderKey> = provider_cfg
+                .keys
+                .iter()
+                .filter_map(|k| {
+                    k.value
+                        .resolve()
+                        .map(|v| ProviderKey::new(v).with_weight(k.weight))
+                })
+                .collect();
+
+            if keys.is_empty() {
+                warn!(provider = %name, "No resolvable Azure API keys, skipping provider");
+                continue;
+            }
+
+            // Extrait la config Azure depuis la première clé qui en a une
+            let azure_cfg = provider_cfg
+                .keys
+                .iter()
+                .find_map(|k| k.azure_config.as_ref())
+                .map(|ac| AzureConfig {
+                    resource_name: ac.resource_name.clone(),
+                    deployment_name: ac.deployment_name.clone(),
+                    api_version: ac.api_version.clone(),
+                });
+
+            if azure_cfg.is_none() {
+                warn!(provider = %name, "Azure provider requires azure_config in at least one key, skipping");
+                continue;
+            }
+
+            let mut runtime_cfg = RuntimeCfg::new(ProviderKind::Azure, keys);
+            runtime_cfg.timeout_ms = provider_cfg.network.timeout_secs * 1000;
+            runtime_cfg.max_retries = provider_cfg.network.max_retries;
+            runtime_cfg.retry_backoff_initial_ms = provider_cfg.network.retry_backoff_initial_ms;
+            runtime_cfg.retry_backoff_max_ms = provider_cfg.network.retry_backoff_max_ms;
+            runtime_cfg.azure = azure_cfg;
+
+            info!(provider = %name, "Azure OpenAI provider registered");
+            providers.push((
+                Arc::new(AzureProvider::new()) as Arc<dyn pylos_core::domain::traits::Provider>,
+                runtime_cfg,
+            ));
+            continue;
+        }
+
         // ── Providers HTTP classiques (OpenAI, Anthropic, Groq, etc.) ──
         let keys: Vec<ProviderKey> = provider_cfg
             .keys
@@ -490,23 +610,39 @@ fn build_runtime_providers(
         let kind = match name.as_str() {
             "openai" => ProviderKind::OpenAI,
             "anthropic" => ProviderKind::Anthropic,
-            "mistral" | "groq" | "openrouter" | "cerebras" | "ollama" | "vllm" => {
-                ProviderKind::Custom(name.clone())
-            }
+            "gemini" | "google" => ProviderKind::Gemini,
+            "cohere" => ProviderKind::Cohere,
+            "groq" => ProviderKind::Groq,
+            "mistral" => ProviderKind::Mistral,
+            "cerebras" => ProviderKind::Cerebras,
+            "perplexity" => ProviderKind::Perplexity,
+            "fireworks" => ProviderKind::Fireworks,
+            "xai" | "x-ai" => ProviderKind::XAI,
+            "nebius" => ProviderKind::Nebius,
+            "ollama" => ProviderKind::Ollama,
+            "openrouter" => ProviderKind::OpenRouter,
             other => ProviderKind::Custom(other.to_string()),
         };
 
-        let mut runtime_cfg = RuntimeCfg::new(kind, keys);
-        runtime_cfg.base_url = provider_cfg.network.base_url.clone();
+        // Applique l'URL de base par défaut si aucune n'est configurée
+        let base_url = provider_cfg.network.base_url.clone().or_else(|| {
+            pylos_core::domain::provider::default_base_url(&kind).map(|s| s.to_string())
+        });
+
+        let mut runtime_cfg = RuntimeCfg::new(kind.clone(), keys);
+        runtime_cfg.base_url = base_url;
         runtime_cfg.timeout_ms = provider_cfg.network.timeout_secs * 1000;
         runtime_cfg.max_retries = provider_cfg.network.max_retries;
         runtime_cfg.retry_backoff_initial_ms = provider_cfg.network.retry_backoff_initial_ms;
         runtime_cfg.retry_backoff_max_ms = provider_cfg.network.retry_backoff_max_ms;
         runtime_cfg.bedrock = None;
+        runtime_cfg.azure = None;
 
-        let provider: Arc<dyn pylos_core::domain::traits::Provider> = match name.as_str() {
-            "anthropic" => Arc::new(AnthropicProvider::new()),
-            _ => Arc::new(OpenAIProvider::new()),
+        let provider: Arc<dyn pylos_core::domain::traits::Provider> = match kind {
+            ProviderKind::Anthropic => Arc::new(AnthropicProvider::new()),
+            ProviderKind::Gemini => Arc::new(GeminiProvider::new()),
+            ProviderKind::Cohere => Arc::new(CohereProvider::new()),
+            _ => Arc::new(OpenAIProvider::new()), // OpenAI-compatibles : OpenAI, Groq, Mistral, xAI, etc.
         };
 
         info!(provider = %name, keys = provider_cfg.keys.len(), "Provider registered");

@@ -4,17 +4,15 @@ use serde_json::json;
 use crate::state::AppState;
 
 /// GET /v1/models — liste tous les modèles disponibles par provider
-/// Interroge Ollama en direct + retourne les modèles configurés pour les autres providers
+/// Interroge Ollama en direct + retourne les modèles connus pour les autres
 pub async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
     let cfg = state.config_store.get().await;
     let mut models = Vec::new();
 
     for (provider_name, provider_cfg) in &cfg.providers {
-        // Pour Ollama : interroge l'API /api/tags en direct
         if provider_name == "ollama" {
             if let Some(base_url) = &provider_cfg.network.base_url {
                 let tags_url = base_url.trim_end_matches("/v1").to_string() + "/api/tags";
-
                 if let Ok(resp) = reqwest::get(&tags_url).await {
                     if let Ok(body) = resp.json::<serde_json::Value>().await {
                         if let Some(ollama_models) = body["models"].as_array() {
@@ -27,10 +25,7 @@ pub async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
                                     "provider": "ollama",
                                     "object": "model",
                                     "owned_by": "ollama",
-                                    "details": {
-                                        "family": family,
-                                        "parameter_size": size
-                                    }
+                                    "details": { "family": family, "parameter_size": size }
                                 }));
                             }
                             continue;
@@ -40,13 +35,11 @@ pub async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
             }
         }
 
-        // Pour les autres providers : retourne les modèles configurés
+        // Autres providers : modèles depuis la config ou liste connue
         for key in &provider_cfg.keys {
             for model in &key.models {
                 if model == "*" {
-                    // Modèles génériques connus par provider
-                    let known = known_models(provider_name);
-                    for m in known {
+                    for m in known_models(provider_name) {
                         models.push(json!({
                             "id": m,
                             "provider": provider_name,
@@ -67,7 +60,6 @@ pub async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
         }
     }
 
-    // Déduplique par (provider, id)
     models.sort_by(|a, b| {
         let pa = a["provider"].as_str().unwrap_or("");
         let pb = b["provider"].as_str().unwrap_or("");
@@ -77,13 +69,9 @@ pub async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
     });
     models.dedup_by(|a, b| a["provider"] == b["provider"] && a["id"] == b["id"]);
 
-    Json(json!({
-        "object": "list",
-        "data": models
-    }))
+    Json(json!({ "object": "list", "data": models }))
 }
 
-/// Modèles bien connus par provider (pour l'affichage sans wildcard)
 fn known_models(provider: &str) -> Vec<&'static str> {
     match provider {
         "openrouter" => vec![

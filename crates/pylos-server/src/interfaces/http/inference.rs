@@ -80,6 +80,13 @@ async fn complete_response(
 
             Json(resp).into_response()
         }
+        Ok(pylos_core::domain::request::PylosResponse::Embedding(resp)) => {
+            Json(resp).into_response()
+        }
+        Ok(pylos_core::domain::request::PylosResponse::TextCompletion(resp)) => {
+            // Ne devrait pas arriver via /v1/chat/completions mais au cas où
+            Json(resp).into_response()
+        }
         Err(e) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
             let provider = guess_provider(&model);
@@ -183,7 +190,7 @@ async fn stream_response(
     }
 }
 
-fn error_response(error: &PylosError) -> Response {
+pub fn error_response(error: &PylosError) -> Response {
     let (status, code) = match error {
         PylosError::Unauthorized(_) => (StatusCode::UNAUTHORIZED, "unauthorized"),
         PylosError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, "invalid_request_error"),
@@ -193,6 +200,8 @@ fn error_response(error: &PylosError) -> Response {
         PylosError::AllProvidersFailed(_) | PylosError::ProviderError { .. } => {
             (StatusCode::BAD_GATEWAY, "provider_error")
         }
+        PylosError::Unsupported(_) => (StatusCode::NOT_IMPLEMENTED, "not_implemented"),
+        PylosError::BudgetExceeded(_) => (StatusCode::PAYMENT_REQUIRED, "budget_exceeded"),
         PylosError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
     };
 

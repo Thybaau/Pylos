@@ -25,11 +25,11 @@ pub(crate) fn convert_messages(
         match msg.role {
             // Les messages system sont extraits séparément (format Bedrock)
             MessageRole::System => {
-                system_blocks.push(SystemContentBlock::Text(msg.content.clone()));
+                system_blocks.push(SystemContentBlock::Text(msg.content.clone().unwrap_or_default()));
             }
 
             MessageRole::User => {
-                let content = ContentBlock::Text(msg.content.clone());
+                let content = ContentBlock::Text(msg.content.clone().unwrap_or_default());
                 bedrock_messages.push(
                     Message::builder()
                         .role(ConversationRole::User)
@@ -40,7 +40,7 @@ pub(crate) fn convert_messages(
             }
 
             MessageRole::Assistant => {
-                let content = ContentBlock::Text(msg.content.clone());
+                let content = ContentBlock::Text(msg.content.clone().unwrap_or_default());
                 bedrock_messages.push(
                     Message::builder()
                         .role(ConversationRole::Assistant)
@@ -54,7 +54,7 @@ pub(crate) fn convert_messages(
             MessageRole::Tool | MessageRole::Function => {
                 let tool_result = ToolResultBlock::builder()
                     .tool_use_id(msg.name.clone().unwrap_or_default())
-                    .content(ToolResultContentBlock::Text(msg.content.clone()))
+                    .content(ToolResultContentBlock::Text(msg.content.clone().unwrap_or_default()))
                     .build()
                     .map_err(|e| PylosError::Internal(e.to_string()))?;
 
@@ -96,10 +96,10 @@ pub(crate) fn build_inference_config(
 
     if let Some(stop) = &req.stop {
         match stop {
-            pylos_core::domain::openai::StopCondition::String(s) => {
+            pylos_core::domain::openai::StopCondition::Single(s) => {
                 builder = builder.stop_sequences(s.clone());
             }
-            pylos_core::domain::openai::StopCondition::Array(arr) => {
+            pylos_core::domain::openai::StopCondition::Multiple(arr) => {
                 for s in arr {
                     builder = builder.stop_sequences(s.clone());
                 }
@@ -127,12 +127,9 @@ pub(crate) fn from_bedrock_response(
     let mut text_content = String::new();
 
     for block in output_message.content() {
-        match block {
-            ContentBlock::Text(t) => {
-                text_content.push_str(t);
-            }
-            // Les autres types (ToolUse, etc.) seront gérés plus tard
-            _ => {}
+        // Les autres types (ToolUse, etc.) seront gérés plus tard
+        if let ContentBlock::Text(t) = block {
+            text_content.push_str(t);
         }
     }
 
@@ -153,8 +150,10 @@ pub(crate) fn from_bedrock_response(
             index: 0,
             message: ChatCompletionMessage {
                 role: MessageRole::Assistant,
-                content: text_content,
+                content: Some(text_content),
                 name: None,
+                tool_calls: None,
+                tool_call_id: None,
             },
             finish_reason: Some(finish_reason.to_string()),
         }],
@@ -245,12 +244,12 @@ mod tests {
         let messages = vec![
             ChatCompletionMessage {
                 role: MessageRole::System,
-                content: "You are helpful.".into(),
+                content: Some("You are helpful.".into()),
                 name: None,
             },
             ChatCompletionMessage {
                 role: MessageRole::User,
-                content: "Hello".into(),
+                content: Some("Hello".into()),
                 name: None,
             },
         ];
@@ -266,12 +265,12 @@ mod tests {
         let messages = vec![
             ChatCompletionMessage {
                 role: MessageRole::User,
-                content: "Hi".into(),
+                content: Some("Hi".into()),
                 name: None,
             },
             ChatCompletionMessage {
                 role: MessageRole::Assistant,
-                content: "Hello!".into(),
+                content: Some("Hello!".into()),
                 name: None,
             },
         ];

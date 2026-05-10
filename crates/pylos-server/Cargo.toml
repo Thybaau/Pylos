@@ -19,3 +19,4 @@ tracing-subscriber = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
 prometheus = { workspace = true }
+fastrand = { workspace = true }

@@ -270,6 +270,11 @@ impl Provider for BedrockProvider {
                     id,
                 ))
             }
+            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => {
+                Err(PylosError::Unsupported(
+                    "Use Bedrock Titan Embeddings endpoint directly for embeddings".into(),
+                ))
+            }
         }
     }
 
@@ -337,17 +342,15 @@ impl Provider for BedrockProvider {
                                     ConverseStreamOutput::ContentBlockDelta(delta_event) => {
                                         if let Some(delta) = delta_event.delta() {
                                             use aws_sdk_bedrockruntime::types::ContentBlockDelta;
-                                            match delta {
-                                                ContentBlockDelta::Text(text) => {
-                                                    yield Ok(make_stream_chunk(
-                                                        &id,
-                                                        &model_clone,
-                                                        Some(text.clone()),
-                                                        None,
-                                                        None,
-                                                    ));
-                                                }
-                                                _ => {} // ToolUse, ReasoningContent — extensions futures
+                                            // ToolUse, ReasoningContent — extensions futures
+                                            if let ContentBlockDelta::Text(text) = delta {
+                                                yield Ok(make_stream_chunk(
+                                                    &id,
+                                                    &model_clone,
+                                                    Some(text.clone()),
+                                                    None,
+                                                    None,
+                                                ));
                                             }
                                         }
                                     }
@@ -398,6 +401,11 @@ impl Provider for BedrockProvider {
                 };
 
                 Ok(Box::pin(stream))
+            }
+            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => {
+                Err(PylosError::Unsupported(
+                    "Use Bedrock Titan Embeddings endpoint directly for embeddings".into(),
+                ))
             }
         }
     }

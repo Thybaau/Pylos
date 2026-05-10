@@ -6,6 +6,7 @@ import Playground from './pages/Playground'
 import Logs from './pages/Logs'
 import Providers from './pages/Providers'
 import VirtualKeys from './pages/VirtualKeys'
+import ModelCatalog from './pages/ModelCatalog'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,6 +31,7 @@ export default function App() {
               <Route path="/logs"       element={<Logs />} />
               <Route path="/providers"  element={<Providers />} />
               <Route path="/keys"       element={<VirtualKeys />} />
+              <Route path="/models"     element={<ModelCatalog />} />
             </Routes>
           </main>
         </div>

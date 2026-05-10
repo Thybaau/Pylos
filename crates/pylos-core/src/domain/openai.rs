@@ -1,6 +1,68 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool calling — function calling (identique à bifrost schemas/tool.go)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Définition d'une fonction appelable par le modèle
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FunctionDefinition {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// JSON Schema des paramètres
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
+}
+
+/// Outil exposé au modèle
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Tool {
+    #[serde(rename = "type")]
+    pub tool_type: String, // "function"
+    pub function: FunctionDefinition,
+}
+
+/// Choix du mode d'appel d'outil
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum ToolChoice {
+    /// "none" | "auto" | "required"
+    Mode(String),
+    /// Forcer un outil spécifique
+    Specific { #[serde(rename = "type")] tool_type: String, function: ToolChoiceFunction },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToolChoiceFunction {
+    pub name: String,
+}
+
+/// Appel d'outil dans la réponse du modèle
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToolCall {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub call_type: String, // "function"
+    pub function: ToolCallFunction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToolCallFunction {
+    pub name: String,
+    /// JSON encodé des arguments
+    pub arguments: String,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chat Completion
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatCompletionRequest {
     pub model: String,
@@ -21,25 +83,68 @@ pub struct ChatCompletionRequest {
     pub presence_penalty: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub logit_bias: Option<HashMap<String, f32>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
+    // ── Tool calling ──────────────────────────────────────────────────────────
+    /// Liste des outils disponibles pour le modèle
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<Tool>>,
+    /// Contrôle si/quel outil est appelé
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<ToolChoice>,
+    /// Format de réponse (json_object, json_schema, text)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<ResponseFormat>,
+    // ── Paramètres avancés ───────────────────────────────────────────────────
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repetition_penalty: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ResponseFormat {
+    #[serde(rename = "type")]
+    pub format_type: String, // "text" | "json_object" | "json_schema"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub json_schema: Option<serde_json::Value>,
+}
+
+/// Condition d'arrêt — string unique ou liste de strings
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum StopCondition {
-    String(String),
-    Array(Vec<String>),
+    Single(String),
+    Multiple(Vec<String>),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatCompletionMessage {
     pub role: MessageRole,
-    pub content: String,
+    /// Contenu texte — None possible si tool_calls présent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Appels d'outils émis par l'assistant
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    /// ID de l'appel d'outil (pour les messages role=tool)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+impl ChatCompletionMessage {
+    /// Retourne le contenu textuel ou une chaîne vide
+    pub fn content_str(&self) -> &str {
+        self.content.as_deref().unwrap_or("")
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -75,3 +180,130 @@ pub struct Usage {
     pub completion_tokens: i32,
     pub total_tokens: i32,
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Embeddings (POST /v1/embeddings)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EmbeddingRequest {
+    pub model: String,
+    /// Texte(s) à encoder — string ou liste de strings
+    pub input: EmbeddingInput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoding_format: Option<String>, // "float" | "base64"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dimensions: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum EmbeddingInput {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl EmbeddingInput {
+    pub fn as_strings(&self) -> Vec<&str> {
+        match self {
+            EmbeddingInput::Single(s) => vec![s.as_str()],
+            EmbeddingInput::Multiple(v) => v.iter().map(|s| s.as_str()).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EmbeddingResponse {
+    pub object: String, // "list"
+    pub data: Vec<EmbeddingData>,
+    pub model: String,
+    pub usage: EmbeddingUsage,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EmbeddingData {
+    pub object: String, // "embedding"
+    pub embedding: Vec<f32>,
+    pub index: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EmbeddingUsage {
+    pub prompt_tokens: i32,
+    pub total_tokens: i32,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Text Completion legacy (POST /v1/completions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TextCompletionRequest {
+    pub model: String,
+    pub prompt: TextPrompt,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop: Option<StopCondition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(default)]
+    pub echo: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suffix: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum TextPrompt {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl TextPrompt {
+    pub fn as_strings(&self) -> Vec<&str> {
+        match self {
+            TextPrompt::Single(s) => vec![s.as_str()],
+            TextPrompt::Multiple(v) => v.iter().map(|s| s.as_str()).collect(),
+        }
+    }
+    pub fn first(&self) -> &str {
+        match self {
+            TextPrompt::Single(s) => s.as_str(),
+            TextPrompt::Multiple(v) => v.first().map(|s| s.as_str()).unwrap_or(""),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TextCompletionResponse {
+    pub id: String,
+    pub object: String,
+    pub created: i64,
+    pub model: String,
+    pub choices: Vec<TextCompletionChoice>,
+    pub usage: Option<Usage>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TextCompletionChoice {
+    pub text: String,
+    pub index: i32,
+    pub finish_reason: Option<String>,
+    pub logprobs: Option<serde_json::Value>,
+}
+

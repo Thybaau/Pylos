@@ -1,6 +1,5 @@
 import axios from 'axios'
 
-// Auto-detect l'URL du backend Pylos
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export const api = axios.create({
@@ -74,7 +73,54 @@ export interface VirtualKey {
   description: string | null
   is_active: boolean
   value: string
+  rate_limit_id: string | null
   provider_configs: Array<{ provider: string; allowed_models: string[]; weight: number }>
+}
+
+export interface BudgetUsage {
+  period: string
+  max_usd: number
+  current_usd: number
+  reset_at_ms: number
+}
+
+export interface RateLimitStatus {
+  window_type: string
+  max_value: number
+  current_value: number
+  reset_at_ms: number
+}
+
+export interface VkBudgetResponse {
+  virtual_key_id: string
+  budget: BudgetUsage[]
+  rate_limits: RateLimitStatus[]
+}
+
+export interface ModelInfo {
+  id: string
+  provider: string
+  model_id: string
+  display_name: string | null
+  context_window: number
+  max_output_tokens: number
+  input_price_per_1m_usd: number
+  output_price_per_1m_usd: number
+  supports_vision: boolean
+  supports_tools: boolean
+  supports_streaming: boolean
+  supports_embeddings: boolean
+  is_deprecated: boolean
+}
+
+export interface ModelListResponse {
+  object: string
+  data: Array<{
+    id: string
+    object: string
+    owned_by: string
+    pylos: ModelInfo
+  }>
 }
 
 // ─── API calls ────────────────────────────────────────────────────────────────
@@ -88,31 +134,61 @@ export const logsApi = {
 
   getHistogram: (params: Record<string, string>) =>
     api.get<{ buckets: HistogramBucket[]; bucket_size_seconds: number }>(
-      '/api/logs/histogram',
-      { params }
+      '/api/logs/histogram', { params }
     ).then(r => r.data),
 
   getTokenHistogram: (params: Record<string, string>) =>
     api.get<{ buckets: TokenBucket[]; bucket_size_seconds: number }>(
-      '/api/logs/histogram/tokens',
-      { params }
+      '/api/logs/histogram/tokens', { params }
     ).then(r => r.data),
 
-  getFilterData: () =>
-    api.get('/api/logs/filterdata').then(r => r.data),
+  getFilterData: () => api.get('/api/logs/filterdata').then(r => r.data),
 }
 
 export const providersApi = {
   getAll: () =>
     api.get<{ providers: Provider[]; total: number }>('/providers').then(r => r.data),
+
+  create: (data: { name: string } & Record<string, unknown>) =>
+    api.post('/providers', data).then(r => r.data),
+
+  update: (name: string, data: Record<string, unknown>) =>
+    api.put(`/providers/${name}`, data).then(r => r.data),
+
+  remove: (name: string) =>
+    api.delete(`/providers/${name}`).then(r => r.data),
 }
 
 export const virtualKeysApi = {
   getAll: () =>
     api.get<{ virtual_keys: VirtualKey[]; total: number }>('/virtual-keys').then(r => r.data),
+
+  create: (data: Record<string, unknown>) =>
+    api.post<{ id: string; name: string; value: string }>('/virtual-keys', data).then(r => r.data),
+
+  update: (id: string, data: Record<string, unknown>) =>
+    api.put(`/virtual-keys/${id}`, data).then(r => r.data),
+
+  remove: (id: string) =>
+    api.delete(`/virtual-keys/${id}`).then(r => r.data),
+
+  getBudget: (id: string) =>
+    api.get<VkBudgetResponse>(`/virtual-keys/${id}/budget`).then(r => r.data),
+}
+
+export const modelsApi = {
+  getAll: (provider?: string) =>
+    api.get<ModelListResponse>('/v1/models', {
+      params: provider ? { provider } : {}
+    }).then(r => r.data),
 }
 
 export const healthApi = {
   check: () => api.get('/health').then(r => r.data),
   getRoot: () => api.get('/').then(r => r.data),
+}
+
+export const configApi = {
+  get: () => api.get('/config').then(r => r.data),
+  reload: () => api.post('/config/reload').then(r => r.data),
 }

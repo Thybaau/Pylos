@@ -133,7 +133,7 @@ pub(crate) fn to_openai_request<'a>(
             .iter()
             .map(|m| OpenAIMessage {
                 role: role_to_str(&m.role),
-                content: &m.content,
+                content: m.content.as_deref().unwrap_or(""),
                 name: m.name.as_deref(),
             })
             .collect(),
@@ -161,8 +161,10 @@ pub(crate) fn from_openai_response(resp: OpenAIChatResponse) -> PylosResponse {
                 index: c.index,
                 message: ChatCompletionMessage {
                     role: str_to_role(&c.message.role),
-                    content: c.message.content.unwrap_or_default(),
+                    content: Some(c.message.content.unwrap_or_default()),
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 finish_reason: c.finish_reason,
             })

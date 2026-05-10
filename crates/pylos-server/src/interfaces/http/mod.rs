@@ -1,4 +1,6 @@
+pub mod completions;
 pub mod config;
+pub mod embeddings;
 pub mod health;
 pub mod inference;
 pub mod logs;

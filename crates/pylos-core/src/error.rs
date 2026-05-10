@@ -23,6 +23,12 @@ pub enum PylosError {
 
     #[error("Timeout: {0}")]
     Timeout(String),
+
+    #[error("Not supported: {0}")]
+    Unsupported(String),
+
+    #[error("Budget exceeded: {0}")]
+    BudgetExceeded(String),
 }
 
 impl From<anyhow::Error> for PylosError {

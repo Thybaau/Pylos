@@ -169,6 +169,12 @@ pub struct ServerConfig {
     /// Auth obligatoire sur les endpoints d'inférence
     #[serde(default)]
     pub enforce_auth_on_inference: bool,
+
+    /// Chemin vers la base SQLite pour la persistance des logs
+    /// Si absent → log store in-memory (10k entrées max, perdu au restart)
+    /// Exemple : "./pylos-logs.db"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_db_path: Option<String>,
 }
 
 fn default_port() -> u16 {
@@ -205,6 +211,7 @@ impl Default for ServerConfig {
             max_request_body_size_mb: 100,
             allowed_origins: vec!["*".into()],
             enforce_auth_on_inference: false,
+            log_db_path: None,
         }
     }
 }
@@ -252,6 +259,11 @@ pub struct ProviderKeyConfig {
     /// Requis pour le provider "bedrock"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bedrock_key_config: Option<BedrockKeyConfig>,
+
+    /// Configuration spécifique Azure OpenAI
+    /// Requis pour le provider "azure"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub azure_config: Option<AzureKeyConfig>,
 }
 
 fn default_empty_envvar() -> EnvVar {
@@ -304,6 +316,30 @@ fn default_aws_region() -> String {
 
 fn default_session_name() -> String {
     "pylos-session".into()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AzureKeyConfig — configuration Azure OpenAI
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Configuration spécifique Azure OpenAI par clé
+/// Bifrost source: core/providers/azure/types.go AzureKeyConfig
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AzureKeyConfig {
+    /// Nom de la ressource Azure : {resource_name}.openai.azure.com
+    pub resource_name: String,
+
+    /// Nom du déploiement Azure (correspond au modèle déployé, ex: "gpt-4-deployment")
+    pub deployment_name: String,
+
+    /// Version de l'API Azure OpenAI
+    /// Défaut : "2024-02-01"
+    #[serde(default = "default_azure_api_version")]
+    pub api_version: String,
+}
+
+fn default_azure_api_version() -> String {
+    "2024-02-01".to_string()
 }
 
 impl Default for BedrockKeyConfig {

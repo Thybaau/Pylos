@@ -5,13 +5,19 @@ pub enum ProviderKind {
     OpenAI,
     Anthropic,
     Bedrock,
+    Azure,
     Gemini,
-    Vertex,
     Cohere,
-    Mistral,
     Groq,
+    Mistral,
+    Cerebras,
+    Perplexity,
+    Fireworks,
+    XAI,
+    Nebius,
     Ollama,
     OpenRouter,
+    Vertex,
     /// Provider custom via URL de base configurable
     Custom(String),
 }
@@ -22,16 +28,56 @@ impl std::fmt::Display for ProviderKind {
             ProviderKind::OpenAI => write!(f, "openai"),
             ProviderKind::Anthropic => write!(f, "anthropic"),
             ProviderKind::Bedrock => write!(f, "bedrock"),
+            ProviderKind::Azure => write!(f, "azure"),
             ProviderKind::Gemini => write!(f, "gemini"),
-            ProviderKind::Vertex => write!(f, "vertex"),
             ProviderKind::Cohere => write!(f, "cohere"),
-            ProviderKind::Mistral => write!(f, "mistral"),
             ProviderKind::Groq => write!(f, "groq"),
+            ProviderKind::Mistral => write!(f, "mistral"),
+            ProviderKind::Cerebras => write!(f, "cerebras"),
+            ProviderKind::Perplexity => write!(f, "perplexity"),
+            ProviderKind::Fireworks => write!(f, "fireworks"),
+            ProviderKind::XAI => write!(f, "xai"),
+            ProviderKind::Nebius => write!(f, "nebius"),
             ProviderKind::Ollama => write!(f, "ollama"),
             ProviderKind::OpenRouter => write!(f, "openrouter"),
+            ProviderKind::Vertex => write!(f, "vertex"),
             ProviderKind::Custom(name) => write!(f, "custom:{}", name),
         }
     }
+}
+
+/// URLs de base par défaut pour les providers OpenAI-compatibles
+pub fn default_base_url(kind: &ProviderKind) -> Option<&'static str> {
+    match kind {
+        ProviderKind::Groq => Some("https://api.groq.com/openai/v1"),
+        ProviderKind::Mistral => Some("https://api.mistral.ai/v1"),
+        ProviderKind::Cerebras => Some("https://api.cerebras.ai/v1"),
+        ProviderKind::Perplexity => Some("https://api.perplexity.ai"),
+        ProviderKind::Fireworks => Some("https://api.fireworks.ai/inference/v1"),
+        ProviderKind::XAI => Some("https://api.x.ai/v1"),
+        ProviderKind::Nebius => Some("https://api.studio.nebius.ai/v1"),
+        ProviderKind::OpenRouter => Some("https://openrouter.ai/api/v1"),
+        ProviderKind::Gemini => Some("https://generativelanguage.googleapis.com/v1beta"),
+        ProviderKind::Cohere => Some("https://api.cohere.ai"),
+        _ => None,
+    }
+}
+
+/// Configuration spécifique Azure OpenAI
+/// Bifrost source: core/providers/azure/types.go AzureKeyConfig
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AzureConfig {
+    /// Nom de la ressource Azure : {resource_name}.openai.azure.com
+    pub resource_name: String,
+    /// Nom du déploiement Azure (correspond au modèle déployé)
+    pub deployment_name: String,
+    /// Version de l'API Azure OpenAI (ex: "2024-02-01")
+    #[serde(default = "default_azure_api_version")]
+    pub api_version: String,
+}
+
+fn default_azure_api_version() -> String {
+    "2024-02-01".to_string()
 }
 
 /// Configuration d'une clé API pour un provider
@@ -76,6 +122,8 @@ pub struct ProviderConfig {
     pub retry_backoff_max_ms: u64,
     /// Configuration Bedrock spécifique (region, credentials, role_arn…)
     pub bedrock: Option<crate::domain::config::BedrockKeyConfig>,
+    /// Configuration Azure OpenAI spécifique
+    pub azure: Option<AzureConfig>,
 }
 
 impl ProviderConfig {
@@ -89,6 +137,7 @@ impl ProviderConfig {
             retry_backoff_initial_ms: 100,
             retry_backoff_max_ms: 5_000,
             bedrock: None,
+            azure: None,
         }
     }
 }

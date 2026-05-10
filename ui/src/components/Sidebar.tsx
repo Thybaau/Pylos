@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FlaskConical,
+  BookOpen,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -18,6 +19,7 @@ const NAV = [
   { to: '/logs',       icon: ScrollText,      label: 'Logs' },
   { to: '/providers',  icon: Server,          label: 'Providers' },
   { to: '/keys',       icon: KeyRound,        label: 'Virtual Keys' },
+  { to: '/models',     icon: BookOpen,        label: 'Models' },
 ]
 
 export function Sidebar() {

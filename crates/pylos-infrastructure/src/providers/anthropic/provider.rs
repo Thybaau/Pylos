@@ -120,6 +120,9 @@ impl Provider for AnthropicProvider {
                 debug!(provider = "anthropic", id = %anthropic_resp.id, "Messages request successful");
                 Ok(from_anthropic_response(anthropic_resp, &req.model))
             }
+            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => Err(
+                PylosError::Unsupported("Anthropic does not support embeddings".into()),
+            ),
         }
     }
 
@@ -238,6 +241,9 @@ impl Provider for AnthropicProvider {
 
                 Ok(Box::pin(stream))
             }
+            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => Err(
+                PylosError::Unsupported("Anthropic does not support embeddings".into()),
+            ),
         }
     }
 }

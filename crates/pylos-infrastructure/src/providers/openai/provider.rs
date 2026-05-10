@@ -4,6 +4,7 @@ use futures::StreamExt;
 use reqwest::Client;
 use tracing::{debug, error, warn};
 
+use pylos_core::domain::embedding::{EmbeddingRequest, EmbeddingResponse};
 use pylos_core::domain::provider::ProviderConfig;
 use pylos_core::domain::request::{PylosRequest, PylosResponse};
 use pylos_core::domain::traits::{ChunkStream, Provider};
@@ -12,6 +13,9 @@ use pylos_core::error::PylosError;
 use super::converters::{
     from_openai_response, from_openai_stream_chunk, map_openai_error, to_openai_request,
     OpenAIChatResponse, OpenAIStreamChunk,
+};
+use super::embedding::{
+    from_openai_embedding_response, to_openai_embedding_request, OpenAIEmbeddingResponse,
 };
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -121,6 +125,9 @@ impl Provider for OpenAIProvider {
                 debug!(provider = "openai", id = %openai_resp.id, "Chat completion successful");
                 Ok(from_openai_response(openai_resp))
             }
+            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => Err(
+                PylosError::InvalidRequest("Use the embed() method for embedding requests".into()),
+            ),
         }
     }
 
@@ -214,6 +221,61 @@ impl Provider for OpenAIProvider {
 
                 Ok(Box::pin(stream))
             }
+            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => {
+                Err(PylosError::InvalidRequest(
+                    "Use the /v1/embeddings endpoint for embedding requests".into(),
+                ))
+            }
         }
+    }
+
+    /// Embeddings — POST /v1/embeddings (OpenAI)
+    async fn embed(
+        &self,
+        request: &EmbeddingRequest,
+        config: &ProviderConfig,
+    ) -> Result<EmbeddingResponse, PylosError> {
+        let api_key = self
+            .select_key(config)
+            .ok_or_else(|| PylosError::InvalidRequest("No API key configured for OpenAI".into()))?;
+
+        let base_url = self.base_url(config);
+        let url = format!("{}/embeddings", base_url);
+        let openai_req = to_openai_embedding_request(request);
+
+        debug!(provider = "openai", model = %request.model, url = %url, "Sending embedding request");
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(api_key)
+            .json(&openai_req)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    PylosError::Timeout(e.to_string())
+                } else {
+                    PylosError::ProviderError {
+                        provider: "openai".into(),
+                        message: e.to_string(),
+                    }
+                }
+            })?;
+
+        let status = response.status().as_u16();
+
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            warn!(provider = "openai", status = status, body = %body, "Embedding request failed");
+            return Err(map_openai_error(status, &body));
+        }
+
+        let openai_resp: OpenAIEmbeddingResponse = response.json().await.map_err(|e| {
+            PylosError::Internal(format!("Failed to parse OpenAI embedding response: {}", e))
+        })?;
+
+        debug!(provider = "openai", model = %openai_resp.model, "Embedding successful");
+        Ok(from_openai_embedding_response(openai_resp))
     }
 }

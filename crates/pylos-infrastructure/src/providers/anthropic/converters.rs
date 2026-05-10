@@ -122,25 +122,25 @@ pub(crate) fn to_anthropic_request(
     for msg in &req.messages {
         match msg.role {
             MessageRole::System => {
-                system_parts.push(msg.content.clone());
+                system_parts.push(msg.content.clone().unwrap_or_default());
             }
             MessageRole::User => {
                 messages.push(AnthropicMessage {
                     role: "user".into(),
-                    content: msg.content.clone(),
+                    content: msg.content.clone().unwrap_or_default(),
                 });
             }
             MessageRole::Assistant => {
                 messages.push(AnthropicMessage {
                     role: "assistant".into(),
-                    content: msg.content.clone(),
+                    content: msg.content.clone().unwrap_or_default(),
                 });
             }
             _ => {
                 // Tool/Function → traité comme user pour simplifier
                 messages.push(AnthropicMessage {
                     role: "user".into(),
-                    content: msg.content.clone(),
+                    content: msg.content.clone().unwrap_or_default(),
                 });
             }
         }
@@ -165,8 +165,8 @@ pub(crate) fn to_anthropic_request(
 
     // Les stop sequences sont une Vec<String> pour Anthropic
     let stop_sequences = match &req.stop {
-        Some(pylos_core::domain::openai::StopCondition::String(s)) => Some(vec![s.clone()]),
-        Some(pylos_core::domain::openai::StopCondition::Array(arr)) => Some(arr.clone()),
+        Some(pylos_core::domain::openai::StopCondition::Single(s)) => Some(vec![s.clone()]),
+        Some(pylos_core::domain::openai::StopCondition::Multiple(arr)) => Some(arr.clone()),
         None => None,
     };
 
@@ -219,8 +219,10 @@ pub(crate) fn from_anthropic_response(
             index: 0,
             message: ChatCompletionMessage {
                 role: MessageRole::Assistant,
-                content: text,
+                content: Some(text),
                 name: None,
+                tool_calls: None,
+                tool_call_id: None,
             },
             finish_reason,
         }],

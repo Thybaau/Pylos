@@ -3,7 +3,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 
 use pylos_application::log_store::{LogFilter, LogStatus};
