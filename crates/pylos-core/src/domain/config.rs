@@ -171,13 +171,27 @@ pub struct ServerConfig {
     pub enforce_auth_on_inference: bool,
 }
 
-fn default_port() -> u16 { 3000 }
-fn default_host() -> String { "0.0.0.0".into() }
-fn default_log_level() -> String { "info".into() }
-fn default_true() -> bool { true }
-fn default_log_retention() -> u32 { 365 }
-fn default_max_body_mb() -> u32 { 100 }
-fn default_allowed_origins() -> Vec<String> { vec!["*".into()] }
+fn default_port() -> u16 {
+    3000
+}
+fn default_host() -> String {
+    "0.0.0.0".into()
+}
+fn default_log_level() -> String {
+    "info".into()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_log_retention() -> u32 {
+    365
+}
+fn default_max_body_mb() -> u32 {
+    100
+}
+fn default_allowed_origins() -> Vec<String> {
+    vec!["*".into()]
+}
 
 impl Default for ServerConfig {
     fn default() -> Self {
@@ -199,7 +213,7 @@ impl Default for ServerConfig {
 // ProviderConfig
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProviderConfig {
     /// Clés API de ce provider (au moins 1 requise pour l'inférence)
     #[serde(default)]
@@ -214,15 +228,7 @@ pub struct ProviderConfig {
     pub concurrency: ConcurrencyConfig,
 }
 
-impl Default for ProviderConfig {
-    fn default() -> Self {
-        Self {
-            keys: Vec::new(),
-            network: NetworkConfig::default(),
-            concurrency: ConcurrencyConfig::default(),
-        }
-    }
-}
+impl ProviderConfig {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderKeyConfig {
@@ -230,6 +236,8 @@ pub struct ProviderKeyConfig {
     pub name: String,
 
     /// Valeur de la clé API — supporte "env.VAR_NAME"
+    /// Non requis pour Bedrock avec IAM role (laisser vide ou omettre)
+    #[serde(default = "default_empty_envvar")]
     pub value: EnvVar,
 
     /// Modèles autorisés pour cette clé. ["*"] = tous, [] = deny-all (v2)
@@ -239,10 +247,85 @@ pub struct ProviderKeyConfig {
     /// Poids pour le load-balancing pondéré (défaut: 1.0)
     #[serde(default = "default_weight")]
     pub weight: f64,
+
+    /// Configuration spécifique AWS Bedrock
+    /// Requis pour le provider "bedrock"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bedrock_key_config: Option<BedrockKeyConfig>,
 }
 
-fn default_wildcard() -> Vec<String> { vec!["*".into()] }
-fn default_weight() -> f64 { 1.0 }
+fn default_empty_envvar() -> EnvVar {
+    EnvVar::Literal(String::new())
+}
+
+/// Configuration des credentials AWS pour Bedrock
+/// Identique à schemas.BedrockKeyConfig dans bifrost
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BedrockKeyConfig {
+    /// AWS Access Key ID — supporte "env.AWS_ACCESS_KEY_ID"
+    /// Si absent → utilise la chaîne de credentials par défaut AWS
+    /// (IAM role, IRSA, profil ~/.aws, variables d'env)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_key_id: Option<EnvVar>,
+
+    /// AWS Secret Access Key — supporte "env.AWS_SECRET_ACCESS_KEY"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_access_key: Option<EnvVar>,
+
+    /// Session token STS — supporte "env.AWS_SESSION_TOKEN"
+    /// Requis uniquement pour les credentials temporaires (AssumeRole résolu manuellement)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_token: Option<EnvVar>,
+
+    /// Région AWS — supporte "env.AWS_REGION"
+    /// Défaut : "us-east-1"
+    #[serde(default = "default_aws_region")]
+    pub region: String,
+
+    /// ARN du rôle IAM à assumer via STS (cross-account ou permission séparée)
+    /// supporte "env.AWS_ROLE_ARN"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role_arn: Option<EnvVar>,
+
+    /// External ID pour l'AssumeRole (sécurité cross-account)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<EnvVar>,
+
+    /// Nom de la session STS (défaut: "pylos-session")
+    #[serde(default = "default_session_name")]
+    pub role_session_name: String,
+}
+
+fn default_aws_region() -> String {
+    std::env::var("AWS_REGION")
+        .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
+        .unwrap_or_else(|_| "us-east-1".into())
+}
+
+fn default_session_name() -> String {
+    "pylos-session".into()
+}
+
+impl Default for BedrockKeyConfig {
+    fn default() -> Self {
+        Self {
+            access_key_id: None,
+            secret_access_key: None,
+            session_token: None,
+            region: default_aws_region(),
+            role_arn: None,
+            external_id: None,
+            role_session_name: default_session_name(),
+        }
+    }
+}
+
+fn default_wildcard() -> Vec<String> {
+    vec!["*".into()]
+}
+fn default_weight() -> f64 {
+    1.0
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkConfig {
@@ -271,10 +354,18 @@ pub struct NetworkConfig {
     pub extra_headers: HashMap<String, String>,
 }
 
-fn default_timeout() -> u64 { 30 }
-fn default_retries() -> u32 { 3 }
-fn default_backoff_initial() -> u64 { 100 }
-fn default_backoff_max() -> u64 { 5_000 }
+fn default_timeout() -> u64 {
+    30
+}
+fn default_retries() -> u32 {
+    3
+}
+fn default_backoff_initial() -> u64 {
+    100
+}
+fn default_backoff_max() -> u64 {
+    5_000
+}
 
 impl Default for NetworkConfig {
     fn default() -> Self {
@@ -300,8 +391,12 @@ pub struct ConcurrencyConfig {
     pub buffer_size: u32,
 }
 
-fn default_concurrency() -> u32 { 100 }
-fn default_buffer() -> u32 { 1_000 }
+fn default_concurrency() -> u32 {
+    100
+}
+fn default_buffer() -> u32 {
+    1_000
+}
 
 impl Default for ConcurrencyConfig {
     fn default() -> Self {

@@ -6,9 +6,9 @@ pub type Result<T> = std::result::Result<T, PylosError>;
 
 // Re-exports pratiques
 pub use domain::config::{
-    BudgetConfig, ConcurrencyConfig, EnvVar, GovernanceConfig, NetworkConfig, PluginConfig,
-    ProviderConfig, ProviderKeyConfig, PylosConfig, RateLimitConfig, RoutingRuleConfig,
-    ServerConfig, VirtualKeyConfig,
+    BedrockKeyConfig, BudgetConfig, ConcurrencyConfig, EnvVar, GovernanceConfig, NetworkConfig,
+    PluginConfig, ProviderConfig, ProviderKeyConfig, PylosConfig, RateLimitConfig,
+    RoutingRuleConfig, ServerConfig, VirtualKeyConfig,
 };
 pub use domain::provider::ProviderConfig as RuntimeProviderConfig;
 pub use domain::provider::{ProviderKey, ProviderKind, RoutingTarget};

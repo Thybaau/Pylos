@@ -74,6 +74,8 @@ pub struct ProviderConfig {
     pub retry_backoff_initial_ms: u64,
     /// Délai maximum de backoff en ms
     pub retry_backoff_max_ms: u64,
+    /// Configuration Bedrock spécifique (region, credentials, role_arn…)
+    pub bedrock: Option<crate::domain::config::BedrockKeyConfig>,
 }
 
 impl ProviderConfig {
@@ -86,6 +88,7 @@ impl ProviderConfig {
             max_retries: 3,
             retry_backoff_initial_ms: 100,
             retry_backoff_max_ms: 5_000,
+            bedrock: None,
         }
     }
 }

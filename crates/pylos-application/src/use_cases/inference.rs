@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use pylos_core::domain::provider::ProviderConfig;
@@ -8,19 +9,30 @@ use pylos_core::domain::request::{PylosRequest, PylosResponse, RequestContext};
 use pylos_core::domain::traits::{ChunkStream, LlmPlugin, Provider};
 use pylos_core::error::PylosError;
 
+type ProviderList = Vec<(Arc<dyn Provider>, ProviderConfig)>;
+
 /// Orchestre une requête sur un ou plusieurs providers avec retry et fallback
 /// Équivalent de core/inference.go (bifrost) — SendRequest / inferenceLoopHelper
 pub struct InferenceOrchestrator {
-    providers: Vec<(Arc<dyn Provider>, ProviderConfig)>,
+    /// RwLock pour permettre le hot-reload des providers sans redémarrage
+    /// Identique au mécanisme atomic.Pointer de bifrost pour les plugins
+    providers: Arc<RwLock<ProviderList>>,
     plugins: Vec<Arc<dyn LlmPlugin>>,
 }
 
 impl InferenceOrchestrator {
-    pub fn new(
-        providers: Vec<(Arc<dyn Provider>, ProviderConfig)>,
-        plugins: Vec<Arc<dyn LlmPlugin>>,
-    ) -> Self {
-        Self { providers, plugins }
+    pub fn new(providers: ProviderList, plugins: Vec<Arc<dyn LlmPlugin>>) -> Self {
+        Self {
+            providers: Arc::new(RwLock::new(providers)),
+            plugins,
+        }
+    }
+
+    /// Hot-reload des providers sans interruption de service
+    pub async fn update_providers(&self, new_providers: ProviderList) {
+        let mut guard = self.providers.write().await;
+        *guard = new_providers;
+        info!("Inference providers updated (hot-reload)");
     }
 
     /// Envoie une requête non-streaming avec pre/post hooks et fallback
@@ -43,10 +55,11 @@ impl InferenceOrchestrator {
             }
         }
 
-        // Essaie chaque provider dans l'ordre (fallback chain)
+        // Snapshot des providers (lecture lock-free pendant l'inférence)
+        let providers = self.providers.read().await;
         let mut last_error: Option<PylosError> = None;
 
-        for (provider, config) in &self.providers {
+        for (provider, config) in providers.iter() {
             if ctx.tried_providers.contains(&provider.name().to_string()) {
                 debug!(
                     provider = provider.name(),
@@ -101,7 +114,6 @@ impl InferenceOrchestrator {
         for plugin in &self.plugins {
             match plugin.pre_hook(&mut request, &mut ctx).await {
                 Ok(Some(_short_circuit)) => {
-                    // Court-circuit sur streaming : on retourne un stream d'une seule réponse
                     return Err(PylosError::Internal(
                         "Streaming short-circuit not yet supported".into(),
                     ));
@@ -113,9 +125,10 @@ impl InferenceOrchestrator {
             }
         }
 
+        let providers = self.providers.read().await;
         let mut last_error: Option<PylosError> = None;
 
-        for (provider, config) in &self.providers {
+        for (provider, config) in providers.iter() {
             if ctx.tried_providers.contains(&provider.name().to_string()) {
                 continue;
             }
@@ -177,11 +190,9 @@ impl InferenceOrchestrator {
 }
 
 /// Calcule le délai de backoff exponentiel avec jitter
-/// Formule : min(initial * 2^(attempt-1) + jitter, max)
 fn exponential_backoff(attempt: u32, initial_ms: u64, max_ms: u64) -> u64 {
     let shift = attempt.saturating_sub(1).min(62);
     let base = initial_ms.saturating_mul(1u64 << shift);
-    // Jitter : ±20% pour éviter les thundering herds
     let jitter = (base as f64 * 0.2 * (fastrand::f64() * 2.0 - 1.0)) as i64;
     let backoff = (base as i64 + jitter).max(0) as u64;
     backoff.min(max_ms)
@@ -193,7 +204,6 @@ mod tests {
 
     #[test]
     fn test_exponential_backoff_bounds() {
-        // Le backoff ne doit jamais dépasser max_ms
         for attempt in 1..=10 {
             let b = exponential_backoff(attempt, 100, 5_000);
             assert!(
@@ -203,10 +213,8 @@ mod tests {
                 attempt
             );
         }
-        // Le premier essai doit être proche de initial_ms
         for _ in 0..20 {
             let b = exponential_backoff(1, 100, 5_000);
-            // Avec ±20% de jitter : 80..120 ms
             assert!(b <= 120, "First backoff too high: {}", b);
         }
     }

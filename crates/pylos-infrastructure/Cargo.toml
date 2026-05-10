@@ -15,3 +15,9 @@ futures = { workspace = true }
 tracing = { workspace = true }
 eventsource-stream = "0.2"
 fastrand = "2"
+# AWS Bedrock
+aws-config = { workspace = true }
+aws-sdk-bedrockruntime = { workspace = true }
+aws-sdk-sts = { workspace = true }
+aws-credential-types = { workspace = true }
+async-stream = { workspace = true }

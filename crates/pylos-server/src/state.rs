@@ -1,10 +1,7 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use pylos_application::InferenceOrchestrator;
-use pylos_core::domain::provider::{ProviderConfig, ProviderKey, ProviderKind};
-use pylos_core::domain::traits::Provider;
-use pylos_core::domain::virtual_key::VirtualKeyRegistry;
-use pylos_infrastructure::{AnthropicProvider, OpenAIProvider};
+use pylos_application::{ConfigStore, InferenceOrchestrator};
 
 use crate::metrics::Metrics;
 
@@ -12,63 +9,65 @@ use crate::metrics::Metrics;
 #[derive(Clone)]
 pub struct AppState {
     pub orchestrator: Arc<InferenceOrchestrator>,
+    pub config_store: Arc<ConfigStore>,
     pub metrics: Arc<Metrics>,
-    pub vk_registry: Arc<VirtualKeyRegistry>,
+    pub vk_registry: Arc<pylos_core::domain::virtual_key::VirtualKeyRegistry>,
 }
 
 impl AppState {
-    /// Construit l'AppState depuis les variables d'environnement
-    pub fn from_env() -> anyhow::Result<Self> {
-        let mut providers: Vec<(Arc<dyn Provider>, ProviderConfig)> = Vec::new();
+    /// Construit l'AppState depuis le fichier de config et/ou les variables d'env
+    pub async fn from_config(config_path: Option<PathBuf>) -> anyhow::Result<Self> {
+        // Chargement de la config (fichier ou auto-détection)
+        let config_store = ConfigStore::load(config_path.as_deref()).await?;
+        let config_store = Arc::new(config_store);
 
-        // OpenAI — activé si OPENAI_API_KEY est défini
-        if let Ok(openai_key) = std::env::var("OPENAI_API_KEY") {
-            if !openai_key.is_empty() {
-                let base_url = std::env::var("OPENAI_BASE_URL").ok();
-                let is_custom = base_url
-                    .as_deref()
-                    .map(|u| !u.contains("api.openai.com"))
-                    .unwrap_or(false);
-
-                let kind = if is_custom {
-                    let name = base_url.as_deref().unwrap_or("custom").to_string();
-                    tracing::info!(base_url = %name, "Custom OpenAI-compatible provider configured");
-                    ProviderKind::Custom(name)
-                } else {
-                    tracing::info!("OpenAI provider configured");
-                    ProviderKind::OpenAI
-                };
-
-                let mut config = ProviderConfig::new(kind, vec![ProviderKey::new(openai_key)]);
-                if let Some(url) = base_url {
-                    config.base_url = Some(url);
-                }
-                providers.push((Arc::new(OpenAIProvider::new()), config));
-            }
-        }
-
-        // Anthropic — activé si ANTHROPIC_API_KEY est défini
-        if let Ok(anthropic_key) = std::env::var("ANTHROPIC_API_KEY") {
-            if !anthropic_key.is_empty() {
-                tracing::info!("Anthropic provider configured");
-                let config = ProviderConfig::new(
-                    ProviderKind::Anthropic,
-                    vec![ProviderKey::new(anthropic_key)],
-                );
-                providers.push((Arc::new(AnthropicProvider::new()), config));
-            }
-        }
+        // Construction des providers runtime depuis la config
+        let providers = config_store.runtime_providers().await;
 
         if providers.is_empty() {
-            tracing::warn!("No providers configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.");
+            tracing::warn!(
+                "No providers available. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or create a pylos.json config file."
+            );
+        } else {
+            tracing::info!(count = providers.len(), "Providers ready");
         }
 
         let orchestrator = Arc::new(InferenceOrchestrator::new(providers, vec![]));
         let metrics = Arc::new(Metrics::new());
-        let vk_registry = Arc::new(VirtualKeyRegistry::new());
+
+        // Synchronisation des virtual keys depuis la config vers le registre en mémoire
+        let vk_registry = Arc::new(pylos_core::domain::virtual_key::VirtualKeyRegistry::new());
+        let cfg = config_store.get().await;
+        for vk_cfg in &cfg.governance.virtual_keys {
+            if !vk_cfg.is_active {
+                continue;
+            }
+            // Génère la valeur de la clé si non définie
+            let key_value = vk_cfg
+                .value
+                .as_ref()
+                .and_then(|v| v.resolve())
+                .unwrap_or_else(|| {
+                    format!("sk-pylos-{}", &vk_cfg.id.replace(' ', "-").to_lowercase())
+                });
+
+            let rate_limit = cfg
+                .governance
+                .rate_limits
+                .iter()
+                .find(|rl| Some(&rl.id) == vk_cfg.rate_limit_id.as_ref())
+                .map(|rl| rl.request_max_limit)
+                .unwrap_or(0);
+
+            let vk = pylos_core::domain::virtual_key::VirtualKey::new(key_value, &vk_cfg.name)
+                .with_rpm(rate_limit);
+
+            vk_registry.register(vk).await;
+        }
 
         Ok(Self {
             orchestrator,
+            config_store,
             metrics,
             vk_registry,
         })

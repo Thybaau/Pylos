@@ -1,4 +1,32 @@
+# ── Build artifacts ───────────────────────────────────────────────────────────
 /target
-Cargo.lock
 **/*.rs.bk
+
+# ── Lockfile (géré par le workspace) ─────────────────────────────────────────
+# Cargo.lock  # décommenté si tu veux versionner le lockfile (recommandé pour les binaires)
+
+# ── Secrets — NE JAMAIS COMMITTER ─────────────────────────────────────────────
 .env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+vault-token
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# ── Docker volumes locaux ────────────────────────────────────────────────────
+docker/grafana/data/
+docker/prometheus/data/
+
+# ── Config Pylos avec vraies clés (utiliser pylos.json.example à la place) ───
+pylos.json
+pylos.*.json
+!pylos.json.example

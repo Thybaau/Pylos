@@ -29,9 +29,21 @@ services:
     environment:
       PORT: "3000"
       RUST_LOG: "${RUST_LOG:-info}"
+      # Providers HTTP
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       OPENAI_BASE_URL: "${OPENAI_BASE_URL:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      # AWS Bedrock
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      AWS_SESSION_TOKEN: "${AWS_SESSION_TOKEN:-}"
+      AWS_REGION: "${AWS_REGION:-us-east-1}"
+      AWS_ROLE_ARN: "${AWS_ROLE_ARN:-}"
+      # Config file
+      PYLOS_CONFIG: "/app/pylos.json"
+    volumes:
+      # Montage de la config locale — hot-reload possible via POST /config/reload
+      - ./pylos.json:/app/pylos.json:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 10s

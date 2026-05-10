@@ -4,9 +4,10 @@ mod middleware;
 mod routes;
 mod state;
 
+use std::path::PathBuf;
+
 use crate::routes::create_router;
 use crate::state::AppState;
-use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -24,19 +25,37 @@ async fn main() -> anyhow::Result<()> {
         "Starting Pylos AI Gateway"
     );
 
-    // Construction de l'état depuis les variables d'environnement
-    let state = AppState::from_env()?;
+    // Chemin du fichier de config (priorité : PYLOS_CONFIG env var, puis pylos.json local)
+    let config_path = std::env::var("PYLOS_CONFIG")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| {
+            let p = PathBuf::from("pylos.json");
+            if p.exists() {
+                Some(p)
+            } else {
+                None
+            }
+        });
+
+    if let Some(ref p) = config_path {
+        tracing::info!(path = %p.display(), "Using config file");
+    }
+
+    // Construction de l'état depuis la config
+    let state = AppState::from_config(config_path).await?;
+
+    // Port depuis la config ou PORT env var (env var prioritaire pour docker/k8s)
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or_else(|| state.config_store.get_sync_port());
+
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
 
     // Création du router Axum
     let app = create_router(state);
 
-    // Lancement du serveur
-    let port: u16 = std::env::var("PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(3000);
-
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("Pylos listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;

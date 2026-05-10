@@ -7,9 +7,9 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use pylos_core::domain::config::{
-    EnvVar, NetworkConfig, ProviderConfig, ProviderKeyConfig, PylosConfig,
+    BedrockKeyConfig, EnvVar, NetworkConfig, ProviderConfig, ProviderKeyConfig, PylosConfig,
 };
-use pylos_core::domain::provider::{ProviderConfig as RuntimeConfig, ProviderKey, ProviderKind};
+use pylos_core::domain::provider::ProviderConfig as RuntimeConfig;
 use pylos_core::error::PylosError;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,11 +74,7 @@ impl ConfigStore {
                     PylosError::Internal(format!("Failed to read config file: {}", e))
                 })?;
                 let cfg: PylosConfig = serde_json::from_str(&raw).map_err(|e| {
-                    PylosError::Internal(format!(
-                        "Invalid config file {}: {}",
-                        p.display(),
-                        e
-                    ))
+                    PylosError::Internal(format!("Invalid config file {}: {}", p.display(), e))
                 })?;
                 info!(
                     providers = cfg.providers.len(),
@@ -123,6 +119,12 @@ impl ConfigStore {
         })
     }
 
+    /// Accès synchrone au port configuré (pour le démarrage du serveur)
+    pub fn get_sync_port(&self) -> u16 {
+        // Lecture bloquante — uniquement utilisée une fois au démarrage
+        self.state.blocking_read().config.server.port
+    }
+
     /// Accès lecture à la config complète
     pub async fn get(&self) -> PylosConfig {
         self.state.read().await.config.clone()
@@ -150,13 +152,12 @@ impl ConfigStore {
             ));
         };
 
-        let raw = tokio::fs::read_to_string(&path).await.map_err(|e| {
-            PylosError::Internal(format!("Failed to read config file: {}", e))
-        })?;
+        let raw = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| PylosError::Internal(format!("Failed to read config file: {}", e)))?;
 
-        let new_config: PylosConfig = serde_json::from_str(&raw).map_err(|e| {
-            PylosError::Internal(format!("Invalid config: {}", e))
-        })?;
+        let new_config: PylosConfig = serde_json::from_str(&raw)
+            .map_err(|e| PylosError::Internal(format!("Invalid config: {}", e)))?;
 
         validate_config(&new_config)?;
 
@@ -242,12 +243,13 @@ fn auto_detect_config() -> PylosConfig {
     if let Ok(key) = std::env::var("OPENAI_API_KEY") {
         if !key.is_empty() {
             let base_url = std::env::var("OPENAI_BASE_URL").ok();
-            let mut provider = ProviderConfig {
+            let provider = ProviderConfig {
                 keys: vec![ProviderKeyConfig {
                     name: "default".into(),
                     value: EnvVar::Literal(key),
                     models: vec!["*".into()],
                     weight: 1.0,
+                    bedrock_key_config: None,
                 }],
                 network: NetworkConfig {
                     base_url,
@@ -271,6 +273,7 @@ fn auto_detect_config() -> PylosConfig {
                         value: EnvVar::Literal(key),
                         models: vec!["*".into()],
                         weight: 1.0,
+                        bedrock_key_config: None,
                     }],
                     ..Default::default()
                 },
@@ -290,6 +293,7 @@ fn auto_detect_config() -> PylosConfig {
                         value: EnvVar::Literal(key),
                         models: vec!["*".into()],
                         weight: 1.0,
+                        bedrock_key_config: None,
                     }],
                     network: NetworkConfig {
                         base_url: Some("https://api.mistral.ai/v1".into()),
@@ -313,6 +317,7 @@ fn auto_detect_config() -> PylosConfig {
                         value: EnvVar::Literal(key),
                         models: vec!["*".into()],
                         weight: 1.0,
+                        bedrock_key_config: None,
                     }],
                     network: NetworkConfig {
                         base_url: Some("https://api.groq.com/openai/v1".into()),
@@ -325,8 +330,64 @@ fn auto_detect_config() -> PylosConfig {
         }
     }
 
+    // AWS Bedrock — auto-détection si AWS_ACCESS_KEY_ID ou profil AWS présent
+    // Priorité à AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY explicites
+    // Sinon tente la chaîne de credentials par défaut (IAM role, IRSA, etc.)
+    let has_aws_keys = std::env::var("AWS_ACCESS_KEY_ID").is_ok()
+        || std::env::var("AWS_PROFILE").is_ok()
+        || std::env::var("AWS_ROLE_ARN").is_ok()
+        || std::path::Path::new(&format!(
+            "{}/.aws/credentials",
+            std::env::var("HOME").unwrap_or_default()
+        ))
+        .exists();
+
+    if has_aws_keys {
+        let region = std::env::var("AWS_REGION")
+            .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
+            .unwrap_or_else(|_| "us-east-1".into());
+
+        let bedrock_cfg = BedrockKeyConfig {
+            access_key_id: std::env::var("AWS_ACCESS_KEY_ID")
+                .ok()
+                .filter(|k| !k.is_empty())
+                .map(EnvVar::Literal),
+            secret_access_key: std::env::var("AWS_SECRET_ACCESS_KEY")
+                .ok()
+                .filter(|k| !k.is_empty())
+                .map(EnvVar::Literal),
+            session_token: std::env::var("AWS_SESSION_TOKEN")
+                .ok()
+                .filter(|k| !k.is_empty())
+                .map(EnvVar::Literal),
+            region: region.clone(),
+            role_arn: std::env::var("AWS_ROLE_ARN")
+                .ok()
+                .filter(|k| !k.is_empty())
+                .map(EnvVar::Literal),
+            ..BedrockKeyConfig::default()
+        };
+
+        config.providers.insert(
+            "bedrock".into(),
+            ProviderConfig {
+                // Bedrock n'a pas de clé API au sens traditionnel — on met une entrée
+                // fictive pour satisfaire la validation (les vraies creds sont dans bedrock_key_config)
+                keys: vec![ProviderKeyConfig {
+                    name: "default".into(),
+                    value: EnvVar::Literal(String::new()),
+                    models: vec!["*".into()],
+                    weight: 1.0,
+                    bedrock_key_config: Some(bedrock_cfg),
+                }],
+                ..Default::default()
+            },
+        );
+        detected.push("bedrock");
+    }
+
     if detected.is_empty() {
-        warn!("No providers detected. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, MISTRAL_API_KEY, or GROQ_API_KEY");
+        warn!("No providers detected. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, MISTRAL_API_KEY, GROQ_API_KEY, or AWS_ACCESS_KEY_ID");
     } else {
         info!(providers = ?detected, "Auto-detected providers from environment");
     }
@@ -342,19 +403,86 @@ fn build_runtime_providers(
     config: &PylosConfig,
 ) -> Vec<(Arc<dyn pylos_core::domain::traits::Provider>, RuntimeConfig)> {
     use pylos_core::domain::provider::{ProviderConfig as RuntimeCfg, ProviderKey, ProviderKind};
-    use pylos_infrastructure::{AnthropicProvider, OpenAIProvider};
+    use pylos_infrastructure::{AnthropicProvider, BedrockProvider, OpenAIProvider};
 
     let mut providers = vec![];
 
     for (name, provider_cfg) in &config.providers {
-        // Résolution des clés (env.VAR → valeur réelle)
+        // ── Cas Bedrock : gestion séparée (pas de clé API traditionnelle) ──
+        if name == "bedrock" {
+            // Extrait la BedrockKeyConfig depuis la première clé
+            let raw_bedrock_cfg = provider_cfg
+                .keys
+                .first()
+                .and_then(|k| k.bedrock_key_config.clone());
+
+            // Résolution des EnvVar dans la config Bedrock
+            // La région peut être "env.AWS_REGION" → doit être résolue maintenant
+            let mut bedrock_cfg = raw_bedrock_cfg.unwrap_or_default();
+
+            // Résolution de la région si elle contient une référence env
+            if bedrock_cfg.region.starts_with("env.") {
+                let var_name = bedrock_cfg.region.trim_start_matches("env.");
+                bedrock_cfg.region = std::env::var(var_name)
+                    .unwrap_or_else(|_| "us-east-1".into());
+            }
+
+            // Résolution des autres champs EnvVar
+            let resolved_access_key = bedrock_cfg
+                .access_key_id
+                .as_ref()
+                .and_then(|e| e.resolve());
+            let resolved_secret_key = bedrock_cfg
+                .secret_access_key
+                .as_ref()
+                .and_then(|e| e.resolve());
+
+            if let Some(ak) = resolved_access_key {
+                bedrock_cfg.access_key_id = Some(pylos_core::domain::config::EnvVar::Literal(ak));
+            }
+            if let Some(sk) = resolved_secret_key {
+                bedrock_cfg.secret_access_key =
+                    Some(pylos_core::domain::config::EnvVar::Literal(sk));
+            }
+
+            // role_arn : si la var d'env est absente → mettre à None pour éviter l'AssumeRole
+            if let Some(ref arn_env) = bedrock_cfg.role_arn.clone() {
+                match arn_env.resolve() {
+                    Some(arn) if !arn.is_empty() => {
+                        bedrock_cfg.role_arn =
+                            Some(pylos_core::domain::config::EnvVar::Literal(arn));
+                    }
+                    _ => {
+                        bedrock_cfg.role_arn = None; // pas d'AssumeRole
+                    }
+                }
+            }
+
+            let region = bedrock_cfg.region.clone();
+            let keys = vec![ProviderKey::new("bedrock-iam").with_weight(1.0)];
+            let mut runtime_cfg = RuntimeCfg::new(ProviderKind::Bedrock, keys);
+            runtime_cfg.timeout_ms = provider_cfg.network.timeout_secs * 1000;
+            runtime_cfg.max_retries = provider_cfg.network.max_retries;
+            runtime_cfg.retry_backoff_initial_ms = provider_cfg.network.retry_backoff_initial_ms;
+            runtime_cfg.retry_backoff_max_ms = provider_cfg.network.retry_backoff_max_ms;
+            runtime_cfg.bedrock = Some(bedrock_cfg);
+
+            info!(provider = "bedrock", region = %region, "Bedrock provider registered");
+            providers.push((
+                Arc::new(BedrockProvider::new()) as Arc<dyn pylos_core::domain::traits::Provider>,
+                runtime_cfg,
+            ));
+            continue;
+        }
+
+        // ── Providers HTTP classiques (OpenAI, Anthropic, Groq, etc.) ──
         let keys: Vec<ProviderKey> = provider_cfg
             .keys
             .iter()
             .filter_map(|k| {
-                k.value.resolve().map(|v| {
-                    ProviderKey::new(v).with_weight(k.weight)
-                })
+                k.value
+                    .resolve()
+                    .map(|v| ProviderKey::new(v).with_weight(k.weight))
             })
             .collect();
 
@@ -378,18 +506,14 @@ fn build_runtime_providers(
         runtime_cfg.max_retries = provider_cfg.network.max_retries;
         runtime_cfg.retry_backoff_initial_ms = provider_cfg.network.retry_backoff_initial_ms;
         runtime_cfg.retry_backoff_max_ms = provider_cfg.network.retry_backoff_max_ms;
+        runtime_cfg.bedrock = None;
 
         let provider: Arc<dyn pylos_core::domain::traits::Provider> = match name.as_str() {
             "anthropic" => Arc::new(AnthropicProvider::new()),
-            // Tout le reste utilise l'adapter OpenAI-compatible
             _ => Arc::new(OpenAIProvider::new()),
         };
 
-        info!(
-            provider = %name,
-            keys = provider_cfg.keys.len(),
-            "Provider registered"
-        );
+        info!(provider = %name, keys = provider_cfg.keys.len(), "Provider registered");
         providers.push((provider, runtime_cfg));
     }
 
@@ -415,8 +539,12 @@ fn validate_config(config: &PylosConfig) -> Result<(), PylosError> {
     }
 
     // Validation des virtual keys
-    let vk_ids: std::collections::HashSet<_> =
-        config.governance.virtual_keys.iter().map(|v| &v.id).collect();
+    let vk_ids: std::collections::HashSet<_> = config
+        .governance
+        .virtual_keys
+        .iter()
+        .map(|v| &v.id)
+        .collect();
     if vk_ids.len() != config.governance.virtual_keys.len() {
         return Err(PylosError::InvalidRequest(
             "Duplicate virtual key IDs in config".into(),
@@ -428,7 +556,9 @@ fn validate_config(config: &PylosConfig) -> Result<(), PylosError> {
 
 fn validate_provider(name: &str, provider: &ProviderConfig) -> Result<(), PylosError> {
     if name.is_empty() {
-        return Err(PylosError::InvalidRequest("Provider name cannot be empty".into()));
+        return Err(PylosError::InvalidRequest(
+            "Provider name cannot be empty".into(),
+        ));
     }
     for key in &provider.keys {
         if key.name.is_empty() {
@@ -455,13 +585,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_from_file() {
-        let f = make_config_file(r#"{
+        let f = make_config_file(
+            r#"{
             "providers": {
                 "openai": {
                     "keys": [{"name": "k1", "value": "sk-test"}]
                 }
             }
-        }"#);
+        }"#,
+        );
         let store = ConfigStore::load(Some(f.path())).await.unwrap();
         let cfg = store.get().await;
         assert!(cfg.providers.contains_key("openai"));
@@ -478,11 +610,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_hot_reload_unchanged() {
-        let f = make_config_file(r#"{
+        let f = make_config_file(
+            r#"{
             "providers": {
                 "openai": {"keys": [{"name": "k1", "value": "sk-test"}]}
             }
-        }"#);
+        }"#,
+        );
         let store = ConfigStore::load(Some(f.path())).await.unwrap();
         let summary = store.reload().await.unwrap();
         assert!(!summary.changed, "Hash unchanged, reload should be no-op");
@@ -490,14 +624,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_validation_rejects_duplicate_vk_ids() {
-        let f = make_config_file(r#"{
+        let f = make_config_file(
+            r#"{
             "governance": {
                 "virtual_keys": [
                     {"id": "vk-1", "name": "A"},
                     {"id": "vk-1", "name": "B"}
                 ]
             }
-        }"#);
+        }"#,
+        );
         let result = ConfigStore::load(Some(f.path())).await;
         assert!(result.is_err());
     }
@@ -505,18 +641,23 @@ mod tests {
     #[test]
     fn test_hash_ignores_budget_usage() {
         let mut cfg = PylosConfig::default();
-        cfg.governance.budgets.push(pylos_core::domain::config::BudgetConfig {
-            id: "b1".into(),
-            max_limit: 100.0,
-            reset_duration: pylos_core::domain::config::Duration("1d".into()),
-            current_usage: 0.0,
-            virtual_key_id: None,
-        });
+        cfg.governance
+            .budgets
+            .push(pylos_core::domain::config::BudgetConfig {
+                id: "b1".into(),
+                max_limit: 100.0,
+                reset_duration: pylos_core::domain::config::Duration("1d".into()),
+                current_usage: 0.0,
+                virtual_key_id: None,
+            });
         let h1 = hash_config(&cfg);
 
         cfg.governance.budgets[0].current_usage = 42.5;
         let h2 = hash_config(&cfg);
 
-        assert_eq!(h1, h2, "Hash should be identical regardless of current_usage");
+        assert_eq!(
+            h1, h2,
+            "Hash should be identical regardless of current_usage"
+        );
     }
 }
