@@ -8,7 +8,7 @@ use tower::ServiceExt; // for oneshot
 
 use pylos_core::domain::openai::{ChatCompletionResponse, ChatCompletionChoice, ChatCompletionMessage, MessageRole, Usage};
 use pylos_core::domain::provider::{ProviderConfig, ProviderKind};
-use pylos_core::domain::request::{PylosRequest, PylosResponse};
+use pylos_core::domain::request::{PylosRequest, PylosResponse, StreamChunk, StreamChoice, StreamDelta};
 use pylos_core::domain::traits::{Provider, ChunkStream};
 use pylos_core::error::PylosError;
 use pylos_application::{InferenceOrchestrator, ConfigStore, LogStore};
@@ -58,10 +58,41 @@ impl Provider for MockProvider {
 
     async fn stream(
         &self,
-        _request: &PylosRequest,
+        request: &PylosRequest,
         _config: &ProviderConfig,
     ) -> Result<ChunkStream, PylosError> {
-        Err(PylosError::Unsupported("Mock does not support streaming yet".into()))
+        let model = request.model().to_string();
+        let chunk1 = StreamChunk {
+            id: "mock-id".into(),
+            object: "chat.completion.chunk".into(),
+            created: 123456789,
+            model: model.clone(),
+            choices: vec![StreamChoice {
+                index: 0,
+                delta: StreamDelta {
+                    role: Some("assistant".into()),
+                    content: None,
+                },
+                finish_reason: None,
+            }],
+        };
+        let chunk2 = StreamChunk {
+            id: "mock-id".into(),
+            object: "chat.completion.chunk".into(),
+            created: 123456789,
+            model,
+            choices: vec![StreamChoice {
+                index: 0,
+                delta: StreamDelta {
+                    role: None,
+                    content: Some("Hello".into()),
+                },
+                finish_reason: Some("stop".into()),
+            }],
+        };
+
+        let stream = futures::stream::iter(vec![Ok(chunk1), Ok(chunk2)]);
+        Ok(Box::pin(stream))
     }
 }
 
@@ -119,6 +150,68 @@ async fn test_chat_completions_unary() {
     let body = ax_body_to_json(response.into_body()).await;
     assert_eq!(body["id"], "mock-id");
     assert_eq!(body["choices"][0]["message"]["content"], "Hello from Mock!");
+}
+
+
+#[tokio::test]
+async fn test_chat_completions_stream() {
+    // 1. Setup Mock State
+    let mock_provider = Arc::new(MockProvider);
+    let config = ProviderConfig::new(ProviderKind::OpenAI, vec![]);
+    
+    let orchestrator = Arc::new(InferenceOrchestrator::new(
+        vec![(mock_provider, config)],
+        vec![],
+    ));
+    
+    let config_store = Arc::new(ConfigStore::load(None).await.unwrap());
+    let metrics = Arc::new(Metrics::new());
+    let vk_registry = Arc::new(pylos_core::domain::virtual_key::VirtualKeyRegistry::new());
+    let log_store = Arc::new(LogStore::new(None, 1, 100));
+    
+    let state = AppState {
+        orchestrator,
+        config_store,
+        metrics,
+        vk_registry,
+        log_store,
+    };
+
+    // 2. Create Router
+    let app = create_router(state);
+
+    // 3. Send Request
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "model": "gpt-4o",
+                        "messages": [{"role": "user", "content": "Hi"}],
+                        "stream": true
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // 4. Assertions
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "text/event-stream");
+
+    let body = response.into_body();
+    let bytes = axum::body::to_bytes(body, 1024 * 1024).await.unwrap();
+    let text = String::from_utf8(bytes.to_vec()).unwrap();
+
+    // Check SSE format
+    assert!(text.contains("data: {\"id\":\"mock-id\""));
+    assert!(text.contains("data: [DONE]"));
+    assert!(text.contains("content\":\"Hello\""));
 }
 
 async fn ax_body_to_json(body: Body) -> Value {
