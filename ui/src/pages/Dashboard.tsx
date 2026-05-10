@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { logsApi } from '../lib/api'
 import { StatCard } from '../components/StatCard'
@@ -7,24 +8,27 @@ import {
 } from '../lib/utils'
 import { Activity, TrendingUp, Coins, Zap, Clock, Hash } from 'lucide-react'
 
-const PERIOD = '24h'
+const PERIODS = ['1h', '6h', '24h', '7d', '30d'] as const
+type Period = typeof PERIODS[number]
 
 export default function Dashboard() {
+  const [period, setPeriod] = useState<Period>('24h')
+
   const statsQ = useQuery({
-    queryKey: ['logs-stats', PERIOD],
-    queryFn: () => logsApi.getStats({ period: PERIOD }),
+    queryKey: ['logs-stats', period],
+    queryFn: () => logsApi.getStats({ period }),
     refetchInterval: 30_000,
   })
 
   const histQ = useQuery({
-    queryKey: ['histogram', PERIOD],
-    queryFn: () => logsApi.getHistogram({ period: PERIOD }),
+    queryKey: ['histogram', period],
+    queryFn: () => logsApi.getHistogram({ period }),
     refetchInterval: 30_000,
   })
 
   const tokensQ = useQuery({
-    queryKey: ['token-histogram', PERIOD],
-    queryFn: () => logsApi.getTokenHistogram({ period: PERIOD }),
+    queryKey: ['token-histogram', period],
+    queryFn: () => logsApi.getTokenHistogram({ period }),
     refetchInterval: 30_000,
   })
 
@@ -33,14 +37,32 @@ export default function Dashboard() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="text-sm text-gray-400 mt-1">Last 24 hours</p>
+          <p className="text-sm text-gray-400 mt-1">Last {period}</p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          Live
+        <div className="flex items-center gap-3">
+          {/* Period selector */}
+          <div className="flex rounded-lg border border-gray-700 overflow-hidden">
+            {PERIODS.map(p => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 text-xs transition-colors
+                  ${period === p
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            Live
+          </div>
         </div>
       </div>
 

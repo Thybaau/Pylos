@@ -347,7 +347,7 @@ pub async fn delete_virtual_key(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /virtual-keys/:id/budget — statut du budget d'une VK (stub)
+// GET /virtual-keys/:id/budget — statut du budget et rate limits d'une VK
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub async fn get_virtual_key_budget(

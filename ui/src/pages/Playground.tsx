@@ -281,12 +281,18 @@ export default function Playground() {
         const assistantMsg: Message = { role: 'assistant', content: fullContent }
         setMessages(prev => [...prev, assistantMsg])
         setStreamingContent('')
+
+        // Estimation des tokens côté client (~4 chars = 1 token, identique au serveur)
+        const completionTokens = Math.max(1, Math.floor(fullContent.length / 4))
+        const promptText = newMessages.map(m => m.content).join(' ')
+        const promptTokens = Math.max(1, Math.floor(promptText.length / 4))
+
         setLastResult({
           model,
           provider,
           content: fullContent,
           latency_ms: latency,
-          tokens: { prompt: 0, completion: 0, total: 0 },
+          tokens: { prompt: promptTokens, completion: completionTokens, total: promptTokens + completionTokens },
           cost_usd: 0,
           finish_reason: finishReason,
           streaming: true,

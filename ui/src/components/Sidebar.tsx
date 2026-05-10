@@ -10,8 +10,11 @@ import {
   ChevronRight,
   FlaskConical,
   BookOpen,
+  AlertCircle,
 } from 'lucide-react'
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { healthApi } from '../lib/api'
 
 const NAV = [
   { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
@@ -24,6 +27,15 @@ const NAV = [
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
+
+  const { data: health, isError } = useQuery({
+    queryKey: ['health'],
+    queryFn: healthApi.check,
+    refetchInterval: 30_000,
+    retry: 1,
+  })
+
+  const isHealthy = !isError && health !== undefined
 
   return (
     <aside
@@ -63,9 +75,26 @@ export function Sidebar() {
       {/* Status indicator */}
       <div className="px-4 py-3 border-t border-gray-800">
         {!collapsed && (
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Activity size={12} className="text-green-400" />
-            <span>Gateway active</span>
+          <div className="flex items-center gap-2 text-xs">
+            {isHealthy ? (
+              <>
+                <Activity size={12} className="text-green-400" />
+                <span className="text-gray-500">Gateway active</span>
+              </>
+            ) : (
+              <>
+                <AlertCircle size={12} className="text-red-400" />
+                <span className="text-red-400">Gateway unreachable</span>
+              </>
+            )}
+          </div>
+        )}
+        {collapsed && (
+          <div className="flex justify-center">
+            {isHealthy
+              ? <div className="w-2 h-2 rounded-full bg-green-400" />
+              : <AlertCircle size={12} className="text-red-400" />
+            }
           </div>
         )}
       </div>
