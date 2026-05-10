@@ -1,0 +1,13 @@
+[package]
+name = "pylos-infrastructure"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pylos-core = { path = "../pylos-core" }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }

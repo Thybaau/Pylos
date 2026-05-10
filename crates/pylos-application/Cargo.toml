@@ -1,0 +1,11 @@
+[package]
+name = "pylos-application"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pylos-core = { path = "../pylos-core" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }

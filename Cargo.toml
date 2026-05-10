@@ -1,0 +1,26 @@
+[workspace]
+members = [
+    "crates/pylos-core",
+    "crates/pylos-application",
+    "crates/pylos-infrastructure",
+    "crates/pylos-server",
+]
+resolver = "2"
+
+[workspace.dependencies]
+tokio = { version = "1.36", features = ["full"] }
+axum = { version = "0.7", features = ["ws"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json", "stream"] }
+anyhow = "1.0"
+thiserror = "1.0"
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+kube = { version = "0.87", features = ["runtime", "derive"] }
+k8s-openapi = { version = "0.20", features = ["latest"] }
+prometheus = "0.13"
+opentelemetry = "0.21"
