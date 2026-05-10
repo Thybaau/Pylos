@@ -2,10 +2,10 @@
 pub enum PylosError {
     #[error("Internal error: {0}")]
     Internal(String),
-    
+
     #[error("Not found: {0}")]
     NotFound(String),
-    
+
     #[error("Invalid request: {0}")]
     InvalidRequest(String),
 }

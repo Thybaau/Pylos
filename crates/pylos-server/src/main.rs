@@ -15,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("listening on {}", addr);
-    
+
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
 
