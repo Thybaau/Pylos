@@ -1,0 +1,91 @@
+use axum::{
+    body::Body,
+    http::{header, Request, StatusCode},
+};
+use pylos_server::state::AppState;
+use serde_json::json;
+use tempfile::tempdir;
+use tower::ServiceExt;
+
+#[tokio::test]
+async fn test_management_api_auth() {
+    let tdir = tempdir().unwrap();
+    std::env::set_var("PYLOS_DATA_DIR", tdir.path());
+
+    let state = AppState::from_config(None).await.unwrap();
+    // On force une clé admin pour le test
+    let mut state_with_key = state.clone();
+    state_with_key.admin_key = Some("test-admin-key".into());
+
+    let app = pylos_server::routes::create_router(state_with_key);
+
+    // 1. Test sans clé (devrait échouer)
+    let req = Request::builder()
+        .uri("/providers")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // 2. Test avec mauvaise clé
+    let req = Request::builder()
+        .uri("/providers")
+        .header(header::AUTHORIZATION, "Bearer wrong-key")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    // 3. Test avec bonne clé (Bearer)
+    let req = Request::builder()
+        .uri("/providers")
+        .header(header::AUTHORIZATION, "Bearer test-admin-key")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_provider_management() {
+    let tdir = tempdir().unwrap();
+    std::env::set_var("PYLOS_DATA_DIR", tdir.path());
+
+    let state = AppState::from_config(None).await.unwrap();
+    let mut state_with_key = state.clone();
+    state_with_key.admin_key = Some("test-admin-key".into());
+    let app = pylos_server::routes::create_router(state_with_key);
+
+    // 1. Liste initiale
+    let req = Request::builder()
+        .uri("/providers")
+        .header("X-Admin-Key", "test-admin-key")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // 2. Création d'un provider
+    let provider_json = json!({
+        "name": "custom-test",
+        "keys": [{
+            "name": "key1",
+            "value": "sk-test",
+            "models": ["*"],
+            "weight": 1.0
+        }],
+        "network": {
+            "base_url": "https://api.example.com/v1"
+        }
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/providers")
+        .header("X-Admin-Key", "test-admin-key")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(provider_json.to_string()))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+}

@@ -381,13 +381,12 @@ pub(crate) fn from_anthropic_response(
             message: ChatCompletionMessage {
                 role: MessageRole::Assistant,
                 content,
-                name: None,
                 tool_calls: if tool_calls.is_empty() {
                     None
                 } else {
                     Some(tool_calls)
                 },
-                tool_call_id: None,
+                ..Default::default()
             },
             finish_reason,
         }],
@@ -395,6 +394,7 @@ pub(crate) fn from_anthropic_response(
             prompt_tokens: u.input_tokens,
             completion_tokens: u.output_tokens,
             total_tokens: u.input_tokens + u.output_tokens,
+            ..Default::default()
         }),
     })
 }
@@ -423,8 +423,6 @@ pub(crate) fn from_anthropic_stream_event(
                         choices: vec![StreamChoice {
                             index: 0,
                             delta: StreamDelta {
-                                role: None,
-                                content: None,
                                 tool_calls: Some(vec![StreamToolCallChunk {
                                     index: ctx.current_block_index,
                                     id: ctx.current_tool_id.clone(),
@@ -434,6 +432,7 @@ pub(crate) fn from_anthropic_stream_event(
                                         arguments: None,
                                     }),
                                 }]),
+                                ..Default::default()
                             },
                             finish_reason: None,
                         }],
@@ -457,9 +456,8 @@ pub(crate) fn from_anthropic_stream_event(
                         choices: vec![StreamChoice {
                             index: event.index.unwrap_or(0),
                             delta: StreamDelta {
-                                role: None,
                                 content,
-                                tool_calls: None,
+                                ..Default::default()
                             },
                             finish_reason: None,
                         }],
@@ -478,8 +476,6 @@ pub(crate) fn from_anthropic_stream_event(
                         choices: vec![StreamChoice {
                             index: 0,
                             delta: StreamDelta {
-                                role: None,
-                                content: None,
                                 tool_calls: Some(vec![StreamToolCallChunk {
                                     index: ctx.current_block_index,
                                     id: None,
@@ -489,6 +485,7 @@ pub(crate) fn from_anthropic_stream_event(
                                         arguments: Some(partial),
                                     }),
                                 }]),
+                                ..Default::default()
                             },
                             finish_reason: None,
                         }],
@@ -519,11 +516,7 @@ pub(crate) fn from_anthropic_stream_event(
                 model: ctx.model.clone(),
                 choices: vec![StreamChoice {
                     index: 0,
-                    delta: StreamDelta {
-                        role: None,
-                        content: None,
-                        tool_calls: None,
-                    },
+                    delta: StreamDelta::default(),
                     finish_reason,
                 }],
                 usage: None,

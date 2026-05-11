@@ -679,6 +679,31 @@ fn builtin_models() -> Vec<ModelInfo> {
             false,
             false,
         ),
+        // ── DeepSeek ────────────────────────────────────────────────────────
+        m(
+            "deepseek",
+            "deepseek-reasoner",
+            "DeepSeek R1 (Reasoner)",
+            64_000,
+            8_192,
+            0.55,
+            2.19,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "deepseek",
+            "deepseek-chat",
+            "DeepSeek V3",
+            64_000,
+            8_192,
+            0.14,
+            0.28,
+            false,
+            true,
+            false,
+        ),
     ]
 }
 

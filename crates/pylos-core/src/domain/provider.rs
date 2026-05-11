@@ -18,6 +18,7 @@ pub enum ProviderKind {
     Ollama,
     OpenRouter,
     Vertex,
+    DeepSeek,
     /// Provider custom via URL de base configurable
     Custom(String),
 }
@@ -41,8 +42,64 @@ impl std::fmt::Display for ProviderKind {
             ProviderKind::Ollama => write!(f, "ollama"),
             ProviderKind::OpenRouter => write!(f, "openrouter"),
             ProviderKind::Vertex => write!(f, "vertex"),
+            ProviderKind::DeepSeek => write!(f, "deepseek"),
             ProviderKind::Custom(name) => write!(f, "custom:{}", name),
         }
+    }
+}
+
+impl ProviderKind {
+    /// Déduit le provider depuis le nom du modèle.
+    pub fn guess_from_model(model: &str) -> Self {
+        if model.starts_with("us.")
+            || model.starts_with("eu.")
+            || model.starts_with("ap.")
+            || model.starts_with("amazon.")
+            || model.contains("nova")
+            || model.contains("titan")
+            || model.starts_with("anthropic.")
+        {
+            return ProviderKind::Bedrock;
+        }
+        if model.contains("claude") {
+            return ProviderKind::Anthropic;
+        }
+        if model.starts_with("gpt")
+            || model.starts_with("o1")
+            || model.starts_with("o3")
+            || model.starts_with("o4")
+            || model.starts_with("text-embedding")
+        {
+            return ProviderKind::OpenAI;
+        }
+        if model.starts_with("gemini") || model.starts_with("google/") || model.contains("learnlm") {
+            return ProviderKind::Gemini;
+        }
+        if model.starts_with("command") || model.starts_with("embed-") {
+            return ProviderKind::Cohere;
+        }
+        if model.starts_with("grok") {
+            return ProviderKind::XAI;
+        }
+        if model.starts_with("deepseek") {
+            return ProviderKind::DeepSeek;
+        }
+        if (model.starts_with("mistral") || model.starts_with("codestral")) && !model.contains(':') {
+            return ProviderKind::Mistral;
+        }
+        if model.contains('/') {
+            return ProviderKind::OpenRouter;
+        }
+        if model.contains(':')
+            || model.contains("llama")
+            || model.contains("qwen")
+            || model.contains("starcoder")
+            || model.contains("nomic")
+            || model.contains("phi")
+        {
+            return ProviderKind::Ollama;
+        }
+        ProviderKind::Custom("unknown".into())
     }
 }
 
@@ -59,6 +116,7 @@ pub fn default_base_url(kind: &ProviderKind) -> Option<&'static str> {
         ProviderKind::OpenRouter => Some("https://openrouter.ai/api/v1"),
         ProviderKind::Gemini => Some("https://generativelanguage.googleapis.com/v1beta"),
         ProviderKind::Cohere => Some("https://api.cohere.ai"),
+        ProviderKind::DeepSeek => Some("https://api.deepseek.com"),
         _ => None,
     }
 }

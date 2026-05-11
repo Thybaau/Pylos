@@ -854,6 +854,13 @@ fn estimate_cost(provider: &str, model: &str, prompt: i32, completion: i32) -> f
                 (5.0, 15.0)
             }
         }
+        "deepseek" => {
+            if model.contains("reasoner") || model.contains("r1") {
+                (0.55, 2.19)
+            } else {
+                (0.14, 0.28)
+            }
+        }
         "bedrock" => {
             if model.contains("nova-lite") {
                 (0.06, 0.24)

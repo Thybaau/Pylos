@@ -110,6 +110,9 @@ pub struct ChatCompletionRequest {
     pub min_p: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repetition_penalty: Option<f32>,
+    /// Limite spécifique pour les tokens générés (OpenAI o1/o3, DeepSeek R1)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_completion_tokens: Option<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -128,7 +131,7 @@ pub enum StopCondition {
     Multiple(Vec<String>),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ChatCompletionMessage {
     pub role: MessageRole,
     /// Contenu texte — None possible si tool_calls présent
@@ -142,6 +145,9 @@ pub struct ChatCompletionMessage {
     /// ID de l'appel d'outil (pour les messages role=tool)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// Contenu de raisonnement (spécifique DeepSeek/OpenAI o1/o3)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 impl ChatCompletionMessage {
@@ -161,6 +167,12 @@ pub enum MessageRole {
     Function,
 }
 
+impl Default for MessageRole {
+    fn default() -> Self {
+        MessageRole::User
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatCompletionResponse {
     pub id: String,
@@ -178,11 +190,19 @@ pub struct ChatCompletionChoice {
     pub finish_reason: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Usage {
     pub prompt_tokens: i32,
     pub completion_tokens: i32,
     pub total_tokens: i32,
+    /// Tokens de raisonnement (DeepSeek R1, OpenAI o1/o3)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_tokens: Option<i32>,
+    /// Tokens mis en cache dans le prompt (DeepSeek, Anthropic, OpenAI)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_hit_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_miss_tokens: Option<i32>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

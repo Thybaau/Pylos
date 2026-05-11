@@ -364,6 +364,31 @@ fn auto_detect_config() -> PylosConfig {
         }
     }
 
+    // XAI (Grok)
+    if let Ok(key) = std::env::var("XAI_API_KEY") {
+        if !key.is_empty() {
+            config.providers.insert(
+                "xai".into(),
+                ProviderConfig {
+                    keys: vec![ProviderKeyConfig {
+                        name: "default".into(),
+                        value: EnvVar::Literal(key),
+                        models: vec!["*".into()],
+                        weight: 1.0,
+                        bedrock_key_config: None,
+                        azure_config: None,
+                    }],
+                    network: NetworkConfig {
+                        base_url: Some("https://api.x.ai/v1".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+            detected.push("xai");
+        }
+    }
+
     // Anthropic
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
         if !key.is_empty() {
@@ -432,6 +457,106 @@ fn auto_detect_config() -> PylosConfig {
                 },
             );
             detected.push("groq");
+        }
+    }
+
+    // DeepSeek
+    if let Ok(key) = std::env::var("DEEPSEEK_API_KEY") {
+        if !key.is_empty() {
+            config.providers.insert(
+                "deepseek".into(),
+                ProviderConfig {
+                    keys: vec![ProviderKeyConfig {
+                        name: "default".into(),
+                        value: EnvVar::Literal(key),
+                        models: vec!["*".into()],
+                        weight: 1.0,
+                        bedrock_key_config: None,
+                        azure_config: None,
+                    }],
+                    network: NetworkConfig {
+                        base_url: Some("https://api.deepseek.com".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+            detected.push("deepseek");
+        }
+    }
+
+    // Perplexity
+    if let Ok(key) = std::env::var("PERPLEXITY_API_KEY") {
+        if !key.is_empty() {
+            config.providers.insert(
+                "perplexity".into(),
+                ProviderConfig {
+                    keys: vec![ProviderKeyConfig {
+                        name: "default".into(),
+                        value: EnvVar::Literal(key),
+                        models: vec!["*".into()],
+                        weight: 1.0,
+                        bedrock_key_config: None,
+                        azure_config: None,
+                    }],
+                    network: NetworkConfig {
+                        base_url: Some("https://api.perplexity.ai".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+            detected.push("perplexity");
+        }
+    }
+
+    // Nebius
+    if let Ok(key) = std::env::var("NEBIUS_API_KEY") {
+        if !key.is_empty() {
+            config.providers.insert(
+                "nebius".into(),
+                ProviderConfig {
+                    keys: vec![ProviderKeyConfig {
+                        name: "default".into(),
+                        value: EnvVar::Literal(key),
+                        models: vec!["*".into()],
+                        weight: 1.0,
+                        bedrock_key_config: None,
+                        azure_config: None,
+                    }],
+                    network: NetworkConfig {
+                        base_url: Some("https://api.studio.nebius.ai/v1".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+            detected.push("nebius");
+        }
+    }
+
+    // Cerebras
+    if let Ok(key) = std::env::var("CEREBRAS_API_KEY") {
+        if !key.is_empty() {
+            config.providers.insert(
+                "cerebras".into(),
+                ProviderConfig {
+                    keys: vec![ProviderKeyConfig {
+                        name: "default".into(),
+                        value: EnvVar::Literal(key),
+                        models: vec!["*".into()],
+                        weight: 1.0,
+                        bedrock_key_config: None,
+                        azure_config: None,
+                    }],
+                    network: NetworkConfig {
+                        base_url: Some("https://api.cerebras.ai/v1".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+            detected.push("cerebras");
         }
     }
 
@@ -654,6 +779,7 @@ fn build_runtime_providers(
             "fireworks" => ProviderKind::Fireworks,
             "xai" | "x-ai" => ProviderKind::XAI,
             "nebius" => ProviderKind::Nebius,
+            "deepseek" => ProviderKind::DeepSeek,
             "ollama" => ProviderKind::Ollama,
             "openrouter" => ProviderKind::OpenRouter,
             other => ProviderKind::Custom(other.to_string()),

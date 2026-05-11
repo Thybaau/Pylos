@@ -21,3 +21,6 @@ reqwest = { workspace = true }
 prometheus = { workspace = true }
 fastrand = { workspace = true }
 async-trait = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.10"

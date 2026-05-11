@@ -28,6 +28,37 @@ pub(crate) struct OpenAIChatRequest<'a> {
     pub frequency_penalty: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_completion_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_options: Option<StreamOptions>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct StreamOptions {
+    pub include_usage: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct OpenAITextRequest<'a> {
+    pub model: &'a str,
+    pub prompt: Vec<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suffix: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n: Option<i32>,
+    pub stream: bool,
+    pub echo: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_options: Option<StreamOptions>,
 }
 
 #[derive(Debug, Serialize)]
@@ -60,9 +91,28 @@ pub(crate) struct OpenAIChoice {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct OpenAITextResponse {
+    pub id: String,
+    pub object: String,
+    pub created: i64,
+    pub model: String,
+    pub choices: Vec<OpenAITextChoice>,
+    pub usage: Option<OpenAIUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct OpenAITextChoice {
+    pub text: String,
+    pub index: i32,
+    pub finish_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub(crate) struct OpenAIResponseMessage {
     pub role: String,
     pub content: Option<String>,
+    pub reasoning_content: Option<String>,
+    pub tool_calls: Option<Vec<pylos_core::domain::openai::ToolCall>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,6 +120,9 @@ pub(crate) struct OpenAIUsage {
     pub prompt_tokens: i32,
     pub completion_tokens: i32,
     pub total_tokens: i32,
+    pub reasoning_tokens: Option<i32>,
+    pub prompt_cache_hit_tokens: Option<i32>,
+    pub prompt_cache_miss_tokens: Option<i32>,
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -83,6 +136,7 @@ pub(crate) struct OpenAIStreamChunk {
     pub created: i64,
     pub model: String,
     pub choices: Vec<OpenAIStreamChoice>,
+    pub usage: Option<OpenAIUsage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,6 +150,8 @@ pub(crate) struct OpenAIStreamChoice {
 pub(crate) struct OpenAIStreamDelta {
     pub role: Option<String>,
     pub content: Option<String>,
+    pub reasoning_content: Option<String>,
+    pub tool_calls: Option<Vec<pylos_core::domain::request::StreamToolCallChunk>>,
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -145,6 +201,99 @@ pub(crate) fn to_openai_request<'a>(
         presence_penalty: req.presence_penalty,
         frequency_penalty: req.frequency_penalty,
         user: req.user.as_deref(),
+        max_completion_tokens: req.max_completion_tokens,
+        stream_options: if stream {
+            Some(StreamOptions {
+                include_usage: true,
+            })
+        } else {
+            None
+        },
+    }
+}
+
+pub(crate) fn to_openai_text_request<'a>(
+    req: &'a pylos_core::domain::openai::TextCompletionRequest,
+    stream: bool,
+) -> OpenAITextRequest<'a> {
+    OpenAITextRequest {
+        model: &req.model,
+        prompt: req.prompt.as_strings(),
+        suffix: req.suffix.as_deref(),
+        max_tokens: req.max_tokens,
+        temperature: req.temperature,
+        top_p: req.top_p,
+        n: req.n,
+        stream,
+        echo: req.echo,
+        stop: match &req.stop {
+            Some(pylos_core::domain::openai::StopCondition::Single(s)) => Some(vec![s.clone()]),
+            Some(pylos_core::domain::openai::StopCondition::Multiple(v)) => Some(v.clone()),
+            None => None,
+        },
+        stream_options: if stream {
+            Some(StreamOptions {
+                include_usage: true,
+            })
+        } else {
+            None
+        },
+    }
+}
+
+pub(crate) fn from_openai_text_response(resp: OpenAITextResponse) -> PylosResponse {
+    PylosResponse::ChatCompletion(ChatCompletionResponse {
+        id: resp.id,
+        object: resp.object,
+        created: resp.created,
+        model: resp.model,
+        choices: resp
+            .choices
+            .into_iter()
+            .map(|c| ChatCompletionChoice {
+                index: c.index,
+                message: ChatCompletionMessage {
+                    role: MessageRole::Assistant,
+                    content: Some(c.text),
+                    reasoning_content: None,
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+                finish_reason: c.finish_reason,
+            })
+            .collect(),
+        }),
+    })
+}
+
+pub(crate) fn from_openai_text_stream_chunk(resp: OpenAITextResponse) -> StreamChunk {
+    StreamChunk {
+        id: resp.id,
+        object: resp.object,
+        created: resp.created,
+        model: resp.model,
+        choices: resp
+            .choices
+            .into_iter()
+            .map(|c| StreamChoice {
+                index: c.index,
+                delta: StreamDelta {
+                    role: Some("assistant".into()),
+                    content: Some(c.text),
+                    ..Default::default()
+                },
+                finish_reason: c.finish_reason,
+            })
+            .collect(),
+        usage: resp.usage.map(|u| Usage {
+            prompt_tokens: u.prompt_tokens,
+            completion_tokens: u.completion_tokens,
+            total_tokens: u.total_tokens,
+            reasoning_tokens: u.reasoning_tokens,
+            prompt_cache_hit_tokens: u.prompt_cache_hit_tokens,
+            prompt_cache_miss_tokens: u.prompt_cache_miss_tokens,
+        }),
     }
 }
 
@@ -162,9 +311,9 @@ pub(crate) fn from_openai_response(resp: OpenAIChatResponse) -> PylosResponse {
                 message: ChatCompletionMessage {
                     role: str_to_role(&c.message.role),
                     content: Some(c.message.content.unwrap_or_default()),
-                    name: None,
-                    tool_calls: None,
-                    tool_call_id: None,
+                    reasoning_content: c.message.reasoning_content,
+                    tool_calls: c.message.tool_calls,
+                    ..Default::default()
                 },
                 finish_reason: c.finish_reason,
             })
@@ -173,6 +322,9 @@ pub(crate) fn from_openai_response(resp: OpenAIChatResponse) -> PylosResponse {
             prompt_tokens: u.prompt_tokens,
             completion_tokens: u.completion_tokens,
             total_tokens: u.total_tokens,
+            reasoning_tokens: u.reasoning_tokens,
+            prompt_cache_hit_tokens: u.prompt_cache_hit_tokens,
+            prompt_cache_miss_tokens: u.prompt_cache_miss_tokens,
         }),
     })
 }
@@ -191,12 +343,20 @@ pub(crate) fn from_openai_stream_chunk(chunk: OpenAIStreamChunk) -> StreamChunk 
                 delta: StreamDelta {
                     role: c.delta.role,
                     content: c.delta.content,
-                    tool_calls: None,
+                    reasoning_content: c.delta.reasoning_content,
+                    tool_calls: c.delta.tool_calls,
                 },
                 finish_reason: c.finish_reason,
             })
             .collect(),
-        usage: None,
+        usage: chunk.usage.map(|u| Usage {
+            prompt_tokens: u.prompt_tokens,
+            completion_tokens: u.completion_tokens,
+            total_tokens: u.total_tokens,
+            reasoning_tokens: u.reasoning_tokens,
+            prompt_cache_hit_tokens: u.prompt_cache_hit_tokens,
+            prompt_cache_miss_tokens: u.prompt_cache_miss_tokens,
+        }),
     }
 }
 

@@ -11,8 +11,9 @@ use pylos_core::domain::traits::{ChunkStream, Provider};
 use pylos_core::error::PylosError;
 
 use super::converters::{
-    from_openai_response, from_openai_stream_chunk, map_openai_error, to_openai_request,
-    OpenAIChatResponse, OpenAIStreamChunk,
+    from_openai_response, from_openai_stream_chunk, from_openai_text_response,
+    from_openai_text_stream_chunk, map_openai_error, to_openai_request, to_openai_text_request,
+    OpenAIChatResponse, OpenAIStreamChunk, OpenAITextResponse,
 };
 use super::embedding::{
     from_openai_embedding_response, to_openai_embedding_request, OpenAIEmbeddingResponse,
@@ -125,7 +126,44 @@ impl Provider for OpenAIProvider {
                 debug!(provider = "openai", id = %openai_resp.id, "Chat completion successful");
                 Ok(from_openai_response(openai_resp))
             }
-            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => Err(
+            PylosRequest::TextCompletion(req) => {
+                let openai_req = to_openai_text_request(req, false);
+                let url = format!("{}/completions", base_url);
+
+                debug!(provider = "openai", model = %req.model, url = %url, "Sending text completion request");
+
+                let response = self
+                    .client
+                    .post(&url)
+                    .bearer_auth(api_key)
+                    .json(&openai_req)
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        if e.is_timeout() {
+                            PylosError::Timeout(e.to_string())
+                        } else {
+                            PylosError::ProviderError {
+                                provider: "openai".into(),
+                                message: e.to_string(),
+                            }
+                        }
+                    })?;
+
+                let status = response.status().as_u16();
+
+                if !response.status().is_success() {
+                    let body = response.text().await.unwrap_or_default();
+                    return Err(map_openai_error(status, &body));
+                }
+
+                let openai_resp: OpenAITextResponse = response.json().await.map_err(|e| {
+                    PylosError::Internal(format!("Failed to parse OpenAI response: {}", e))
+                })?;
+
+                Ok(from_openai_text_response(openai_resp))
+            }
+            PylosRequest::Embedding(_) => Err(
                 PylosError::InvalidRequest("Use the embed() method for embedding requests".into()),
             ),
         }
@@ -221,7 +259,59 @@ impl Provider for OpenAIProvider {
 
                 Ok(Box::pin(stream))
             }
-            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => {
+            PylosRequest::TextCompletion(req) => {
+                let openai_req = to_openai_text_request(req, true);
+                let url = format!("{}/completions", base_url);
+
+                debug!(provider = "openai", model = %req.model, url = %url, "Sending streaming text completion");
+
+                let response = self
+                    .client
+                    .post(&url)
+                    .bearer_auth(api_key)
+                    .json(&openai_req)
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        if e.is_timeout() {
+                            PylosError::Timeout(e.to_string())
+                        } else {
+                            PylosError::ProviderError {
+                                provider: "openai".into(),
+                                message: e.to_string(),
+                            }
+                        }
+                    })?;
+
+                let status = response.status().as_u16();
+
+                if !response.status().is_success() {
+                    let body = response.text().await.unwrap_or_default();
+                    return Err(map_openai_error(status, &body));
+                }
+
+                let stream = response
+                    .bytes_stream()
+                    .eventsource()
+                    .filter_map(|event| async move {
+                        match event {
+                            Ok(e) => {
+                                let data = e.data.trim().to_string();
+                                if data == "[DONE]" {
+                                    return None;
+                                }
+                                match serde_json::from_str::<OpenAITextResponse>(&data) {
+                                    Ok(resp) => Some(Ok(from_openai_text_stream_chunk(resp))),
+                                    Err(_) => None,
+                                }
+                            }
+                            Err(_) => None,
+                        }
+                    });
+
+                Ok(Box::pin(stream))
+            }
+            PylosRequest::Embedding(_) => {
                 Err(PylosError::InvalidRequest(
                     "Use the /v1/embeddings endpoint for embedding requests".into(),
                 ))

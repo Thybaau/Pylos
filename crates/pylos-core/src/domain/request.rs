@@ -57,12 +57,15 @@ pub struct StreamChoice {
     pub finish_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StreamDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    /// Contenu de raisonnement (DeepSeek R1, OpenAI o1/o3)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     /// Tool call chunks (format OpenAI streaming)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<StreamToolCallChunk>>,

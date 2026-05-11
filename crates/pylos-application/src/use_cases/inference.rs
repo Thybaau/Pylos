@@ -405,6 +405,7 @@ fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
                 || model.starts_with("accounts/fireworks/")
         }
         ProviderKind::XAI => model.starts_with("grok"),
+        ProviderKind::DeepSeek => model.starts_with("deepseek"),
         ProviderKind::Nebius => {
             model.contains("llama") || model.contains("qwen") || model.contains("deepseek")
         }
