@@ -277,6 +277,7 @@ pub(crate) fn from_bedrock_response(
         prompt_tokens: u.input_tokens(),
         completion_tokens: u.output_tokens(),
         total_tokens: u.total_tokens(),
+        ..Default::default()
     });
 
     PylosResponse::ChatCompletion(ChatCompletionResponse {
@@ -289,13 +290,12 @@ pub(crate) fn from_bedrock_response(
             message: ChatCompletionMessage {
                 role: MessageRole::Assistant,
                 content,
-                name: None,
                 tool_calls: if tool_calls.is_empty() {
                     None
                 } else {
                     Some(tool_calls)
                 },
-                tool_call_id: None,
+                ..Default::default()
             },
             finish_reason: Some(finish_reason.to_string()),
         }],
@@ -321,7 +321,7 @@ pub(crate) fn make_stream_chunk(
             delta: StreamDelta {
                 role,
                 content,
-                tool_calls: None,
+                ..Default::default()
             },
             finish_reason,
         }],
@@ -343,9 +343,8 @@ pub(crate) fn make_tool_stream_chunk(
         choices: vec![StreamChoice {
             index: 0,
             delta: StreamDelta {
-                role: None,
-                content: None,
                 tool_calls: Some(vec![tool_chunk]),
+                ..Default::default()
             },
             finish_reason: None,
         }],
@@ -416,16 +415,12 @@ mod tests {
             ChatCompletionMessage {
                 role: MessageRole::System,
                 content: Some("You are helpful.".into()),
-                name: None,
-                tool_calls: None,
-                tool_call_id: None,
+                ..Default::default()
             },
             ChatCompletionMessage {
                 role: MessageRole::User,
                 content: Some("Hello".into()),
-                name: None,
-                tool_calls: None,
-                tool_call_id: None,
+                ..Default::default()
             },
         ];
 
@@ -448,9 +443,7 @@ mod tests {
             ChatCompletionMessage {
                 role: MessageRole::Assistant,
                 content: Some("Hello!".into()),
-                name: None,
-                tool_calls: None,
-                tool_call_id: None,
+                ..Default::default()
             },
         ];
 
@@ -485,6 +478,7 @@ mod tests {
             top_k: None,
             min_p: None,
             repetition_penalty: None,
+            max_completion_tokens: None,
         };
 
         let config = build_inference_config(&req);

@@ -263,6 +263,13 @@ pub(crate) fn from_openai_text_response(resp: OpenAITextResponse) -> PylosRespon
                 finish_reason: c.finish_reason,
             })
             .collect(),
+        usage: resp.usage.map(|u| Usage {
+            prompt_tokens: u.prompt_tokens,
+            completion_tokens: u.completion_tokens,
+            total_tokens: u.total_tokens,
+            reasoning_tokens: u.reasoning_tokens,
+            prompt_cache_hit_tokens: u.prompt_cache_hit_tokens,
+            prompt_cache_miss_tokens: u.prompt_cache_miss_tokens,
         }),
     })
 }

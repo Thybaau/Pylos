@@ -39,6 +39,7 @@ pub async fn create_embeddings(
                 prompt_tokens: resp.usage.prompt_tokens,
                 completion_tokens: 0,
                 total_tokens: resp.usage.prompt_tokens,
+                ..Default::default()
             };
             let entry = build_log_entry(
                 &provider,

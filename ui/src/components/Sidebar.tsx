@@ -5,7 +5,6 @@ import {
   Server,
   KeyRound,
   Activity,
-  Zap,
   ChevronLeft,
   ChevronRight,
   FlaskConical,
@@ -44,8 +43,8 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-gray-800">
-        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-          <Zap size={16} className="text-white" />
+        <div className="flex-shrink-0 w-8 h-8 overflow-hidden rounded-lg bg-gray-800">
+          <img src="/logo.png" alt="Pylos" className="w-full h-full object-contain" />
         </div>
         {!collapsed && (
           <span className="font-bold text-white text-lg">Pylos</span>

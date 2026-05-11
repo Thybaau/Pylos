@@ -222,6 +222,7 @@ async fn stream_response(
                         prompt_tokens: 0,
                         completion_tokens,
                         total_tokens: completion_tokens,
+                        ..Default::default()
                     };
 
                     let entry = build_log_entry(

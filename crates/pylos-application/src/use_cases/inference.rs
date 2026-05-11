@@ -94,9 +94,7 @@ impl InferenceOrchestrator {
                 messages: vec![ChatCompletionMessage {
                     role: MessageRole::User,
                     content: Some(prompt.clone()),
-                    name: None,
-                    tool_calls: None,
-                    tool_call_id: None,
+                    ..Default::default()
                 }],
                 temperature: tc.temperature,
                 top_p: tc.top_p,
@@ -115,6 +113,7 @@ impl InferenceOrchestrator {
                 top_k: None,
                 min_p: None,
                 repetition_penalty: None,
+                max_completion_tokens: None,
             };
             let original_model = tc.model.clone();
             request = PylosRequest::ChatCompletion(chat_req);
@@ -451,7 +450,7 @@ pub(crate) fn make_terminal_chunk(
                 } else {
                     Some(content.to_string())
                 },
-                tool_calls: None,
+                ..Default::default()
             },
             finish_reason: Some("stop".into()),
         }],
