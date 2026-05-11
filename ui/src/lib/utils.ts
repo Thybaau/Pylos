@@ -41,6 +41,8 @@ export const PROVIDER_COLORS: Record<string, string> = {
   openrouter: '#6366f1',
   mistral: '#ff6b6b',
   groq: '#f43f5e',
+  deepseek: '#4b8bf4',
+  ollama: '#f9f9f9',
   unknown: '#6b7280',
 }
 

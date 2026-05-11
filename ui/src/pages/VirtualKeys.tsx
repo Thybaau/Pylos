@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { virtualKeysApi, type VirtualKey, type VkBudgetResponse } from '../lib/api'
+import { virtualKeysApi, providersApi, modelsApi, type VirtualKey, type VkBudgetResponse } from '../lib/api'
+import { providerColor } from '../lib/utils'
 import {
   KeyRound, CheckCircle, XCircle, Shield, TrendingUp,
   ChevronDown, ChevronUp, Plus, Pencil, Trash2, X, Check,
-  AlertTriangle, RotateCcw, Copy,
+  AlertTriangle, RotateCcw, Copy, Server,
 } from 'lucide-react'
 
 // ─── Budget / Rate panel (unchanged) ─────────────────────────────────────────
@@ -123,6 +124,177 @@ function formToPayload(form: VkFormState) {
       weight: pc.weight,
     })),
   }
+}
+
+// ─── Governance Sub-components ──────────────────────────────────────────────
+
+function ProviderSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { data } = useQuery({ queryKey: ['providers'], queryFn: providersApi.getAll })
+  const providers = data?.providers ?? []
+
+  return (
+    <div className="relative group">
+      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-blue-400">
+        <Server size={14} />
+      </div>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-200
+          appearance-none focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+      >
+        <option value="" disabled>Select provider…</option>
+        {providers.map(p => (
+          <option key={p.name} value={p.name}>{p.name.charAt(0).toUpperCase() + p.name.slice(1)}</option>
+        ))}
+      </select>
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-600">
+        <ChevronDown size={14} />
+      </div>
+    </div>
+  )
+}
+
+function ModelSelector({ provider, value, onChange }: { provider: string; value: string; onChange: (v: string) => void }) {
+  const { data: modelsData } = useQuery({
+    queryKey: ['models', provider],
+    queryFn: () => modelsApi.getAll(provider),
+    enabled: !!provider && provider !== '*',
+  })
+
+  const models = modelsData?.data ?? []
+  const selectedModels = value.split(',').map(s => s.trim()).filter(Boolean)
+
+  const toggleModel = (m: string) => {
+    let next: string[]
+    if (m === '*') {
+      next = ['*']
+    } else {
+      const currentWithoutWildcard = selectedModels.filter(s => s !== '*')
+      if (currentWithoutWildcard.includes(m)) {
+        next = currentWithoutWildcard.filter(s => s !== m)
+      } else {
+        next = [...currentWithoutWildcard, m]
+      }
+    }
+    onChange(next.join(', '))
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5 p-2 bg-gray-900 border border-gray-700 rounded-lg min-h-[42px]">
+        {selectedModels.map(m => (
+          <span key={m} className="flex items-center gap-1 px-2 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/20 rounded text-[10px] font-medium">
+            {m}
+            <button onClick={() => toggleModel(m)} className="hover:text-white"><X size={10} /></button>
+          </span>
+        ))}
+        {selectedModels.length === 0 && <span className="text-xs text-gray-600 px-1 py-0.5">Pick models…</span>}
+      </div>
+
+      {provider && (
+        <div className="max-h-32 overflow-y-auto p-1 bg-gray-900/50 border border-gray-800 rounded-lg grid grid-cols-2 gap-1 custom-scrollbar">
+          <button
+            onClick={() => toggleModel('*')}
+            className={`text-left px-2 py-1.5 rounded text-[10px] transition-colors ${
+              selectedModels.includes('*') ? 'bg-blue-600/20 text-blue-400' : 'text-gray-500 hover:bg-gray-800'
+            }`}
+          >
+            All Models (*)
+          </button>
+          {models.map(m => (
+            <button
+              key={m.id}
+              onClick={() => toggleModel(m.pylos.model_id)}
+              className={`text-left px-2 py-1.5 rounded text-[10px] truncate transition-colors ${
+                selectedModels.includes(m.pylos.model_id) ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:bg-gray-800'
+              }`}
+              title={m.pylos.model_id}
+            >
+              {m.pylos.model_id}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProviderConfigItem({
+  pc,
+  index,
+  onUpdate,
+  onRemove,
+}: {
+  pc: ProviderCfgEntry
+  index: number
+  onUpdate: (i: number, field: keyof ProviderCfgEntry, value: string | number) => void
+  onRemove: (i: number) => void
+}) {
+  const color = providerColor(pc.provider)
+
+  return (
+    <div className="bg-gray-900/40 border border-gray-800 rounded-xl overflow-hidden transition-all hover:border-gray-700/50">
+      <div className="px-4 py-2 bg-gray-800/30 border-b border-gray-800 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+            Rule #{index + 1}
+          </span>
+        </div>
+        <button
+          onClick={() => onRemove(index)}
+          className="p-1 text-gray-600 hover:text-red-400 transition-colors"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+
+      <div className="p-4 space-y-4">
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-7 space-y-3">
+            <div>
+              <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1.5 ml-1">Provider</label>
+              <ProviderSelector value={pc.provider} onChange={v => onUpdate(index, 'provider', v)} />
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1.5 ml-1">Allowed Models</label>
+              <ModelSelector
+                provider={pc.provider}
+                value={pc.models}
+                onChange={v => onUpdate(index, 'models', v)}
+              />
+            </div>
+          </div>
+
+          <div className="col-span-5">
+            <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1.5 ml-1">Routing Weight</label>
+            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 space-y-3">
+              <input
+                type="range"
+                min="0"
+                max="10"
+                step="0.1"
+                value={pc.weight}
+                onChange={e => onUpdate(index, 'weight', parseFloat(e.target.value))}
+                className="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-500">Low</span>
+                <div className="bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded text-xs font-mono font-bold">
+                  {pc.weight.toFixed(1)}
+                </div>
+                <span className="text-[10px] text-gray-500">High</span>
+              </div>
+              <p className="text-[9px] text-gray-600 leading-tight">
+                Higher weight increases the probability of choosing this provider when multiple match.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ─── VkModal ──────────────────────────────────────────────────────────────────
@@ -261,61 +433,31 @@ function VkModal({
 
           {/* Provider configs */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-gray-400">Allowed providers</label>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Governance Settings</label>
               <button
                 onClick={addPc}
-                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                className="text-xs bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2 py-1 rounded flex items-center gap-1 transition-all"
               >
-                <Plus size={12} /> Add
+                <Plus size={12} /> Add Rule
               </button>
             </div>
             {form.provider_configs.length === 0 ? (
-              <p className="text-xs text-gray-600 italic">No restrictions — all configured providers allowed</p>
+              <div className="bg-gray-800/40 border border-dashed border-gray-700 rounded-xl p-8 text-center">
+                <Shield size={24} className="text-gray-700 mx-auto mb-2" />
+                <p className="text-xs text-gray-500">No restrictions — all configured providers allowed</p>
+                <button onClick={addPc} className="mt-4 text-xs text-blue-400 hover:underline">Add your first governance rule</button>
+              </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-4">
                 {form.provider_configs.map((pc, i) => (
-                  <div key={i} className="bg-gray-800/60 rounded-lg p-3 grid grid-cols-3 gap-2 border border-gray-700/50">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Provider</label>
-                      <input
-                        value={pc.provider}
-                        onChange={e => setPc(i, 'provider', e.target.value)}
-                        placeholder="openai"
-                        className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200
-                          focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Models</label>
-                      <input
-                        value={pc.models}
-                        onChange={e => setPc(i, 'models', e.target.value)}
-                        placeholder="*, gpt-4o"
-                        className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200
-                          font-mono focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                    <div className="flex items-end gap-2">
-                      <div className="flex-1">
-                        <label className="block text-xs text-gray-500 mb-1">Weight</label>
-                        <input
-                          type="number"
-                          value={pc.weight}
-                          onChange={e => setPc(i, 'weight', Number(e.target.value))}
-                          min={0.1} max={10} step={0.1}
-                          className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200
-                            focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                      <button
-                        onClick={() => removePc(i)}
-                        className="mb-0.5 p-1.5 text-gray-600 hover:text-red-400 transition-colors"
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
-                  </div>
+                  <ProviderConfigItem
+                    key={i}
+                    pc={pc}
+                    index={i}
+                    onUpdate={setPc}
+                    onRemove={removePc}
+                  />
                 ))}
               </div>
             )}
