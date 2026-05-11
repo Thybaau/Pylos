@@ -349,6 +349,7 @@ pub(crate) fn from_cohere_response(resp: CohereChatResponse) -> PylosResponse {
             prompt_tokens: t.input_tokens.unwrap_or(0),
             completion_tokens: t.output_tokens.unwrap_or(0),
             total_tokens: t.input_tokens.unwrap_or(0) + t.output_tokens.unwrap_or(0),
+            ..Default::default()
         });
 
     let id = resp
@@ -374,13 +375,12 @@ pub(crate) fn from_cohere_response(resp: CohereChatResponse) -> PylosResponse {
             message: ChatCompletionMessage {
                 role: MessageRole::Assistant,
                 content,
-                name: None,
                 tool_calls: if tool_calls.is_empty() {
                     None
                 } else {
                     Some(tool_calls)
                 },
-                tool_call_id: None,
+                ..Default::default()
             },
             finish_reason,
         }],
@@ -415,9 +415,8 @@ pub(crate) fn from_cohere_stream_event(
                 choices: vec![StreamChoice {
                     index: 0,
                     delta: StreamDelta {
-                        role: None,
                         content: text,
-                        tool_calls: None,
+                        ..Default::default()
                     },
                     finish_reason: None,
                 }],
@@ -457,9 +456,8 @@ pub(crate) fn from_cohere_stream_event(
                 choices: vec![StreamChoice {
                     index: 0,
                     delta: StreamDelta {
-                        role: None,
-                        content: None,
                         tool_calls: Some(tcs),
+                        ..Default::default()
                     },
                     finish_reason: None,
                 }],
@@ -483,11 +481,7 @@ pub(crate) fn from_cohere_stream_event(
                 model: model.to_string(),
                 choices: vec![StreamChoice {
                     index: 0,
-                    delta: StreamDelta {
-                        role: None,
-                        content: None,
-                        tool_calls: None,
-                    },
+                    delta: StreamDelta::default(),
                     finish_reason,
                 }],
                 usage: None,
@@ -600,16 +594,12 @@ mod tests {
                 ChatCompletionMessage {
                     role: MessageRole::System,
                     content: Some("Be helpful".to_string()),
-                    name: None,
-                    tool_calls: None,
-                    tool_call_id: None,
+                    ..Default::default()
                 },
                 ChatCompletionMessage {
                     role: MessageRole::User,
                     content: Some("Hello".to_string()),
-                    name: None,
-                    tool_calls: None,
-                    tool_call_id: None,
+                    ..Default::default()
                 },
             ],
             stream: Some(false),
@@ -629,6 +619,7 @@ mod tests {
             top_k: None,
             min_p: None,
             repetition_penalty: None,
+            max_completion_tokens: None,
         };
         let cohere_req = to_cohere_request(&req, false);
         assert_eq!(cohere_req.messages[0].role, "system");
