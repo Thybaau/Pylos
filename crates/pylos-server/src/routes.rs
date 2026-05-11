@@ -1,11 +1,11 @@
 use crate::interfaces::http::{
     completions, config, embeddings, health, inference, logs, metrics, models,
 };
-use crate::middleware::virtual_key_middleware;
+use crate::middleware::{management_auth_middleware, virtual_key_middleware};
 use crate::state::AppState;
 use axum::{
     middleware,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Router,
 };
 use tower_http::cors::CorsLayer;
@@ -30,8 +30,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/logs/histogram/tokens", get(logs::get_token_histogram))
         .route("/api/logs/filterdata", get(logs::get_filter_data));
 
-    // Routes de gestion de la config
-    let config_routes = Router::new()
+    // Routes de gestion — protégées par le middleware Management Auth
+    let management_routes = Router::new()
         .route("/config", get(config::get_config))
         .route("/config/reload", post(config::reload_config))
         // Providers CRUD
@@ -55,20 +55,30 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/virtual-keys/:id/budget",
             get(config::get_virtual_key_budget),
-        );
+        )
+        // Model catalog CRUD
+        .route("/v1/models/catalog", post(models::upsert_catalog_model))
+        .route(
+            "/v1/models/catalog/:provider/:model_id",
+            delete(models::delete_catalog_model),
+        )
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            management_auth_middleware,
+        ));
 
     Router::new()
         .route("/", get(health::root))
         .route("/health", get(health::health_check))
         .route("/metrics", get(metrics::metrics))
-        // Models catalog
+        // Models read-only (pas d'auth)
         .route("/v1/models", get(models::list_models))
         // Inférence
         .merge(inference_routes)
         // Logs API
         .merge(logs_routes)
-        // Config API
-        .merge(config_routes)
+        // Management API (protégée)
+        .merge(management_routes)
         // Middleware global
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())

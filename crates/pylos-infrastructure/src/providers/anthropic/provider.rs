@@ -176,8 +176,7 @@ impl Provider for AnthropicProvider {
                     return Err(map_anthropic_error(status, &body));
                 }
 
-                // Contexte partagé pour accumuler les métadonnées (id, model)
-                // Utilisé lors du traitement des events content_block_delta
+                // Contexte partagé pour accumuler les métadonnées (id, model, tool state)
                 let ctx = std::sync::Arc::new(tokio::sync::Mutex::new(StreamContext {
                     message_id: format!("msg_{}", fastrand::u64(..)),
                     model: req.model.clone(),
@@ -185,6 +184,7 @@ impl Provider for AnthropicProvider {
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_secs() as i64,
+                    ..Default::default()
                 }));
 
                 let stream = response
@@ -212,8 +212,8 @@ impl Provider for AnthropicProvider {
                                                 return None;
                                             }
 
-                                            let c = ctx.lock().await;
-                                            from_anthropic_stream_event(stream_event, &c).map(Ok)
+                                            let mut c = ctx.lock().await;
+                                            from_anthropic_stream_event(stream_event, &mut c).map(Ok)
                                         }
                                         Err(parse_err) => {
                                             if !data.is_empty() {

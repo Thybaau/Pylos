@@ -708,6 +708,7 @@ pub fn generate_log_id() -> String {
     format!("log_{}", fastrand::u64(..))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_log_entry(
     provider: &str,
     model: &str,
@@ -770,17 +771,87 @@ fn estimate_cost(provider: &str, model: &str, prompt: i32, completion: i32) -> f
                 (0.15, 0.60)
             } else if model.contains("gpt-4o") {
                 (5.0, 15.0)
+            } else if model.contains("o4-mini") || model.contains("o3-mini") {
+                (1.1, 4.4)
+            } else if model.contains("o3") {
+                (10.0, 40.0)
+            } else if model.contains("o1-mini") {
+                (3.0, 12.0)
+            } else if model.contains("o1") {
+                (15.0, 60.0)
+            } else if model.starts_with("text-embedding") {
+                (0.1, 0.0)
             } else {
                 (1.0, 3.0)
             }
         }
         "anthropic" => {
-            if model.contains("haiku") {
+            if model.contains("haiku-3-5") || model.contains("haiku-4") {
+                (0.8, 4.0)
+            } else if model.contains("haiku") {
                 (0.25, 1.25)
-            } else if model.contains("sonnet") {
+            } else if model.contains("sonnet-4") || model.contains("sonnet-3-7") || model.contains("sonnet") {
                 (3.0, 15.0)
             } else {
+                // opus and unknown
                 (15.0, 75.0)
+            }
+        }
+        "gemini" => {
+            if model.contains("2.5-pro") {
+                (7.0, 21.0)
+            } else if model.contains("2.5-flash") {
+                (0.3, 2.5)
+            } else if model.contains("2.0-flash") {
+                (0.1, 0.4)
+            } else if model.contains("1.5-pro") {
+                (3.5, 10.5)
+            } else if model.contains("1.5-flash") {
+                (0.075, 0.3)
+            } else if model.contains("embedding") {
+                (0.025, 0.0)
+            } else {
+                (0.5, 1.5)
+            }
+        }
+        "cohere" => {
+            if model.contains("command-a") {
+                (2.5, 10.0)
+            } else if model.contains("command-r-plus") {
+                (3.0, 15.0)
+            } else if model.contains("command-r") {
+                (0.15, 0.60)
+            } else if model.contains("embed") {
+                (0.1, 0.0)
+            } else {
+                (1.0, 3.0)
+            }
+        }
+        "groq" => {
+            if model.contains("llama-3.3-70b") || model.contains("llama-3.1-70b") {
+                (0.59, 0.79)
+            } else if model.contains("llama-3.1-8b") {
+                (0.05, 0.08)
+            } else if model.contains("mixtral") {
+                (0.24, 0.24)
+            } else {
+                (0.2, 0.2)
+            }
+        }
+        "mistral" => {
+            if model.contains("large") {
+                (3.0, 9.0)
+            } else if model.contains("codestral") {
+                (0.3, 0.9)
+            } else {
+                (0.2, 0.6)
+            }
+        }
+        "xai" => {
+            if model.contains("grok-3-mini") {
+                (0.3, 0.5)
+            } else {
+                (5.0, 15.0)
             }
         }
         "bedrock" => {
@@ -788,10 +859,14 @@ fn estimate_cost(provider: &str, model: &str, prompt: i32, completion: i32) -> f
                 (0.06, 0.24)
             } else if model.contains("nova-pro") {
                 (0.80, 3.20)
+            } else if model.contains("nova-micro") {
+                (0.035, 0.14)
             } else if model.contains("haiku") {
                 (0.25, 1.25)
-            } else if model.contains("claude") {
+            } else if model.contains("sonnet") {
                 (3.0, 15.0)
+            } else if model.contains("claude") {
+                (15.0, 75.0)
             } else {
                 (0.50, 1.50)
             }

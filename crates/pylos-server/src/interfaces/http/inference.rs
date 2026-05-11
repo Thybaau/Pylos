@@ -12,7 +12,7 @@ use axum::{
 };
 use futures::StreamExt;
 use serde_json::json;
-use tokio::sync::{mpsc, Mutex as AsyncMutex};
+use tokio::sync::mpsc;
 use tracing::error;
 
 use pylos_application::log_store::{build_log_entry, LogStatus};
@@ -21,6 +21,7 @@ use pylos_core::domain::request::{PylosRequest, RequestContext, StreamChunk};
 use pylos_core::error::PylosError;
 
 use crate::middleware::virtual_key::VirtualKeyInfo;
+use crate::provider_utils::guess_provider;
 use crate::state::AppState;
 
 /// Handler POST /v1/chat/completions
@@ -159,8 +160,10 @@ async fn stream_response(
             let provider = guess_provider(&model);
             let vk_name = vk_info.map(|v| v.name);
 
-            // Accumulateur partagé entre le stream et le done_event
-            let accumulator = Arc::new(AsyncMutex::new(StreamAccumulator::default()));
+            // Accumulateur partagé entre le stream et le done_event.
+            // Utilise std::sync::Mutex (sync) pour pouvoir s'acquérir dans les
+            // closures synchrones du .map() sans risque de bloquer ni de perdre des chunks.
+            let accumulator = Arc::new(std::sync::Mutex::new(StreamAccumulator::default()));
             let acc_stream = Arc::clone(&accumulator);
 
             // Canal pour déclencher le logging après [DONE]
@@ -172,7 +175,9 @@ async fn stream_response(
             let sse_stream = chunk_stream.map(move |result| {
                 match &result {
                     Ok(chunk) => {
-                        if let Ok(mut acc) = acc_stream.try_lock() {
+                        // lock() ne peut jamais paniquer ici : pas de poison possible
+                        // dans ce contexte single-producer
+                        if let Ok(mut acc) = acc_stream.lock() {
                             acc.collect(chunk);
                         }
                     }
@@ -201,19 +206,23 @@ async fn stream_response(
             tokio::spawn(async move {
                 if log_rx.recv().await.is_some() {
                     let latency = start.elapsed().as_secs_f64() * 1000.0;
-                    let acc = acc_log.lock().await;
+                    let (completion_tokens, output_preview, finish) = {
+                        let acc = acc_log.lock().expect("accumulator lock");
+                        let tokens = acc.completion_tokens as i32;
+                        let preview = if acc.output_parts.is_empty() {
+                            None
+                        } else {
+                            Some(acc.output_parts.join(""))
+                        };
+                        let finish = acc.finish_reason.clone().or_else(|| Some("stop".into()));
+                        (tokens, preview, finish)
+                    };
+
                     let pseudo_usage = pylos_core::domain::openai::Usage {
                         prompt_tokens: 0,
-                        completion_tokens: acc.completion_tokens as i32,
-                        total_tokens: acc.completion_tokens as i32,
+                        completion_tokens,
+                        total_tokens: completion_tokens,
                     };
-                    let output_preview = if acc.output_parts.is_empty() {
-                        None
-                    } else {
-                        Some(acc.output_parts.join(""))
-                    };
-                    let finish = acc.finish_reason.clone().or_else(|| Some("stop".into()));
-                    drop(acc);
 
                     let entry = build_log_entry(
                         &provider,
@@ -285,43 +294,4 @@ pub fn error_response(error: &PylosError) -> Response {
     });
 
     (status, Json(body)).into_response()
-}
-
-/// Déduit le provider depuis le nom du modèle
-fn guess_provider(model: &str) -> String {
-    if model.starts_with("us.")
-        || model.starts_with("eu.")
-        || model.starts_with("ap.")
-        || model.starts_with("amazon.")
-        || model.contains("nova")
-        || model.contains("titan")
-    {
-        return "bedrock".to_string();
-    }
-    if model.starts_with("anthropic.") {
-        return "bedrock".to_string();
-    }
-    if model.contains("claude") {
-        return "anthropic".to_string();
-    }
-    if model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3") {
-        return "openai".to_string();
-    }
-    if model.contains('/') {
-        return "openrouter".to_string();
-    }
-    if model.contains(':')
-        || model.contains("llama")
-        || model.contains("qwen")
-        || model.contains("codestral")
-        || model.contains("deepseek")
-        || model.contains("starcoder")
-        || model.contains("nomic")
-        || model.contains("mistral")
-        || model.contains("gemma")
-        || model.contains("phi")
-    {
-        return "ollama".to_string();
-    }
-    "unknown".to_string()
 }

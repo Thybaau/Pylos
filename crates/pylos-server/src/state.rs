@@ -19,6 +19,8 @@ pub struct AppState {
     pub model_catalog: Arc<ModelCatalog>,
     pub budget_store: Arc<BudgetStore>,
     pub rate_limit_store: Arc<RateLimitStore>,
+    /// Clé admin optionnelle — lue depuis PYLOS_ADMIN_KEY au démarrage
+    pub admin_key: Option<String>,
 }
 
 impl AppState {
@@ -173,6 +175,7 @@ impl AppState {
             model_catalog,
             budget_store,
             rate_limit_store,
+            admin_key: std::env::var("PYLOS_ADMIN_KEY").ok(),
         })
     }
 }

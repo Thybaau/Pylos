@@ -66,58 +66,53 @@ impl KeyUsage {
 
 /// Registre de Virtual Keys en mémoire
 /// Version simplifiée du governance plugin de bifrost
-/// (en production : stocker dans SQLite/Postgres via framework/configstore)
 #[derive(Clone)]
 pub struct VirtualKeyRegistry {
-    keys: Arc<RwLock<HashMap<String, VirtualKey>>>,
-    usage: Arc<RwLock<HashMap<String, KeyUsage>>>,
+    /// Table combinée clé → (VirtualKey, KeyUsage) sous un unique RwLock
+    /// Évite tout TOCTOU : check + incrément se font sous un seul write lock
+    inner: Arc<RwLock<HashMap<String, (VirtualKey, KeyUsage)>>>,
 }
 
 impl VirtualKeyRegistry {
     pub fn new() -> Self {
         Self {
-            keys: Arc::new(RwLock::new(HashMap::new())),
-            usage: Arc::new(RwLock::new(HashMap::new())),
+            inner: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     /// Enregistre une nouvelle Virtual Key
     pub async fn register(&self, vk: VirtualKey) {
-        self.keys.write().await.insert(vk.key.clone(), vk);
+        self.inner
+            .write()
+            .await
+            .insert(vk.key.clone(), (vk, KeyUsage::default()));
     }
 
-    /// Vérifie si la clé existe et si le rate limit est respecté
-    /// Retourne `Ok(VirtualKey)` si autorisé, `Err(message)` sinon
+    /// Vérifie si la clé existe et si le rate limit est respecté (atomique, sans TOCTOU).
+    /// Check + incrément se font sous un unique write lock.
     pub async fn check_and_increment(&self, key: &str) -> Result<VirtualKey, String> {
-        // La clé doit commencer par le préfixe
         if !key.starts_with(VIRTUAL_KEY_PREFIX) {
             return Err("Invalid virtual key format".into());
         }
 
-        let keys = self.keys.read().await;
-        let vk = keys
-            .get(key)
-            .ok_or_else(|| "Virtual key not found".to_string())?
-            .clone();
-        drop(keys);
+        let mut map = self.inner.write().await;
 
-        // Vérification du rate limit
+        let (vk, usage) = map
+            .get_mut(key)
+            .ok_or_else(|| "Virtual key not found".to_string())?;
+
         if vk.rate_limit_rpm > 0 {
-            let mut usage_map = self.usage.write().await;
-            let usage = usage_map.entry(key.to_string()).or_default();
             usage.reset_if_expired();
-
             if usage.requests >= vk.rate_limit_rpm {
                 return Err(format!(
                     "Rate limit exceeded: {} requests/minute for key '{}'",
                     vk.rate_limit_rpm, vk.name
                 ));
             }
-
             usage.requests += 1;
         }
 
-        Ok(vk)
+        Ok(vk.clone())
     }
 }
 

@@ -39,11 +39,20 @@ async fn main() -> anyhow::Result<()> {
     // Construction de l'état depuis la config
     let state = AppState::from_config(config_path).await?;
 
+    // Warning si l'API management n'est pas protégée
+    if state.admin_key.is_none() {
+        tracing::warn!(
+            "PYLOS_ADMIN_KEY is not set — management API (/providers, /virtual-keys, /config) is unprotected"
+        );
+    } else {
+        tracing::info!("Management API protected with PYLOS_ADMIN_KEY");
+    }
+
     // Port depuis la config ou PORT env var (env var prioritaire pour docker/k8s)
     let port = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or_else(|| state.config_store.get_sync_port());
+        .unwrap_or(state.config_store.get_port().await);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
 

@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS model_catalog (
     input_price_per_1m_usd  REAL    NOT NULL DEFAULT 0.0,
     output_price_per_1m_usd REAL    NOT NULL DEFAULT 0.0,
     supports_vision         INTEGER NOT NULL DEFAULT 0,
-    supports_tools          INTEGER NOT NULL DEFAULT 0,
+    supports_tools          INTEGER NOT NULL DEFAULT 1,
     supports_streaming      INTEGER NOT NULL DEFAULT 1,
     supports_embeddings     INTEGER NOT NULL DEFAULT 0,
     is_deprecated           INTEGER NOT NULL DEFAULT 0,

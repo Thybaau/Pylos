@@ -239,15 +239,33 @@ pub async fn create_virtual_key(
         description: req.description,
         value: Some(EnvVar::Literal(key_value.clone())),
         is_active: req.is_active,
-        rate_limit_id: req.rate_limit_id,
+        rate_limit_id: req.rate_limit_id.clone(),
         provider_configs: req.provider_configs,
     };
 
     match state.config_store.add_virtual_key(vk_cfg).await {
         Ok(()) => {
-            // Enregistre dans le VK registry
-            let vk = pylos_core::domain::virtual_key::VirtualKey::new(key_value.clone(), &req.name);
+            // Résout le RPM depuis la config pour l'enregistrer correctement dans le registry
+            let cfg = state.config_store.get().await;
+            let rpm = req
+                .rate_limit_id
+                .as_ref()
+                .and_then(|rl_id| cfg.governance.rate_limits.iter().find(|r| &r.id == rl_id))
+                .map(|rl| rl.request_max_limit)
+                .unwrap_or(0);
+
+            let vk = pylos_core::domain::virtual_key::VirtualKey::new(key_value.clone(), &req.name)
+                .with_rpm(rpm);
             state.vk_registry.register(vk).await;
+
+            // Propage le rate limit au store SQLite persistant
+            if let Some(rl_id) = &req.rate_limit_id {
+                if let Some(rl_cfg) = cfg.governance.rate_limits.iter().find(|r| &r.id == rl_id) {
+                    if let Err(e) = state.rate_limit_store.upsert_rate_limit(&id, rl_cfg).await {
+                        tracing::warn!(vk_id = %id, error = %e, "Failed to sync rate limit store on VK creation");
+                    }
+                }
+            }
 
             (
                 StatusCode::CREATED,
@@ -286,6 +304,8 @@ pub async fn update_virtual_key(
     Path(id): Path<String>,
     Json(req): Json<UpdateVirtualKeyRequest>,
 ) -> impl IntoResponse {
+    let new_rate_limit_id = req.rate_limit_id.clone();
+
     match state
         .config_store
         .update_virtual_key(&id, |vk| {
@@ -307,7 +327,18 @@ pub async fn update_virtual_key(
         })
         .await
     {
-        Ok(true) => Json(json!({ "id": id, "message": "Virtual key updated" })).into_response(),
+        Ok(true) => {
+            // Propage le nouveau rate_limit_id au store SQLite si modifié
+            if let Some(rl_id) = &new_rate_limit_id {
+                let cfg = state.config_store.get().await;
+                if let Some(rl_cfg) = cfg.governance.rate_limits.iter().find(|r| &r.id == rl_id) {
+                    if let Err(e) = state.rate_limit_store.upsert_rate_limit(&id, rl_cfg).await {
+                        tracing::warn!(vk_id = %id, error = %e, "Failed to sync rate limit store on VK update");
+                    }
+                }
+            }
+            Json(json!({ "id": id, "message": "Virtual key updated" })).into_response()
+        }
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": format!("Virtual key '{}' not found", id) })),
@@ -331,6 +362,10 @@ pub async fn delete_virtual_key(
 ) -> impl IntoResponse {
     match state.config_store.remove_virtual_key(&id).await {
         Ok(true) => {
+            // Nettoie les entrées orphelines dans les stores SQLite
+            state.budget_store.delete_vk_entries(&id).await;
+            state.rate_limit_store.delete_vk_entries(&id).await;
+
             Json(json!({ "message": format!("Virtual key '{}' deleted", id) })).into_response()
         }
         Ok(false) => (

@@ -191,10 +191,12 @@ pub(crate) fn from_openai_stream_chunk(chunk: OpenAIStreamChunk) -> StreamChunk 
                 delta: StreamDelta {
                     role: c.delta.role,
                     content: c.delta.content,
+                    tool_calls: None,
                 },
                 finish_reason: c.finish_reason,
             })
             .collect(),
+        usage: None,
     }
 }
 

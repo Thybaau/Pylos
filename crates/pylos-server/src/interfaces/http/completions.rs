@@ -9,6 +9,7 @@ use pylos_core::domain::request::{PylosRequest, RequestContext};
 
 use crate::interfaces::http::inference::error_response;
 use crate::middleware::virtual_key::VirtualKeyInfo;
+use crate::provider_utils::guess_provider;
 use crate::state::AppState;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,24 +90,4 @@ pub async fn text_completions(
             error_response(&e)
         }
     }
-}
-
-fn guess_provider(model: &str) -> String {
-    if model.starts_with("us.")
-        || model.starts_with("eu.")
-        || model.starts_with("ap.")
-        || model.starts_with("amazon.")
-        || model.contains("nova")
-        || model.contains("titan")
-        || model.starts_with("anthropic.")
-    {
-        return "bedrock".to_string();
-    }
-    if model.contains("claude") {
-        return "anthropic".to_string();
-    }
-    if model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3") {
-        return "openai".to_string();
-    }
-    "unknown".to_string()
 }

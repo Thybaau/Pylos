@@ -201,6 +201,17 @@ impl ModelCatalog {
         }
         info!(count = models.len(), "Model catalog seeded");
     }
+
+    /// Supprime un modèle du catalog
+    /// Retourne Ok(true) si supprimé, Ok(false) si non trouvé
+    pub async fn delete_model(&self, provider: &str, model_id: &str) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query("DELETE FROM model_catalog WHERE provider = ? AND model_id = ?")
+            .bind(provider)
+            .bind(model_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
 }
 
 fn row_to_model_info(row: &sqlx::sqlite::SqliteRow) -> ModelInfo {
@@ -290,7 +301,7 @@ fn builtin_models() -> Vec<ModelInfo> {
             false,
         ),
         m(
-            "openai", "o1", "o1", 200_000, 100_000, 15.0, 60.0, false, false, false,
+            "openai", "o1", "o1", 200_000, 100_000, 15.0, 60.0, false, true, false,
         ),
         m(
             "openai", "o1-mini", "o1-mini", 128_000, 65_536, 3.0, 12.0, false, false, false,
@@ -477,7 +488,7 @@ fn builtin_models() -> Vec<ModelInfo> {
             8_000,
             2.5,
             10.0,
-            false,
+            true,
             true,
             false,
         ),
@@ -575,7 +586,7 @@ fn builtin_models() -> Vec<ModelInfo> {
             8_192,
             3.0,
             9.0,
-            false,
+            true,
             true,
             false,
         ),
@@ -605,7 +616,7 @@ fn builtin_models() -> Vec<ModelInfo> {
         ),
         // ── xAI ─────────────────────────────────────────────────────────────
         m(
-            "xai", "grok-3", "Grok 3", 131_072, 8_192, 5.0, 15.0, false, true, false,
+            "xai", "grok-3", "Grok 3", 131_072, 8_192, 5.0, 15.0, true, true, false,
         ),
         m(
             "xai",
@@ -615,7 +626,7 @@ fn builtin_models() -> Vec<ModelInfo> {
             8_192,
             0.3,
             0.5,
-            false,
+            true,
             true,
             false,
         ),

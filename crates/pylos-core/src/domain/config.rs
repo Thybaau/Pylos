@@ -319,28 +319,13 @@ fn default_session_name() -> String {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AzureKeyConfig — configuration Azure OpenAI
+// AzureKeyConfig — alias de AzureConfig pour la désérialisation JSON
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Configuration spécifique Azure OpenAI par clé
 /// Bifrost source: core/providers/azure/types.go AzureKeyConfig
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AzureKeyConfig {
-    /// Nom de la ressource Azure : {resource_name}.openai.azure.com
-    pub resource_name: String,
-
-    /// Nom du déploiement Azure (correspond au modèle déployé, ex: "gpt-4-deployment")
-    pub deployment_name: String,
-
-    /// Version de l'API Azure OpenAI
-    /// Défaut : "2024-02-01"
-    #[serde(default = "default_azure_api_version")]
-    pub api_version: String,
-}
-
-fn default_azure_api_version() -> String {
-    "2024-02-01".to_string()
-}
+/// Alias de pylos_core::domain::provider::AzureConfig pour éviter la duplication
+pub use crate::domain::provider::AzureConfig as AzureKeyConfig;
 
 impl Default for BedrockKeyConfig {
     fn default() -> Self {

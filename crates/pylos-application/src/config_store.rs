@@ -24,10 +24,18 @@ fn hash_config(cfg: &PylosConfig) -> String {
     for budget in &mut cfg_clone.governance.budgets {
         budget.current_usage = 0.0;
     }
-    let json = serde_json::to_string(&cfg_clone).unwrap_or_default();
-    let mut hasher = Sha256::new();
-    hasher.update(json.as_bytes());
-    format!("{:x}", hasher.finalize())
+    match serde_json::to_string(&cfg_clone) {
+        Ok(json) => {
+            let mut hasher = Sha256::new();
+            hasher.update(json.as_bytes());
+            format!("{:x}", hasher.finalize())
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to serialize config for hash — hot-reload reconciliation may be impaired");
+            // Retourne une valeur fixe distincte de "" pour éviter de fausser la réconciliation
+            "hash-error-fallback".to_string()
+        }
+    }
 }
 
 fn hash_provider(name: &str, provider: &ProviderConfig) -> String {
@@ -119,10 +127,10 @@ impl ConfigStore {
         })
     }
 
-    /// Accès synchrone au port configuré (pour le démarrage du serveur)
-    pub fn get_sync_port(&self) -> u16 {
-        // Lecture bloquante — uniquement utilisée une fois au démarrage
-        self.state.blocking_read().config.server.port
+    /// Retourne le port configuré de façon async (remplace get_sync_port).
+    /// blocking_read() est dangereux dans un contexte async Tokio (C-4 fix).
+    pub async fn get_port(&self) -> u16 {
+        self.state.read().await.config.server.port
     }
 
     /// Accès lecture à la config complète
@@ -592,15 +600,11 @@ fn build_runtime_providers(
             }
 
             // Extrait la config Azure depuis la première clé qui en a une
+            // AzureKeyConfig est maintenant un alias de AzureConfig — pas de conversion nécessaire
             let azure_cfg = provider_cfg
                 .keys
                 .iter()
-                .find_map(|k| k.azure_config.as_ref())
-                .map(|ac| AzureConfig {
-                    resource_name: ac.resource_name.clone(),
-                    deployment_name: ac.deployment_name.clone(),
-                    api_version: ac.api_version.clone(),
-                });
+                .find_map(|k| k.azure_config.clone());
 
             if azure_cfg.is_none() {
                 warn!(provider = %name, "Azure provider requires azure_config in at least one key, skipping");

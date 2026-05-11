@@ -1,29 +1,87 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use std::time::Instant;
+
+use axum::{
+    extract::{Extension, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
 use serde_json::json;
 use tracing::error;
 
+use pylos_application::log_store::{build_log_entry, LogStatus};
 use pylos_core::domain::embedding::EmbeddingRequest;
 use pylos_core::error::PylosError;
 
+use crate::middleware::virtual_key::VirtualKeyInfo;
+use crate::provider_utils::guess_provider;
 use crate::state::AppState;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /v1/embeddings — compatible OpenAI Embeddings API
-// Bifrost source: transports/bifrost-http/handlers/embeddings.go
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub async fn create_embeddings(
     State(state): State<AppState>,
+    Extension(vk_info): Extension<Option<VirtualKeyInfo>>,
     Json(payload): Json<EmbeddingRequest>,
 ) -> impl IntoResponse {
     let model = payload.model.clone();
+    let start = Instant::now();
+    let vk_name = vk_info.map(|v| v.name);
 
-    // Trouve le provider qui supporte les embeddings pour ce modèle
-    // On utilise l'orchestrateur pour bénéficier du fallback
     match state.orchestrator.embed(payload).await {
-        Ok(resp) => Json(resp).into_response(),
+        Ok(resp) => {
+            let latency = start.elapsed().as_secs_f64() * 1000.0;
+            let provider = guess_provider(&model);
+
+            let usage = pylos_core::domain::openai::Usage {
+                prompt_tokens: resp.usage.prompt_tokens,
+                completion_tokens: 0,
+                total_tokens: resp.usage.prompt_tokens,
+            };
+            let entry = build_log_entry(
+                &provider,
+                &model,
+                false,
+                LogStatus::Success,
+                latency,
+                Some(&usage),
+                Some("stop".into()),
+                None,
+                None,
+                None,
+                vk_name,
+            );
+            let state_clone = state.clone();
+            tokio::spawn(async move {
+                state_clone.log_store.push(entry).await;
+            });
+
+            Json(resp).into_response()
+        }
         Err(e) => {
+            let latency = start.elapsed().as_secs_f64() * 1000.0;
+            let provider = guess_provider(&model);
             error!(model = %model, error = %e, "Embedding request failed");
+
+            let entry = build_log_entry(
+                &provider,
+                &model,
+                false,
+                LogStatus::Error,
+                latency,
+                None,
+                None,
+                Some(e.to_string()),
+                None,
+                None,
+                vk_name,
+            );
+            tokio::spawn(async move {
+                state.log_store.push(entry).await;
+            });
+
             embedding_error_response(&e)
         }
     }

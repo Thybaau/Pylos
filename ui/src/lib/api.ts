@@ -119,6 +119,7 @@ export interface ModelListResponse {
     id: string
     object: string
     owned_by: string
+    provider: string        // champ direct sur chaque entrée
     pylos: ModelInfo
   }>
 }
@@ -181,6 +182,12 @@ export const modelsApi = {
     api.get<ModelListResponse>('/v1/models', {
       params: provider ? { provider } : {}
     }).then(r => r.data),
+
+  upsert: (data: Record<string, unknown>) =>
+    api.post('/v1/models/catalog', data).then(r => r.data),
+
+  remove: (provider: string, model_id: string) =>
+    api.delete(`/v1/models/catalog/${provider}/${model_id}`).then(r => r.data),
 }
 
 export const healthApi = {

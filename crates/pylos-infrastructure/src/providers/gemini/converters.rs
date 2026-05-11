@@ -2,9 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use pylos_core::domain::embedding::{EmbeddingData, EmbeddingResponse, EmbeddingUsage};
 use pylos_core::domain::openai::{
-    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole, Usage,
+    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole,
+    ToolCall, ToolCallFunction, Usage,
 };
-use pylos_core::domain::request::{PylosResponse, StreamChoice, StreamChunk, StreamDelta};
+use pylos_core::domain::request::{
+    PylosResponse, StreamChoice, StreamChunk, StreamDelta, StreamToolCallChunk,
+    StreamToolCallFunction,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Structures de requête Gemini
@@ -19,6 +23,11 @@ pub(crate) struct GeminiRequest {
     pub system_instruction: Option<GeminiSystemInstruction>,
     #[serde(rename = "generationConfig", skip_serializing_if = "Option::is_none")]
     pub generation_config: Option<GeminiGenerationConfig>,
+    /// Outils exposés au modèle
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<GeminiTool>>,
+    #[serde(rename = "toolConfig", skip_serializing_if = "Option::is_none")]
+    pub tool_config: Option<GeminiToolConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -31,6 +40,24 @@ pub(crate) struct GeminiContent {
 pub(crate) struct GeminiPart {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// Appel d'outil émis par le modèle
+    #[serde(rename = "functionCall", skip_serializing_if = "Option::is_none")]
+    pub function_call: Option<GeminiFunctionCall>,
+    /// Résultat d'appel d'outil fourni par l'utilisateur
+    #[serde(rename = "functionResponse", skip_serializing_if = "Option::is_none")]
+    pub function_response: Option<GeminiFunctionResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub(crate) struct GeminiFunctionCall {
+    pub name: String,
+    pub args: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub(crate) struct GeminiFunctionResponse {
+    pub name: String,
+    pub response: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -48,6 +75,36 @@ pub(crate) struct GeminiGenerationConfig {
     pub top_p: Option<f32>,
     #[serde(rename = "stopSequences", skip_serializing_if = "Option::is_none")]
     pub stop_sequences: Option<Vec<String>>,
+}
+
+// ── Définitions d'outils Gemini ───────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub(crate) struct GeminiTool {
+    #[serde(rename = "functionDeclarations")]
+    pub function_declarations: Vec<GeminiFunctionDeclaration>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct GeminiFunctionDeclaration {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct GeminiToolConfig {
+    #[serde(rename = "functionCallingConfig")]
+    pub function_calling_config: GeminiFunctionCallingConfig,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct GeminiFunctionCallingConfig {
+    pub mode: String, // "AUTO" | "ANY" | "NONE"
+    #[serde(rename = "allowedFunctionNames", skip_serializing_if = "Option::is_none")]
+    pub allowed_function_names: Option<Vec<String>>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,6 +192,8 @@ pub(crate) fn to_gemini_request(
             MessageRole::System => {
                 system_parts.push(GeminiPart {
                     text: msg.content.clone(),
+                    function_call: None,
+                    function_response: None,
                 });
             }
             MessageRole::User => {
@@ -142,22 +201,64 @@ pub(crate) fn to_gemini_request(
                     role: "user".to_string(),
                     parts: vec![GeminiPart {
                         text: msg.content.clone(),
+                        function_call: None,
+                        function_response: None,
                     }],
                 });
             }
             MessageRole::Assistant => {
-                contents.push(GeminiContent {
-                    role: "model".to_string(),
-                    parts: vec![GeminiPart {
-                        text: msg.content.clone(),
-                    }],
-                });
+                // Si l'assistant a émis des tool_calls, on les encode comme functionCall parts
+                if let Some(tool_calls) = &msg.tool_calls {
+                    let parts: Vec<GeminiPart> = tool_calls
+                        .iter()
+                        .map(|tc| {
+                            let args: serde_json::Value =
+                                serde_json::from_str(&tc.function.arguments)
+                                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                            GeminiPart {
+                                text: None,
+                                function_call: Some(GeminiFunctionCall {
+                                    name: tc.function.name.clone(),
+                                    args,
+                                }),
+                                function_response: None,
+                            }
+                        })
+                        .collect();
+                    contents.push(GeminiContent {
+                        role: "model".to_string(),
+                        parts,
+                    });
+                } else {
+                    contents.push(GeminiContent {
+                        role: "model".to_string(),
+                        parts: vec![GeminiPart {
+                            text: msg.content.clone(),
+                            function_call: None,
+                            function_response: None,
+                        }],
+                    });
+                }
             }
             MessageRole::Tool | MessageRole::Function => {
+                // Résultat d'outil → functionResponse part côté user
+                let name = msg.name.clone().unwrap_or_default();
+                let response_val: serde_json::Value = msg
+                    .content
+                    .as_deref()
+                    .and_then(|c| serde_json::from_str(c).ok())
+                    .unwrap_or_else(|| {
+                        serde_json::json!({ "output": msg.content.clone().unwrap_or_default() })
+                    });
                 contents.push(GeminiContent {
                     role: "user".to_string(),
                     parts: vec![GeminiPart {
-                        text: msg.content.clone(),
+                        text: None,
+                        function_call: None,
+                        function_response: Some(GeminiFunctionResponse {
+                            name,
+                            response: response_val,
+                        }),
                     }],
                 });
             }
@@ -183,10 +284,47 @@ pub(crate) fn to_gemini_request(
         },
     });
 
+    // Conversion des tools OpenAI → Gemini functionDeclarations
+    let tools = req.tools.as_ref().map(|ts| {
+        vec![GeminiTool {
+            function_declarations: ts
+                .iter()
+                .map(|t| GeminiFunctionDeclaration {
+                    name: t.function.name.clone(),
+                    description: t.function.description.clone(),
+                    parameters: t.function.parameters.clone(),
+                })
+                .collect(),
+        }]
+    });
+
+    // Conversion du tool_choice OpenAI → Gemini toolConfig
+    let tool_config = req.tool_choice.as_ref().map(|tc| {
+        use pylos_core::domain::openai::ToolChoice;
+        let (mode, allowed) = match tc {
+            ToolChoice::Mode(m) => match m.as_str() {
+                "none" => ("NONE", None),
+                "required" => ("ANY", None),
+                _ => ("AUTO", None),
+            },
+            ToolChoice::Specific { function, .. } => {
+                ("ANY", Some(vec![function.name.clone()]))
+            }
+        };
+        GeminiToolConfig {
+            function_calling_config: GeminiFunctionCallingConfig {
+                mode: mode.to_string(),
+                allowed_function_names: allowed,
+            },
+        }
+    });
+
     GeminiRequest {
         contents,
         system_instruction,
         generation_config,
+        tools,
+        tool_config,
     }
 }
 
@@ -199,17 +337,42 @@ pub(crate) fn from_gemini_response(resp: GeminiResponse, model: &str) -> PylosRe
         }
     });
 
-    let (content_text, finish_reason) = if let Some(c) = &candidate {
-        let text = c
-            .content
-            .as_ref()
-            .and_then(|ct| ct.parts.first())
-            .and_then(|p| p.text.clone())
-            .unwrap_or_default();
-        let fr = map_gemini_finish_reason(c.finish_reason.as_deref().unwrap_or("STOP"));
-        (text, fr)
+    let finish_reason = candidate
+        .as_ref()
+        .and_then(|c| c.finish_reason.as_deref())
+        .map(map_gemini_finish_reason)
+        .unwrap_or_else(|| "stop".to_string());
+
+    // Extraire texte et tool calls depuis les parts
+    let mut text_parts: Vec<String> = Vec::new();
+    let mut tool_calls: Vec<ToolCall> = Vec::new();
+
+    if let Some(c) = &candidate {
+        if let Some(content) = &c.content {
+            for (idx, part) in content.parts.iter().enumerate() {
+                if let Some(text) = &part.text {
+                    text_parts.push(text.clone());
+                }
+                if let Some(fc) = &part.function_call {
+                    tool_calls.push(ToolCall {
+                        id: format!("call_{}", fastrand::u64(..)),
+                        call_type: "function".into(),
+                        function: ToolCallFunction {
+                            name: fc.name.clone(),
+                            arguments: fc.args.to_string(),
+                        },
+                        index: Some(idx as i32),
+                    });
+                }
+            }
+        }
+    }
+
+    let content_text = text_parts.join("");
+    let content = if content_text.is_empty() && !tool_calls.is_empty() {
+        None
     } else {
-        (String::new(), "stop".to_string())
+        Some(content_text)
     };
 
     let usage = resp.usage_metadata.map(|u| Usage {
@@ -218,7 +381,6 @@ pub(crate) fn from_gemini_response(resp: GeminiResponse, model: &str) -> PylosRe
         total_tokens: u.total_token_count.unwrap_or(0),
     });
 
-    // Génère un ID de complétion
     let id = format!("gemini-{}", fastrand::u64(..));
     let model_used = resp.model_version.unwrap_or_else(|| model.to_string());
 
@@ -234,9 +396,13 @@ pub(crate) fn from_gemini_response(resp: GeminiResponse, model: &str) -> PylosRe
             index: 0,
             message: ChatCompletionMessage {
                 role: MessageRole::Assistant,
-                content: Some(content_text),
+                content,
                 name: None,
-                tool_calls: None,
+                tool_calls: if tool_calls.is_empty() {
+                    None
+                } else {
+                    Some(tool_calls)
+                },
                 tool_call_id: None,
             },
             finish_reason: Some(finish_reason),
@@ -254,16 +420,36 @@ pub(crate) fn from_gemini_stream_chunk(resp: GeminiResponse, model: &str) -> Opt
         }
     })?;
 
-    let text = candidate
-        .content
-        .as_ref()
-        .and_then(|ct| ct.parts.first())
-        .and_then(|p| p.text.clone());
-
     let finish_reason = candidate
         .finish_reason
         .as_deref()
         .map(map_gemini_finish_reason);
+
+    // Extraire texte et function_calls des parts
+    let mut text_parts: Vec<String> = Vec::new();
+    let mut tool_call_chunks: Vec<StreamToolCallChunk> = Vec::new();
+
+    if let Some(content) = &candidate.content {
+        for (idx, part) in content.parts.iter().enumerate() {
+            if let Some(text) = &part.text {
+                text_parts.push(text.clone());
+            }
+            if let Some(fc) = &part.function_call {
+                tool_call_chunks.push(StreamToolCallChunk {
+                    index: idx as i32,
+                    id: Some(format!("call_{}", fastrand::u64(..))),
+                    call_type: Some("function".into()),
+                    function: Some(StreamToolCallFunction {
+                        name: Some(fc.name.clone()),
+                        arguments: Some(fc.args.to_string()),
+                    }),
+                });
+            }
+        }
+    }
+
+    let content_text = text_parts.join("");
+    let content = if content_text.is_empty() { None } else { Some(content_text) };
 
     Some(StreamChunk {
         id: format!("gemini-{}", fastrand::u64(..)),
@@ -277,10 +463,16 @@ pub(crate) fn from_gemini_stream_chunk(resp: GeminiResponse, model: &str) -> Opt
             index: 0,
             delta: StreamDelta {
                 role: None,
-                content: text,
+                content,
+                tool_calls: if tool_call_chunks.is_empty() {
+                    None
+                } else {
+                    Some(tool_call_chunks)
+                },
             },
             finish_reason,
         }],
+        usage: None,
     })
 }
 
@@ -314,6 +506,8 @@ pub(crate) fn to_gemini_embed_request(
                     role: "user".to_string(),
                     parts: vec![GeminiPart {
                         text: Some(t.to_string()),
+                        function_call: None,
+                        function_response: None,
                     }],
                 },
                 output_dimensionality: dimensions,
@@ -442,7 +636,6 @@ mod tests {
         let gemini = to_gemini_request(&req);
         assert_eq!(gemini.contents[1].role, "model");
     }
-
     #[test]
     fn test_finish_reason_mapping() {
         assert_eq!(map_gemini_finish_reason("STOP"), "stop");

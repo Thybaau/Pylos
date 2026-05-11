@@ -2,9 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use pylos_core::domain::embedding::{EmbeddingData, EmbeddingResponse, EmbeddingUsage};
 use pylos_core::domain::openai::{
-    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole, Usage,
+    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole,
+    ToolCall, ToolCallFunction, Usage,
 };
-use pylos_core::domain::request::{PylosResponse, StreamChoice, StreamChunk, StreamDelta};
+use pylos_core::domain::request::{
+    PylosResponse, StreamChoice, StreamChunk, StreamDelta, StreamToolCallChunk,
+    StreamToolCallFunction,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Structures de requête Cohere v2
@@ -29,12 +33,35 @@ pub(crate) struct CohereChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<f32>,
     pub stream: bool,
+    /// Outils exposés au modèle
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<CohereTool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<String>, // "REQUIRED" | "NONE"
 }
 
 #[derive(Debug, Serialize)]
 pub(crate) struct CohereMessage {
     pub role: String, // "system" | "user" | "assistant" | "tool"
-    pub content: String,
+    pub content: serde_json::Value,
+}
+
+// ── Définitions d'outils Cohere ───────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub(crate) struct CohereTool {
+    #[serde(rename = "type")]
+    pub tool_type: String, // "function"
+    pub function: CohereToolFunction,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct CohereToolFunction {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<serde_json::Value>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,6 +81,8 @@ pub(crate) struct CohereResponseMessage {
     #[allow(dead_code)]
     pub role: Option<String>,
     pub content: Option<Vec<CohereContentBlock>>,
+    /// Tool calls émis par l'assistant
+    pub tool_calls: Option<Vec<CohereToolCall>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,6 +90,20 @@ pub(crate) struct CohereContentBlock {
     #[serde(rename = "type")]
     pub block_type: Option<String>,
     pub text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct CohereToolCall {
+    pub id: Option<String>,
+    #[serde(rename = "type")]
+    pub call_type: Option<String>,
+    pub function: Option<CohereToolCallFunction>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct CohereToolCallFunction {
+    pub name: Option<String>,
+    pub arguments: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,6 +144,8 @@ pub(crate) struct CohereStreamMessage {
     pub content: Option<CohereStreamContent>,
     #[allow(dead_code)]
     pub role: Option<String>,
+    /// Tool calls streamés
+    pub tool_calls: Option<Vec<CohereToolCall>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,9 +208,42 @@ pub(crate) fn to_cohere_request(
                 MessageRole::Assistant => "assistant",
                 MessageRole::Tool | MessageRole::Function => "tool",
             };
+
+            // Les messages assistant avec tool_calls sont encodés différemment
+            let content = if m.role == MessageRole::Assistant {
+                if let Some(tool_calls) = &m.tool_calls {
+                    // Cohere v2 attend un tableau de tool_call objects pour l'assistant
+                    let tc_arr: Vec<serde_json::Value> = tool_calls
+                        .iter()
+                        .map(|tc| {
+                            serde_json::json!({
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments
+                                }
+                            })
+                        })
+                        .collect();
+                    serde_json::json!(tc_arr)
+                } else {
+                    serde_json::json!(m.content.clone().unwrap_or_default())
+                }
+            } else if m.role == MessageRole::Tool || m.role == MessageRole::Function {
+                // Messages tool_result : Cohere attend un array de tool_result
+                serde_json::json!([{
+                    "type": "tool_result",
+                    "tool_use_id": m.tool_call_id.clone().unwrap_or_default(),
+                    "content": m.content.clone().unwrap_or_default()
+                }])
+            } else {
+                serde_json::json!(m.content.clone().unwrap_or_default())
+            };
+
             CohereMessage {
                 role: role.to_string(),
-                content: m.content.clone().unwrap_or_default(),
+                content,
             }
         })
         .collect();
@@ -175,6 +253,33 @@ pub(crate) fn to_cohere_request(
         Some(pylos_core::domain::openai::StopCondition::Multiple(v)) => Some(v.clone()),
         None => None,
     };
+
+    // Conversion des tools OpenAI → Cohere (format identique function calling)
+    let tools = req.tools.as_ref().map(|ts| {
+        ts.iter()
+            .map(|t| CohereTool {
+                tool_type: "function".to_string(),
+                function: CohereToolFunction {
+                    name: t.function.name.clone(),
+                    description: t.function.description.clone(),
+                    parameters: t.function.parameters.clone(),
+                },
+            })
+            .collect::<Vec<_>>()
+    });
+
+    // Conversion du tool_choice
+    let tool_choice = req.tool_choice.as_ref().and_then(|tc| {
+        use pylos_core::domain::openai::ToolChoice;
+        match tc {
+            ToolChoice::Mode(m) => match m.as_str() {
+                "none" => Some("NONE".to_string()),
+                "required" => Some("REQUIRED".to_string()),
+                _ => None, // "auto" = défaut Cohere, on n'envoie pas le champ
+            },
+            ToolChoice::Specific { .. } => Some("REQUIRED".to_string()),
+        }
+    });
 
     CohereChatRequest {
         model: req.model.clone(),
@@ -186,6 +291,8 @@ pub(crate) fn to_cohere_request(
         frequency_penalty: req.frequency_penalty,
         presence_penalty: req.presence_penalty,
         stream,
+        tools,
+        tool_choice,
     }
 }
 
@@ -204,6 +311,35 @@ pub(crate) fn from_cohere_response(resp: CohereChatResponse) -> PylosResponse {
         })
         .unwrap_or_default();
 
+    // Extraction des tool_calls depuis la réponse
+    let tool_calls: Vec<ToolCall> = resp
+        .message
+        .as_ref()
+        .and_then(|m| m.tool_calls.as_ref())
+        .map(|tcs| {
+            tcs.iter()
+                .enumerate()
+                .map(|(idx, tc)| ToolCall {
+                    id: tc.id.clone().unwrap_or_else(|| format!("call_{}", idx)),
+                    call_type: "function".into(),
+                    function: ToolCallFunction {
+                        name: tc
+                            .function
+                            .as_ref()
+                            .and_then(|f| f.name.clone())
+                            .unwrap_or_default(),
+                        arguments: tc
+                            .function
+                            .as_ref()
+                            .and_then(|f| f.arguments.clone())
+                            .unwrap_or_else(|| "{}".to_string()),
+                    },
+                    index: Some(idx as i32),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     let finish_reason = resp.finish_reason.as_deref().map(map_cohere_finish_reason);
     let usage = resp
         .usage
@@ -219,6 +355,12 @@ pub(crate) fn from_cohere_response(resp: CohereChatResponse) -> PylosResponse {
         .id
         .unwrap_or_else(|| format!("cohere-{}", fastrand::u64(..)));
 
+    let content = if text.is_empty() && !tool_calls.is_empty() {
+        None
+    } else {
+        Some(text)
+    };
+
     PylosResponse::ChatCompletion(ChatCompletionResponse {
         id,
         object: "chat.completion".to_string(),
@@ -226,14 +368,18 @@ pub(crate) fn from_cohere_response(resp: CohereChatResponse) -> PylosResponse {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64,
-        model: String::new(), // will be filled from request model
+        model: String::new(),
         choices: vec![ChatCompletionChoice {
             index: 0,
             message: ChatCompletionMessage {
                 role: MessageRole::Assistant,
-                content: Some(text),
+                content,
                 name: None,
-                tool_calls: None,
+                tool_calls: if tool_calls.is_empty() {
+                    None
+                } else {
+                    Some(tool_calls)
+                },
                 tool_call_id: None,
             },
             finish_reason,
@@ -271,9 +417,53 @@ pub(crate) fn from_cohere_stream_event(
                     delta: StreamDelta {
                         role: None,
                         content: text,
+                        tool_calls: None,
                     },
                     finish_reason: None,
                 }],
+                usage: None,
+            })
+        }
+        "tool-call-start" | "tool-call-delta" => {
+            // Cohere émet les tool calls en streaming via ces events
+            let tool_calls = event
+                .delta
+                .as_ref()
+                .and_then(|d| d.message.as_ref())
+                .and_then(|m| m.tool_calls.as_ref())
+                .map(|tcs| {
+                    tcs.iter()
+                        .enumerate()
+                        .map(|(idx, tc)| StreamToolCallChunk {
+                            index: idx as i32,
+                            id: tc.id.clone(),
+                            call_type: tc.call_type.clone(),
+                            function: tc.function.as_ref().map(|f| StreamToolCallFunction {
+                                name: f.name.clone(),
+                                arguments: f.arguments.clone(),
+                            }),
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+            tool_calls.map(|tcs| StreamChunk {
+                id: format!("cohere-{}", fastrand::u64(..)),
+                object: "chat.completion.chunk".to_string(),
+                created: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+                model: model.to_string(),
+                choices: vec![StreamChoice {
+                    index: 0,
+                    delta: StreamDelta {
+                        role: None,
+                        content: None,
+                        tool_calls: Some(tcs),
+                    },
+                    finish_reason: None,
+                }],
+                usage: None,
             })
         }
         "message-end" => {
@@ -296,12 +486,14 @@ pub(crate) fn from_cohere_stream_event(
                     delta: StreamDelta {
                         role: None,
                         content: None,
+                        tool_calls: None,
                     },
                     finish_reason,
                 }],
+                usage: None,
             })
         }
-        _ => None, // message-start, content-start, content-end, etc.
+        _ => None,
     }
 }
 

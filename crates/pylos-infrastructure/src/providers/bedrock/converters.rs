@@ -1,12 +1,18 @@
 use aws_sdk_bedrockruntime::types::{
     ContentBlock, ConversationRole, InferenceConfiguration, Message, SystemContentBlock,
-    ToolResultBlock, ToolResultContentBlock,
+    Tool, ToolConfiguration, ToolInputSchema, ToolResultBlock, ToolResultContentBlock,
+    ToolSpecification, ToolUseBlock,
 };
+use aws_smithy_types::Document;
 
 use pylos_core::domain::openai::{
-    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole, Usage,
+    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole,
+    ToolCall, ToolCallFunction, Usage,
 };
-use pylos_core::domain::request::{PylosResponse, StreamChoice, StreamChunk, StreamDelta};
+use pylos_core::domain::request::{
+    PylosResponse, StreamChoice, StreamChunk, StreamDelta, StreamToolCallChunk,
+    StreamToolCallFunction,
+};
 use pylos_core::error::PylosError;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,20 +48,54 @@ pub(crate) fn convert_messages(
             }
 
             MessageRole::Assistant => {
-                let content = ContentBlock::Text(msg.content.clone().unwrap_or_default());
-                bedrock_messages.push(
-                    Message::builder()
-                        .role(ConversationRole::Assistant)
-                        .content(content)
-                        .build()
-                        .map_err(|e| PylosError::Internal(e.to_string()))?,
-                );
+                // Si l'assistant a émis des tool_calls, on les encode comme ToolUse blocks
+                if let Some(tool_calls) = &msg.tool_calls {
+                    let mut builder = Message::builder().role(ConversationRole::Assistant);
+                    // Texte éventuel
+                    if let Some(text) = &msg.content {
+                        if !text.is_empty() {
+                            builder = builder.content(ContentBlock::Text(text.clone()));
+                        }
+                    }
+                    for tc in tool_calls {
+                        let input: serde_json::Value =
+                            serde_json::from_str(&tc.function.arguments)
+                                .unwrap_or(serde_json::Value::Object(Default::default()));
+                        let doc = json_to_bedrock_doc(&input);
+                        let tool_use = ToolUseBlock::builder()
+                            .tool_use_id(tc.id.clone())
+                            .name(tc.function.name.clone())
+                            .input(doc)
+                            .build()
+                            .map_err(|e| PylosError::Internal(e.to_string()))?;
+                        builder = builder.content(ContentBlock::ToolUse(tool_use));
+                    }
+                    bedrock_messages.push(
+                        builder
+                            .build()
+                            .map_err(|e| PylosError::Internal(e.to_string()))?,
+                    );
+                } else {
+                    let content = ContentBlock::Text(msg.content.clone().unwrap_or_default());
+                    bedrock_messages.push(
+                        Message::builder()
+                            .role(ConversationRole::Assistant)
+                            .content(content)
+                            .build()
+                            .map_err(|e| PylosError::Internal(e.to_string()))?,
+                    );
+                }
             }
 
             // Tool / Function → traité comme user avec ToolResult
             MessageRole::Tool | MessageRole::Function => {
+                let tool_use_id = msg
+                    .tool_call_id
+                    .clone()
+                    .or_else(|| msg.name.clone())
+                    .unwrap_or_default();
                 let tool_result = ToolResultBlock::builder()
-                    .tool_use_id(msg.name.clone().unwrap_or_default())
+                    .tool_use_id(tool_use_id)
                     .content(ToolResultContentBlock::Text(
                         msg.content.clone().unwrap_or_default(),
                     ))
@@ -75,6 +115,82 @@ pub(crate) fn convert_messages(
     }
 
     Ok((bedrock_messages, system_blocks))
+}
+
+/// Convertit les tools OpenAI en ToolConfiguration Bedrock
+pub(crate) fn build_tool_config(
+    tools: &[pylos_core::domain::openai::Tool],
+) -> Result<ToolConfiguration, PylosError> {
+    let mut bedrock_tools: Vec<Tool> = Vec::new();
+    for t in tools {
+        let schema_json = t.function.parameters.clone().unwrap_or_else(|| {
+            serde_json::json!({ "type": "object", "properties": {} })
+        });
+        let schema_doc = json_to_bedrock_doc(&schema_json);
+        let spec = ToolSpecification::builder()
+            .name(t.function.name.clone())
+            .set_description(t.function.description.clone())
+            .input_schema(ToolInputSchema::Json(schema_doc))
+            .build()
+            .map_err(|e| PylosError::Internal(e.to_string()))?;
+        bedrock_tools.push(Tool::ToolSpec(spec));
+    }
+
+    ToolConfiguration::builder()
+        .set_tools(Some(bedrock_tools))
+        .build()
+        .map_err(|e| PylosError::Internal(e.to_string()))
+}
+
+/// Convertit une serde_json::Value en aws_smithy_types::Document
+fn json_to_bedrock_doc(val: &serde_json::Value) -> Document {
+    match val {
+        serde_json::Value::Null => Document::Null,
+        serde_json::Value::Bool(b) => Document::Bool(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Document::Number(aws_smithy_types::Number::NegInt(i))
+            } else if let Some(u) = n.as_u64() {
+                Document::Number(aws_smithy_types::Number::PosInt(u))
+            } else {
+                Document::Number(aws_smithy_types::Number::Float(
+                    n.as_f64().unwrap_or(0.0),
+                ))
+            }
+        }
+        serde_json::Value::String(s) => Document::String(s.clone()),
+        serde_json::Value::Array(arr) => {
+            Document::Array(arr.iter().map(json_to_bedrock_doc).collect())
+        }
+        serde_json::Value::Object(obj) => Document::Object(
+            obj.iter()
+                .map(|(k, v)| (k.clone(), json_to_bedrock_doc(v)))
+                .collect(),
+        ),
+    }
+}
+
+/// Convertit un aws_smithy_types::Document en serde_json::Value
+fn bedrock_doc_to_json(doc: &Document) -> serde_json::Value {
+    match doc {
+        Document::Null => serde_json::Value::Null,
+        Document::Bool(b) => serde_json::Value::Bool(*b),
+        Document::Number(n) => match n {
+            aws_smithy_types::Number::NegInt(i) => serde_json::json!(i),
+            aws_smithy_types::Number::PosInt(u) => serde_json::json!(u),
+            aws_smithy_types::Number::Float(f) => serde_json::json!(f),
+        },
+        Document::String(s) => serde_json::Value::String(s.clone()),
+        Document::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(bedrock_doc_to_json).collect())
+        }
+        Document::Object(obj) => serde_json::Value::Object(
+            obj.iter()
+                .map(|(k, v)| (k.clone(), bedrock_doc_to_json(v)))
+                .collect(),
+        ),
+        _ => serde_json::Value::Null,
+    }
 }
 
 /// Construit l'InferenceConfiguration depuis les paramètres de la requête
@@ -119,7 +235,6 @@ pub(crate) fn build_inference_config(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Convertit une réponse Bedrock Converse en PylosResponse
-/// Identique à ToBifrostChatResponse() dans bifrost/core/providers/bedrock/chat.go
 pub(crate) fn from_bedrock_response(
     output_message: &Message,
     stop_reason: &str,
@@ -127,17 +242,36 @@ pub(crate) fn from_bedrock_response(
     model: &str,
     id: String,
 ) -> PylosResponse {
-    // Extraction du contenu texte depuis les blocs
     let mut text_content = String::new();
+    let mut tool_calls: Vec<ToolCall> = Vec::new();
 
-    for block in output_message.content() {
-        // Les autres types (ToolUse, etc.) seront gérés plus tard
-        if let ContentBlock::Text(t) = block {
-            text_content.push_str(t);
+    for (idx, block) in output_message.content().iter().enumerate() {
+        match block {
+            ContentBlock::Text(t) => {
+                text_content.push_str(t);
+            }
+            ContentBlock::ToolUse(tu) => {
+                let args = bedrock_doc_to_json(tu.input()).to_string();
+                tool_calls.push(ToolCall {
+                    id: tu.tool_use_id().to_string(),
+                    call_type: "function".into(),
+                    function: ToolCallFunction {
+                        name: tu.name().to_string(),
+                        arguments: args,
+                    },
+                    index: Some(idx as i32),
+                });
+            }
+            _ => {}
         }
     }
 
     let finish_reason = map_stop_reason(stop_reason);
+    let content = if text_content.is_empty() && !tool_calls.is_empty() {
+        None
+    } else {
+        Some(text_content)
+    };
 
     let usage_data = usage.map(|u| Usage {
         prompt_tokens: u.input_tokens(),
@@ -154,9 +288,13 @@ pub(crate) fn from_bedrock_response(
             index: 0,
             message: ChatCompletionMessage {
                 role: MessageRole::Assistant,
-                content: Some(text_content),
+                content,
                 name: None,
-                tool_calls: None,
+                tool_calls: if tool_calls.is_empty() {
+                    None
+                } else {
+                    Some(tool_calls)
+                },
                 tool_call_id: None,
             },
             finish_reason: Some(finish_reason.to_string()),
@@ -165,7 +303,7 @@ pub(crate) fn from_bedrock_response(
     })
 }
 
-/// Construit un StreamChunk depuis les événements Bedrock
+/// Construit un StreamChunk texte/rôle/finish depuis les événements Bedrock
 pub(crate) fn make_stream_chunk(
     id: &str,
     model: &str,
@@ -180,9 +318,38 @@ pub(crate) fn make_stream_chunk(
         model: model.to_string(),
         choices: vec![StreamChoice {
             index: 0,
-            delta: StreamDelta { role, content },
+            delta: StreamDelta {
+                role,
+                content,
+                tool_calls: None,
+            },
             finish_reason,
         }],
+        usage: None,
+    }
+}
+
+/// Construit un StreamChunk pour un outil (streaming Bedrock ToolUse)
+pub(crate) fn make_tool_stream_chunk(
+    id: &str,
+    model: &str,
+    tool_chunk: StreamToolCallChunk,
+) -> StreamChunk {
+    StreamChunk {
+        id: id.to_string(),
+        object: "chat.completion.chunk".into(),
+        created: now_unix(),
+        model: model.to_string(),
+        choices: vec![StreamChoice {
+            index: 0,
+            delta: StreamDelta {
+                role: None,
+                content: None,
+                tool_calls: Some(vec![tool_chunk]),
+            },
+            finish_reason: None,
+        }],
+        usage: None,
     }
 }
 

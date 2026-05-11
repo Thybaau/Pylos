@@ -236,10 +236,25 @@ impl InferenceOrchestrator {
         // Pre-hooks
         for plugin in &self.plugins {
             match plugin.pre_hook(&mut request, &mut ctx).await {
-                Ok(Some(_short_circuit)) => {
-                    return Err(PylosError::Internal(
-                        "Streaming short-circuit not yet supported".into(),
-                    ));
+                Ok(Some(short_circuit)) => {
+                    // Convertit la réponse short-circuit en stream d'un seul chunk de fin
+                    debug!(
+                        plugin = plugin.name(),
+                        "Pre-hook short-circuited stream request"
+                    );
+                    let content = match &short_circuit {
+                        PylosResponse::ChatCompletion(r) => r
+                            .choices
+                            .first()
+                            .and_then(|c| c.message.content.clone())
+                            .unwrap_or_default(),
+                        _ => String::new(),
+                    };
+                    let model = request.model().to_string();
+                    let chunk = make_terminal_chunk(&model, &content);
+                    let stream: ChunkStream =
+                        Box::pin(futures::stream::once(async move { Ok(chunk) }));
+                    return Ok(stream);
                 }
                 Ok(None) => {}
                 Err(e) => {
@@ -406,6 +421,40 @@ fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
         ProviderKind::OpenRouter => model.contains('/'),
         ProviderKind::Custom(_) | ProviderKind::Vertex => true,
         _ => true,
+    }
+}
+
+/// Crée un chunk de streaming terminal (finish_reason = "stop") à partir d'un contenu texte.
+/// Utilisé pour convertir une réponse short-circuit (plugin pre-hook) en stream.
+pub(crate) fn make_terminal_chunk(
+    model: &str,
+    content: &str,
+) -> pylos_core::domain::request::StreamChunk {
+    use pylos_core::domain::request::{StreamChoice, StreamDelta};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let created = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    pylos_core::domain::request::StreamChunk {
+        id: format!("shortcircuit-{}", fastrand::u32(..)),
+        object: "chat.completion.chunk".into(),
+        created,
+        model: model.to_string(),
+        choices: vec![StreamChoice {
+            index: 0,
+            delta: StreamDelta {
+                role: Some("assistant".into()),
+                content: if content.is_empty() {
+                    None
+                } else {
+                    Some(content.to_string())
+                },
+                tool_calls: None,
+            },
+            finish_reason: Some("stop".into()),
+        }],
+        usage: None,
     }
 }
 

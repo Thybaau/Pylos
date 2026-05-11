@@ -194,6 +194,14 @@ impl BudgetStore {
             })
             .collect()
     }
+
+    /// Supprime toutes les entrées de budget pour un virtual key (appelé lors de la suppression de la VK)
+    pub async fn delete_vk_entries(&self, vk_id: &str) {
+        let _ = sqlx::query("DELETE FROM vk_budgets WHERE virtual_key_id = ?")
+            .bind(vk_id)
+            .execute(&self.pool)
+            .await;
+    }
 }
 
 /// Usage courant d'un budget
@@ -360,14 +368,31 @@ fn estimate_request_cost(model: &str) -> f64 {
 }
 
 fn guess_provider_from_model(model: &str) -> &str {
-    if model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3") {
+    if model.starts_with("us.")
+        || model.starts_with("eu.")
+        || model.starts_with("ap.")
+        || model.starts_with("amazon.")
+        || model.contains("nova")
+        || model.starts_with("anthropic.")
+    {
+        "bedrock"
+    } else if model.starts_with("gpt")
+        || model.starts_with("o1")
+        || model.starts_with("o3")
+        || model.starts_with("o4")
+        || model.starts_with("text-embedding")
+    {
         "openai"
     } else if model.contains("claude") {
         "anthropic"
     } else if model.starts_with("gemini") {
         "gemini"
-    } else if model.starts_with("command") {
+    } else if model.starts_with("command") || model.starts_with("embed-") {
         "cohere"
+    } else if model.starts_with("grok") {
+        "xai"
+    } else if model.contains("llama") || model.contains(':') {
+        "ollama"
     } else {
         "unknown"
     }

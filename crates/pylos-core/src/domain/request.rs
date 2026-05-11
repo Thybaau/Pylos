@@ -45,6 +45,9 @@ pub struct StreamChunk {
     pub created: i64,
     pub model: String,
     pub choices: Vec<StreamChoice>,
+    /// Usage réel si disponible (dernier chunk, compatible OpenAI stream_options.include_usage)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<crate::domain::openai::Usage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +63,30 @@ pub struct StreamDelta {
     pub role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    /// Tool call chunks (format OpenAI streaming)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<StreamToolCallChunk>>,
+}
+
+/// Chunk d'un appel d'outil dans un stream SSE (format OpenAI)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamToolCallChunk {
+    pub index: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub call_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function: Option<StreamToolCallFunction>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamToolCallFunction {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Arguments partiels (JSON fragmenté)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<String>,
 }
 
 /// Metadata d'une requête en transit

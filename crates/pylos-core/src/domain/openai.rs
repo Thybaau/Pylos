@@ -186,58 +186,13 @@ pub struct Usage {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Embeddings (POST /v1/embeddings)
+// Embeddings (POST /v1/embeddings) — types canoniques dans domain/embedding.rs
+// Re-exportés ici pour commodité
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EmbeddingRequest {
-    pub model: String,
-    /// Texte(s) à encoder — string ou liste de strings
-    pub input: EmbeddingInput,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub encoding_format: Option<String>, // "float" | "base64"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dimensions: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
-pub enum EmbeddingInput {
-    Single(String),
-    Multiple(Vec<String>),
-}
-
-impl EmbeddingInput {
-    pub fn as_strings(&self) -> Vec<&str> {
-        match self {
-            EmbeddingInput::Single(s) => vec![s.as_str()],
-            EmbeddingInput::Multiple(v) => v.iter().map(|s| s.as_str()).collect(),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EmbeddingResponse {
-    pub object: String, // "list"
-    pub data: Vec<EmbeddingData>,
-    pub model: String,
-    pub usage: EmbeddingUsage,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EmbeddingData {
-    pub object: String, // "embedding"
-    pub embedding: Vec<f32>,
-    pub index: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EmbeddingUsage {
-    pub prompt_tokens: i32,
-    pub total_tokens: i32,
-}
+pub use crate::domain::embedding::{
+    EmbeddingData, EmbeddingInput, EmbeddingRequest, EmbeddingResponse, EmbeddingUsage,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Text Completion legacy (POST /v1/completions)

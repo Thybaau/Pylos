@@ -145,6 +145,8 @@ impl RateLimitStore {
         }
     }
 
+    /// Check-and-increment atomique via transaction SQLite IMMEDIATE.
+    /// Évite la race condition TOCTOU (C-2) : lecture + écriture dans la même transaction.
     async fn check_and_increment(
         &self,
         vk_id: &str,
@@ -152,17 +154,27 @@ impl RateLimitStore {
         increment: i64,
     ) -> Result<(), PylosError> {
         let now = now_ms();
+        let vk_id = vk_id.to_string();
+        let window_type = window_type.to_string();
+
+        // Transaction IMMEDIATE → verrou exclusif dès le début, empêche les lectures
+        // concurrentes de passer la même vérification (TOCTOU fix)
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            PylosError::Internal(format!("Rate limit tx begin failed: {}", e))
+        })?;
 
         let row = sqlx::query(
-            "SELECT max_value, current_value, window_start_ms, window_duration_ms FROM vk_rate_limits WHERE virtual_key_id = ? AND window_type = ?",
+            "SELECT max_value, current_value, window_start_ms, window_duration_ms \
+             FROM vk_rate_limits WHERE virtual_key_id = ? AND window_type = ?",
         )
-        .bind(vk_id)
-        .bind(window_type)
-        .fetch_optional(&self.pool)
+        .bind(&vk_id)
+        .bind(&window_type)
+        .fetch_optional(&mut *tx)
         .await
         .unwrap_or(None);
 
         let Some(row) = row else {
+            let _ = tx.commit().await;
             return Ok(()); // Pas de limite configurée
         };
 
@@ -171,32 +183,38 @@ impl RateLimitStore {
         let window_start_ms: i64 = row.try_get("window_start_ms").unwrap_or(now);
         let window_duration_ms: i64 = row.try_get("window_duration_ms").unwrap_or(60_000);
 
-        // Vérifie si la fenêtre est expirée → reset
+        // Reset de fenêtre si expirée
         let (new_current, new_start) = if now - window_start_ms >= window_duration_ms {
             (0i64, now)
         } else {
             (current_value, window_start_ms)
         };
 
-        // Vérifie la limite
+        // Vérifie la limite AVANT d'incrémenter (inside the transaction = atomique)
         if max_value > 0 && new_current + increment > max_value {
-            let reset_in_secs = (window_duration_ms - (now - new_start)) / 1000;
+            let reset_in_secs = (window_duration_ms - (now - new_start)).max(0) / 1000;
+            let _ = tx.rollback().await;
             return Err(PylosError::RateLimitExceeded(format!(
                 "Rate limit exceeded for {} ({}): {}/{} — resets in {}s",
                 vk_id, window_type, new_current, max_value, reset_in_secs
             )));
         }
 
-        // Met à jour atomiquement
+        // Incrémente dans la transaction
         let _ = sqlx::query(
-            "UPDATE vk_rate_limits SET current_value = ?, window_start_ms = ? WHERE virtual_key_id = ? AND window_type = ?",
+            "UPDATE vk_rate_limits SET current_value = ?, window_start_ms = ? \
+             WHERE virtual_key_id = ? AND window_type = ?",
         )
         .bind(new_current + increment)
         .bind(new_start)
-        .bind(vk_id)
-        .bind(window_type)
-        .execute(&self.pool)
+        .bind(&vk_id)
+        .bind(&window_type)
+        .execute(&mut *tx)
         .await;
+
+        tx.commit().await.map_err(|e| {
+            PylosError::Internal(format!("Rate limit tx commit failed: {}", e))
+        })?;
 
         Ok(())
     }
@@ -233,6 +251,14 @@ impl RateLimitStore {
                 }
             })
             .collect()
+    }
+
+    /// Supprime toutes les entrées de rate limit pour un virtual key (appelé lors de la suppression de la VK)
+    pub async fn delete_vk_entries(&self, vk_id: &str) {
+        let _ = sqlx::query("DELETE FROM vk_rate_limits WHERE virtual_key_id = ?")
+            .bind(vk_id)
+            .execute(&self.pool)
+            .await;
     }
 }
 

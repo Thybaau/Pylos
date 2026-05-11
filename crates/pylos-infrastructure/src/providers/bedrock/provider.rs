@@ -15,8 +15,9 @@ use pylos_core::domain::traits::{ChunkStream, Provider};
 use pylos_core::error::PylosError;
 
 use super::converters::{
-    build_inference_config, convert_messages, from_bedrock_response, generate_completion_id,
-    make_stream_chunk, map_stop_reason, normalize_model_id,
+    build_inference_config, build_tool_config, convert_messages, from_bedrock_response,
+    generate_completion_id, make_stream_chunk, make_tool_stream_chunk, map_stop_reason,
+    normalize_model_id,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -237,6 +238,16 @@ impl Provider for BedrockProvider {
                     call = call.system(sys);
                 }
 
+                // Ajouter les tools si présents
+                if let Some(tools) = &req.tools {
+                    if !tools.is_empty() {
+                        match build_tool_config(tools) {
+                            Ok(tc) => call = call.tool_config(tc),
+                            Err(e) => warn!(model = model_id, error = %e, "Failed to build tool config"),
+                        }
+                    }
+                }
+
                 let response = call.send().await.map_err(|e| {
                     let msg = e.to_string();
                     warn!(model = model_id, error = %msg, "Bedrock Converse error");
@@ -310,6 +321,16 @@ impl Provider for BedrockProvider {
                     call = call.system(sys);
                 }
 
+                // Ajouter les tools si présents
+                if let Some(tools) = &req.tools {
+                    if !tools.is_empty() {
+                        match build_tool_config(tools) {
+                            Ok(tc) => call = call.tool_config(tc),
+                            Err(e) => warn!(model = %model_id, error = %e, "Failed to build stream tool config"),
+                        }
+                    }
+                }
+
                 let response = call.send().await.map_err(|e| {
                     let msg = e.to_string();
                     warn!(model = %model_id, error = %msg, "Bedrock ConverseStream setup error");
@@ -333,24 +354,71 @@ impl Provider for BedrockProvider {
                     ));
 
                     let mut event_stream = event_stream;
+                    // Accumulateur pour les tool calls en cours de streaming
+                    let mut current_tool_id = String::new();
+                    let mut current_tool_name = String::new();
+                    let mut current_tool_index: i32 = 0;
 
                     loop {
                         match event_stream.recv().await {
                             Ok(Some(event)) => {
                                 use aws_sdk_bedrockruntime::types::ConverseStreamOutput;
                                 match event {
+                                    ConverseStreamOutput::ContentBlockStart(start_event) => {
+                                        // Début d'un bloc — on retient les métadonnées tool_use
+                                        if let Some(start) = start_event.start() {
+                                            use aws_sdk_bedrockruntime::types::ContentBlockStart;
+                                            if let ContentBlockStart::ToolUse(tu) = start {
+                                                current_tool_id = tu.tool_use_id().to_string();
+                                                current_tool_name = tu.name().to_string();
+                                                current_tool_index = start_event.content_block_index();
+                                                // Émet le chunk d'annonce de l'outil
+                                                yield Ok(make_tool_stream_chunk(
+                                                    &id,
+                                                    &model_clone,
+                                                    pylos_core::domain::request::StreamToolCallChunk {
+                                                        index: current_tool_index,
+                                                        id: Some(current_tool_id.clone()),
+                                                        call_type: Some("function".into()),
+                                                        function: Some(pylos_core::domain::request::StreamToolCallFunction {
+                                                            name: Some(current_tool_name.clone()),
+                                                            arguments: None,
+                                                        }),
+                                                    },
+                                                ));
+                                            }
+                                        }
+                                    }
                                     ConverseStreamOutput::ContentBlockDelta(delta_event) => {
                                         if let Some(delta) = delta_event.delta() {
                                             use aws_sdk_bedrockruntime::types::ContentBlockDelta;
-                                            // ToolUse, ReasoningContent — extensions futures
-                                            if let ContentBlockDelta::Text(text) = delta {
-                                                yield Ok(make_stream_chunk(
-                                                    &id,
-                                                    &model_clone,
-                                                    Some(text.clone()),
-                                                    None,
-                                                    None,
-                                                ));
+                                            match delta {
+                                                ContentBlockDelta::Text(text) => {
+                                                    yield Ok(make_stream_chunk(
+                                                        &id,
+                                                        &model_clone,
+                                                        Some(text.clone()),
+                                                        None,
+                                                        None,
+                                                    ));
+                                                }
+                                                ContentBlockDelta::ToolUse(tu_delta) => {
+                                                    // Fragment JSON des arguments de l'outil
+                                                    yield Ok(make_tool_stream_chunk(
+                                                        &id,
+                                                        &model_clone,
+                                                        pylos_core::domain::request::StreamToolCallChunk {
+                                                            index: current_tool_index,
+                                                            id: None,
+                                                            call_type: None,
+                                                            function: Some(pylos_core::domain::request::StreamToolCallFunction {
+                                                                name: None,
+                                                                arguments: Some(tu_delta.input().to_string()),
+                                                            }),
+                                                        },
+                                                    ));
+                                                }
+                                                _ => {}
                                             }
                                         }
                                     }
@@ -370,9 +438,6 @@ impl Provider for BedrockProvider {
                                     ConverseStreamOutput::MessageStart(_) => {
                                         // Déjà émis role=assistant au début
                                     }
-                                    ConverseStreamOutput::ContentBlockStart(_) => {
-                                        // Début d'un bloc — on attend les deltas
-                                    }
                                     ConverseStreamOutput::ContentBlockStop(_) => {
                                         // Fin d'un bloc — rien à émettre
                                     }
@@ -385,7 +450,6 @@ impl Provider for BedrockProvider {
                                 }
                             }
                             Ok(None) => {
-                                // Stream terminé proprement
                                 break;
                             }
                             Err(e) => {

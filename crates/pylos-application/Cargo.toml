@@ -16,6 +16,7 @@ rusqlite = { workspace = true }
 fastrand = "2"
 sha2 = "0.10"
 sqlx = { workspace = true }
+futures = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-otlp = { workspace = true }

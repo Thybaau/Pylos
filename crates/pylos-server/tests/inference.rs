@@ -78,9 +78,11 @@ impl Provider for MockProvider {
                 delta: StreamDelta {
                     role: Some("assistant".into()),
                     content: None,
+                    tool_calls: None,
                 },
                 finish_reason: None,
             }],
+            usage: None,
         };
         let chunk2 = StreamChunk {
             id: "mock-id".into(),
@@ -92,9 +94,11 @@ impl Provider for MockProvider {
                 delta: StreamDelta {
                     role: None,
                     content: Some("Hello".into()),
+                    tool_calls: None,
                 },
                 finish_reason: Some("stop".into()),
             }],
+            usage: None,
         };
 
         let stream = futures::stream::iter(vec![Ok(chunk1), Ok(chunk2)]);
@@ -132,6 +136,7 @@ async fn test_chat_completions_unary() {
         model_catalog,
         budget_store,
         rate_limit_store,
+        admin_key: None,
     };
 
     // 2. Create Router
@@ -192,6 +197,7 @@ async fn test_chat_completions_stream() {
         model_catalog,
         budget_store,
         rate_limit_store,
+        admin_key: None,
     };
 
     // 2. Create Router
