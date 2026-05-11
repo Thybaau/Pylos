@@ -379,6 +379,7 @@ pub(crate) fn from_gemini_response(resp: GeminiResponse, model: &str) -> PylosRe
         prompt_tokens: u.prompt_token_count.unwrap_or(0),
         completion_tokens: u.candidates_token_count.unwrap_or(0),
         total_tokens: u.total_token_count.unwrap_or(0),
+        ..Default::default()
     });
 
     let id = format!("gemini-{}", fastrand::u64(..));
@@ -397,13 +398,12 @@ pub(crate) fn from_gemini_response(resp: GeminiResponse, model: &str) -> PylosRe
             message: ChatCompletionMessage {
                 role: MessageRole::Assistant,
                 content,
-                name: None,
                 tool_calls: if tool_calls.is_empty() {
                     None
                 } else {
                     Some(tool_calls)
                 },
-                tool_call_id: None,
+                ..Default::default()
             },
             finish_reason: Some(finish_reason),
         }],
@@ -462,13 +462,13 @@ pub(crate) fn from_gemini_stream_chunk(resp: GeminiResponse, model: &str) -> Opt
         choices: vec![StreamChoice {
             index: 0,
             delta: StreamDelta {
-                role: None,
                 content,
                 tool_calls: if tool_call_chunks.is_empty() {
                     None
                 } else {
                     Some(tool_call_chunks)
                 },
+                ..Default::default()
             },
             finish_reason,
         }],
@@ -595,9 +595,7 @@ mod tests {
                     ChatCompletionMessage {
                         role: r,
                         content: Some(content.to_string()),
-                        name: None,
-                        tool_calls: None,
-                        tool_call_id: None,
+                        ..Default::default()
                     }
                 })
                 .collect(),
@@ -618,6 +616,7 @@ mod tests {
             top_k: None,
             min_p: None,
             repetition_penalty: None,
+            max_completion_tokens: None,
         }
     }
 
