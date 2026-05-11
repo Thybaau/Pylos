@@ -1,12 +1,12 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { modelsApi, type ModelInfo } from '../lib/api'
 import {
-  ChevronDown, ChevronUp, Plus, Pencil, Trash2, X, Check,
-  AlertTriangle, RotateCcw, AlertCircle,
+  ChevronDown, Plus, Pencil, Trash2, X, Check,
+  AlertTriangle, RotateCcw, AlertCircle, Search,
 } from 'lucide-react'
 
-const PROVIDERS = ['all', 'openai', 'anthropic', 'gemini', 'cohere', 'groq', 'mistral', 'xai', 'bedrock', 'ollama']
+const PROVIDERS = ['all', 'openai', 'anthropic', 'gemini', 'cohere', 'groq', 'mistral', 'xai', 'deepseek', 'bedrock', 'ollama']
 
 function formatPrice(price: number): string {
   if (price === 0) return 'Free'
@@ -317,7 +317,17 @@ export default function ModelCatalog() {
   const [showCreate, setShowCreate] = useState(false)
   const [editingModel, setEditingModel] = useState<ModelInfo | null>(null)
   const [deletingModel, setDeletingModel] = useState<{ provider: string; model_id: string } | null>(null)
+  const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(new Set())
   const [mutationError, setMutationError] = useState<string | null>(null)
+
+  const toggleProvider = (p: string) => {
+    setCollapsedProviders(prev => {
+      const next = new Set(prev)
+      if (next.has(p)) next.delete(p)
+      else next.add(p)
+      return next
+    })
+  }
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['models', provider],
@@ -413,125 +423,172 @@ export default function ModelCatalog() {
       )}
 
       {isLoading ? (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-16 bg-gray-800 rounded-xl animate-pulse" />
+            <div key={i} className="h-20 bg-gray-800/40 rounded-2xl animate-pulse border border-gray-800/50" />
           ))}
         </div>
       ) : (
-        <div className="space-y-6">
-          {Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([prov, pModels]) => (
-            <div key={prov}>
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 capitalize">
-                {prov} <span className="normal-case font-normal">({pModels.length})</span>
-              </h2>
-              <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="border-b border-gray-800">
-                    <tr>
-                      {['Model', 'Context', 'Input /1M', 'Output /1M', 'Capabilities', ''].map(h => (
-                        <th key={h} className="text-left px-4 py-3 text-xs text-gray-500 uppercase tracking-wide font-medium">
-                          {h}
-                        </th>
-                      ))}
+        <div className="space-y-10">
+          {Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([prov, pModels]) => {
+            const isCollapsed = collapsedProviders.has(prov)
+            return (
+              <div key={prov} className="space-y-3">
+                <div 
+                  className="flex items-center justify-between px-1 cursor-pointer group select-none"
+                  onClick={() => toggleProvider(prov)}
+                >
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-sm font-bold text-gray-200 capitalize flex items-center gap-2">
+                      <span className={`w-1.5 h-4 rounded-full transition-colors ${isCollapsed ? 'bg-gray-600' : 'bg-blue-500'}`} />
+                      {prov}
+                    </h2>
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-800 text-gray-500 border border-gray-700/50">
+                      {pModels.length} models
+                    </span>
+                  </div>
+                  <div className={`text-gray-500 group-hover:text-gray-300 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}>
+                    <ChevronDown size={16} />
+                  </div>
+                </div>
+
+                {!isCollapsed && (
+                  <div className="rounded-2xl border border-gray-800/60 bg-gray-900/40 backdrop-blur-xl overflow-hidden shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-800/30">
+                      <th className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest w-[30%]">Model</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest text-center">Context</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest text-right">Input /1M</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest text-right">Output /1M</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest text-center">Capabilities</th>
+                      <th className="px-6 py-4 w-20"></th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-gray-800/40">
                     {pModels.map(({ id, pylos }) => (
-                      <tr key={id}>
-                        <td colSpan={6} className="p-0">
-                          <table className="w-full">
-                            <tbody>
-                              <tr
-                                className={`border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors cursor-pointer group
-                                  ${expandedId === id ? 'bg-gray-800/20' : ''}`}
-                                onClick={() => setExpandedId(expandedId === id ? null : id)}
-                              >
-                                <td className="px-4 py-3">
-                                  <div className="font-medium text-white">{pylos?.display_name || pylos?.model_id || id}</div>
-                                  <div className="text-xs text-gray-500 font-mono">{pylos?.model_id ?? id}</div>
-                                </td>
-                                <td className="px-4 py-3 text-gray-300">
-                                  {formatContext(pylos?.context_window ?? 0)}
-                                </td>
-                                <td className="px-4 py-3 text-green-400 font-mono text-xs">
-                                  {formatPrice(pylos?.input_price_per_1m_usd ?? 0)}
-                                </td>
-                                <td className="px-4 py-3 text-orange-400 font-mono text-xs">
-                                  {formatPrice(pylos?.output_price_per_1m_usd ?? 0)}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex gap-1 flex-wrap">
-                                    <CapBadge ok={pylos?.supports_vision ?? false} label="Vision" />
-                                    <CapBadge ok={pylos?.supports_tools ?? true} label="Tools" />
-                                    <CapBadge ok={pylos?.supports_embeddings ?? false} label="Embed" />
-                                    <CapBadge ok={pylos?.supports_streaming ?? true} label="Stream" />
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                                    {pylos && (
-                                      <>
-                                        <button
-                                          onClick={() => { setMutationError(null); setEditingModel(pylos) }}
-                                          className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-blue-400
-                                            hover:bg-blue-400/10 rounded-lg transition-all"
-                                          title="Edit"
-                                        >
-                                          <Pencil size={13} />
-                                        </button>
-                                        <button
-                                          onClick={() => setDeletingModel({ provider: pylos.provider, model_id: pylos.model_id })}
-                                          className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-red-400
-                                            hover:bg-red-400/10 rounded-lg transition-all"
-                                          title="Remove from catalog"
-                                        >
-                                          <Trash2 size={13} />
-                                        </button>
-                                      </>
-                                    )}
-                                    <span className="text-gray-600">
-                                      {expandedId === id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                    </span>
-                                  </div>
-                                </td>
-                              </tr>
-                              {expandedId === id && pylos && (
-                                <tr className="bg-gray-800/10">
-                                  <td colSpan={6} className="px-6 py-4">
-                                    <div className="grid grid-cols-3 gap-4 text-xs">
-                                      <div>
-                                        <div className="text-gray-500 mb-1">Max output</div>
-                                        <div className="text-white">{formatContext(pylos.max_output_tokens)} tokens</div>
-                                      </div>
-                                      <div>
-                                        <div className="text-gray-500 mb-1">Provider</div>
-                                        <div className="text-white capitalize">{pylos.provider}</div>
-                                      </div>
-                                      <div>
-                                        <div className="text-gray-500 mb-1">Cost estimate (1K in + 500 out)</div>
-                                        <div className="text-white">
-                                          ${((pylos.input_price_per_1m_usd / 1000) + (pylos.output_price_per_1m_usd / 2000)).toFixed(4)}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
+                      <Fragment key={id}>
+                        <tr
+                          className={`hover:bg-blue-500/5 transition-all cursor-pointer group
+                            ${expandedId === id ? 'bg-blue-500/5' : ''}`}
+                          onClick={() => setExpandedId(expandedId === id ? null : id)}
+                        >
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-gray-100 group-hover:text-blue-400 transition-colors">
+                                {pylos?.display_name || pylos?.model_id || id}
+                              </span>
+                              <span className="text-[10px] text-gray-500 font-mono mt-0.5">
+                                {pylos?.model_id ?? id}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="px-2 py-1 rounded-md bg-gray-800/50 text-gray-300 text-xs font-medium border border-gray-700/30">
+                              {formatContext(pylos?.context_window ?? 0)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <span className={`text-xs font-mono font-semibold ${pylos?.input_price_per_1m_usd === 0 ? 'text-emerald-400' : 'text-blue-400'}`}>
+                              {formatPrice(pylos?.input_price_per_1m_usd ?? 0)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <span className={`text-xs font-mono font-semibold ${pylos?.output_price_per_1m_usd === 0 ? 'text-emerald-400' : 'text-orange-400'}`}>
+                              {formatPrice(pylos?.output_price_per_1m_usd ?? 0)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex gap-1.5 justify-center flex-wrap">
+                              <CapBadge ok={pylos?.supports_vision ?? false} label="Vision" />
+                              <CapBadge ok={pylos?.supports_tools ?? true} label="Tools" />
+                              <CapBadge ok={pylos?.supports_embeddings ?? false} label="Embed" />
+                              <CapBadge ok={pylos?.supports_streaming ?? true} label="Stream" />
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
+                              {pylos && (
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => { setMutationError(null); setEditingModel(pylos) }}
+                                    className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-all"
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletingModel({ provider: pylos.provider, model_id: pylos.model_id })}
+                                    className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
                               )}
-                            </tbody>
-                          </table>
-                        </td>
-                      </tr>
+                              <div className={`text-gray-600 transition-transform duration-200 ${expandedId === id ? 'rotate-180' : ''}`}>
+                                <ChevronDown size={16} />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                        {expandedId === id && pylos && (
+                          <tr className="bg-gray-800/20 border-l-2 border-l-blue-500">
+                            <td colSpan={6} className="px-10 py-6">
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-8 animate-in fade-in slide-in-from-top-1 duration-200">
+                                <div>
+                                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Technical Details</div>
+                                  <div className="space-y-1.5">
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-gray-400">Max Output</span>
+                                      <span className="text-gray-200 font-medium">{formatContext(pylos.max_output_tokens)} tokens</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-gray-400">Provider</span>
+                                      <span className="text-gray-200 font-medium capitalize">{pylos.provider}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Cost Estimation</div>
+                                  <div className="space-y-1 text-xs">
+                                    <div className="text-gray-400">Avg. request cost</div>
+                                    <div className="text-lg font-mono text-white">
+                                      ${((pylos.input_price_per_1m_usd / 1000) + (pylos.output_price_per_1m_usd / 2000)).toFixed(4)}
+                                    </div>
+                                    <div className="text-[10px] text-gray-500">(1K prompt + 500 completion)</div>
+                                  </div>
+                                </div>
+                                <div className="md:col-span-2">
+                                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Integration Snippet</div>
+                                  <div className="bg-black/40 rounded-xl p-3 border border-gray-800/50 font-mono text-[10px] text-blue-300 overflow-x-auto">
+                                    {`model: "${pylos.model_id}", // Managed by Pylos`}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )
+          })}
 
           {filtered.length === 0 && !isError && (
-            <div className="text-center py-16 text-gray-600">
-              No models found
+            <div className="flex flex-col items-center justify-center py-24 text-gray-500 space-y-4">
+              <div className="w-16 h-16 rounded-full bg-gray-800/30 flex items-center justify-center">
+                <Search size={24} className="text-gray-600" />
+              </div>
+              <div className="text-sm">No models found matching your criteria</div>
+              <button 
+                onClick={() => {setSearch(''); setProvider('all')}}
+                className="text-xs text-blue-500 hover:underline"
+              >
+                Clear all filters
+              </button>
             </div>
           )}
         </div>
