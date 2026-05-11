@@ -161,6 +161,11 @@ impl InferenceOrchestrator {
                 continue;
             }
 
+            debug!(
+                provider = provider.name(),
+                model = %model,
+                "Starting inference with provider"
+            );
             ctx.tried_providers.push(provider.name().to_string());
 
             match self
@@ -413,6 +418,7 @@ fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
                 && !model.starts_with("claude")
                 && !model.starts_with("gemini")
                 && !model.starts_with("command")
+                && !model.starts_with("deepseek-v4")
                 && !model.contains('/')
                 && !model.starts_with("us.")
                 && !model.starts_with("amazon.")

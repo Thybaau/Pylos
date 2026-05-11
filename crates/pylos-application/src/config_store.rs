@@ -803,7 +803,7 @@ fn build_runtime_providers(
             ProviderKind::Anthropic => Arc::new(AnthropicProvider::new()),
             ProviderKind::Gemini => Arc::new(GeminiProvider::new()),
             ProviderKind::Cohere => Arc::new(CohereProvider::new()),
-            _ => Arc::new(OpenAIProvider::new()), // OpenAI-compatibles : OpenAI, Groq, Mistral, xAI, etc.
+            _ => Arc::new(OpenAIProvider::new(name.to_string())), // OpenAI-compatibles : OpenAI, Groq, Mistral, xAI, etc.
         };
 
         info!(provider = %name, keys = provider_cfg.keys.len(), "Provider registered");

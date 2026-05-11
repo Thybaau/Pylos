@@ -25,15 +25,16 @@ const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 /// Compatible aussi avec tout provider OpenAI-compatible (Groq, Ollama, OpenRouter, etc.)
 pub struct OpenAIProvider {
     client: Client,
+    name: String,
 }
 
 impl OpenAIProvider {
-    pub fn new() -> Self {
+    pub fn new(name: String) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
             .expect("Failed to build HTTP client");
-        Self { client }
+        Self { client, name }
     }
 
     fn base_url<'a>(&self, config: &'a ProviderConfig) -> &'a str {
@@ -63,16 +64,12 @@ impl OpenAIProvider {
     }
 }
 
-impl Default for OpenAIProvider {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// OpenAIProvider no longer implements Default as it requires a name.
 
 #[async_trait]
 impl Provider for OpenAIProvider {
     fn name(&self) -> &str {
-        "openai"
+        &self.name
     }
 
     async fn complete(
@@ -91,7 +88,7 @@ impl Provider for OpenAIProvider {
                 let openai_req = to_openai_request(req, false);
                 let url = format!("{}/chat/completions", base_url);
 
-                debug!(provider = "openai", model = %req.model, url = %url, "Sending chat completion request");
+                debug!(provider = %self.name, model = %req.model, url = %url, "Sending chat completion request");
 
                 let response = self
                     .client
@@ -115,7 +112,7 @@ impl Provider for OpenAIProvider {
 
                 if !response.status().is_success() {
                     let body = response.text().await.unwrap_or_default();
-                    warn!(provider = "openai", status = status, body = %body, "Provider returned error");
+                    warn!(provider = %self.name, status = status, body = %body, "Provider returned error");
                     return Err(map_openai_error(status, &body));
                 }
 
@@ -123,14 +120,14 @@ impl Provider for OpenAIProvider {
                     PylosError::Internal(format!("Failed to parse OpenAI response: {}", e))
                 })?;
 
-                debug!(provider = "openai", id = %openai_resp.id, "Chat completion successful");
+                debug!(provider = %self.name, id = %openai_resp.id, "Chat completion successful");
                 Ok(from_openai_response(openai_resp))
             }
             PylosRequest::TextCompletion(req) => {
                 let openai_req = to_openai_text_request(req, false);
                 let url = format!("{}/completions", base_url);
 
-                debug!(provider = "openai", model = %req.model, url = %url, "Sending text completion request");
+                debug!(provider = %self.name, model = %req.model, url = %url, "Sending text completion request");
 
                 let response = self
                     .client
@@ -185,7 +182,7 @@ impl Provider for OpenAIProvider {
                 let openai_req = to_openai_request(req, true);
                 let url = format!("{}/chat/completions", base_url);
 
-                debug!(provider = "openai", model = %req.model, url = %url, "Sending streaming chat completion");
+                debug!(provider = %self.name, model = %req.model, url = %url, "Sending streaming chat completion");
 
                 let response = self
                     .client
@@ -210,7 +207,7 @@ impl Provider for OpenAIProvider {
                 if !response.status().is_success() {
                     let body = response.text().await.unwrap_or_default();
                     warn!(
-                        provider = "openai",
+                        provider = %self.name,
                         status = status,
                         "Stream request failed"
                     );
