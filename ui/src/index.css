@@ -3,15 +3,16 @@
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: Inter, system-ui, sans-serif;
 }
 
 body {
-  @apply bg-gray-950 text-gray-100;
+  background: #09090b;
+  color: #f4f4f5;
 }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { @apply bg-gray-900; }
-::-webkit-scrollbar-thumb { @apply bg-gray-700 rounded; }
-::-webkit-scrollbar-thumb:hover { @apply bg-gray-600; }
+::-webkit-scrollbar-track { background: #09090b; }
+::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3f3f46; }

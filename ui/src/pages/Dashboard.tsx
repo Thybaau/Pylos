@@ -40,27 +40,27 @@ export default function Dashboard() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="text-sm text-gray-400 mt-1">Last {period}</p>
+          <p className="text-sm text-zinc-400 mt-1">Last {period}</p>
         </div>
         <div className="flex items-center gap-3">
           {/* Period selector */}
-          <div className="flex rounded-lg border border-gray-700 overflow-hidden">
+          <div className="flex rounded-lg border border-zinc-800/50 bg-zinc-900/50 overflow-hidden">
             {PERIODS.map(p => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
                 className={`px-3 py-1.5 text-xs transition-colors
                   ${period === p
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    ? 'bg-zinc-800 text-white font-medium'
+                    : 'text-zinc-500 hover:text-zinc-300'
                   }`}
               >
                 {p}
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             Live
           </div>
         </div>
@@ -109,8 +109,8 @@ export default function Dashboard() {
       {/* Charts */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Request Volume */}
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-          <h2 className="text-sm font-semibold text-gray-300 mb-4">Request Volume</h2>
+        <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/30 p-5">
+          <h2 className="text-sm font-semibold text-zinc-300 mb-4">Request Volume</h2>
           {histQ.data?.buckets.length ? (
             <RequestChart
               buckets={histQ.data.buckets}
@@ -122,8 +122,8 @@ export default function Dashboard() {
         </div>
 
         {/* Token Usage */}
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-          <h2 className="text-sm font-semibold text-gray-300 mb-4">Token Usage</h2>
+        <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/30 p-5">
+          <h2 className="text-sm font-semibold text-zinc-300 mb-4">Token Usage</h2>
           {tokensQ.data?.buckets.length ? (
             <TokenChart
               buckets={tokensQ.data.buckets}
@@ -140,7 +140,7 @@ export default function Dashboard() {
 
 function EmptyChart() {
   return (
-    <div className="h-[220px] flex items-center justify-center text-gray-600 text-sm">
+    <div className="h-[220px] flex items-center justify-center text-zinc-600 text-sm">
       No data yet — send some requests to see charts
     </div>
   )

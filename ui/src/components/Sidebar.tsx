@@ -4,7 +4,6 @@ import {
   ScrollText,
   Server,
   KeyRound,
-  Activity,
   ChevronLeft,
   ChevronRight,
   FlaskConical,
@@ -38,16 +37,16 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`flex flex-col h-screen bg-gray-900 border-r border-gray-800 transition-all duration-200
+      className={`flex flex-col h-screen bg-zinc-900/50 border-r border-zinc-800/50 transition-all duration-200
         ${collapsed ? 'w-16' : 'w-56'}`}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-gray-800">
-        <div className="flex-shrink-0 w-8 h-8 overflow-hidden rounded-lg bg-gray-800">
+      <div className="flex items-center gap-3 px-4 py-5 border-b border-zinc-800/50">
+        <div className="flex-shrink-0 w-8 h-8 overflow-hidden rounded-lg bg-zinc-800">
           <img src="/logo.png" alt="Pylos" className="w-full h-full object-contain" />
         </div>
         {!collapsed && (
-          <span className="font-bold text-white text-lg">Pylos</span>
+          <span className="font-bold text-lg text-white">Pylos</span>
         )}
       </div>
 
@@ -60,25 +59,30 @@ export function Sidebar() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
               ${isActive
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                ? 'bg-zinc-800 text-white'
+                : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
               }`
             }
           >
-            <Icon size={18} className="flex-shrink-0" />
-            {!collapsed && <span>{label}</span>}
+            {({ isActive }) => (
+              <>
+                {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0" />}
+                <Icon size={18} className="flex-shrink-0" />
+                {!collapsed && <span>{label}</span>}
+              </>
+            )}
           </NavLink>
         ))}
       </nav>
 
       {/* Status indicator */}
-      <div className="px-4 py-3 border-t border-gray-800">
+      <div className="px-4 py-3 border-t border-zinc-800/50">
         {!collapsed && (
           <div className="flex items-center gap-2 text-xs">
             {isHealthy ? (
               <>
-                <Activity size={12} className="text-green-400" />
-                <span className="text-gray-500">Gateway active</span>
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-zinc-500">Gateway active</span>
               </>
             ) : (
               <>
@@ -91,7 +95,7 @@ export function Sidebar() {
         {collapsed && (
           <div className="flex justify-center">
             {isHealthy
-              ? <div className="w-2 h-2 rounded-full bg-green-400" />
+              ? <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               : <AlertCircle size={12} className="text-red-400" />
             }
           </div>
@@ -101,8 +105,8 @@ export function Sidebar() {
       {/* Collapse button */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center justify-center py-3 border-t border-gray-800
-          text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
+        className="flex items-center justify-center py-3 border-t border-zinc-800/50
+          text-zinc-500 hover:text-white hover:bg-zinc-800/50 transition-colors"
       >
         {collapsed
           ? <ChevronRight size={16} />

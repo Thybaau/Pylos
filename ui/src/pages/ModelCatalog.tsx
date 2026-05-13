@@ -22,7 +22,7 @@ function formatContext(n: number): string {
 
 function CapBadge({ ok, label }: { ok: boolean; label: string }) {
   return ok ? (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-blue-900/50 text-blue-300 border border-blue-800/50">
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300 border border-zinc-700/50">
       {label}
     </span>
   ) : null
@@ -119,109 +119,109 @@ function ModelModal({
     <button
       type="button"
       onClick={() => set(k, !form[k] as ModelFormState[typeof k])}
-      className={`relative w-9 h-5 rounded-full transition-colors ${form[k] ? 'bg-blue-600' : 'bg-gray-700'}`}
+      className={`relative w-9 h-5 rounded-full transition-colors ${form[k] ? 'bg-emerald-600' : 'bg-zinc-700'}`}
     >
       <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form[k] ? 'left-4' : 'left-0.5'}`} />
     </button>
   )
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-gray-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-zinc-800/50">
           <h2 className="text-lg font-semibold text-white">
             {isEdit ? 'Edit model' : 'Add custom model'}
           </h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={18} /></button>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={18} /></button>
         </div>
 
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Provider *</label>
+              <label className="block text-xs text-zinc-400 mb-1.5">Provider *</label>
               <input
                 value={form.provider}
                 onChange={e => set('provider', e.target.value)}
                 disabled={isEdit}
                 placeholder="openai, ollama…"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200
-                  disabled:opacity-50 focus:outline-none focus:border-blue-500"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                  disabled:opacity-50 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Model ID *</label>
+              <label className="block text-xs text-zinc-400 mb-1.5">Model ID *</label>
               <input
                 value={form.model_id}
                 onChange={e => set('model_id', e.target.value)}
                 disabled={isEdit}
                 placeholder="gpt-4o, llama3.2:3b…"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200
-                  disabled:opacity-50 font-mono focus:outline-none focus:border-blue-500"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                  disabled:opacity-50 font-mono focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1.5">Display name</label>
+            <label className="block text-xs text-zinc-400 mb-1.5">Display name</label>
             <input
               value={form.display_name}
               onChange={e => set('display_name', e.target.value)}
               placeholder="GPT-4o"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200
-                focus:outline-none focus:border-blue-500"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Context window (tokens)</label>
+              <label className="block text-xs text-zinc-400 mb-1.5">Context window (tokens)</label>
               <input
                 type="number"
                 value={form.context_window}
                 onChange={e => set('context_window', e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200
-                  focus:outline-none focus:border-blue-500"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                  focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Max output tokens</label>
+              <label className="block text-xs text-zinc-400 mb-1.5">Max output tokens</label>
               <input
                 type="number"
                 value={form.max_output_tokens}
                 onChange={e => set('max_output_tokens', e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200
-                  focus:outline-none focus:border-blue-500"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                  focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Input price / 1M tokens (USD)</label>
+              <label className="block text-xs text-zinc-400 mb-1.5">Input price / 1M tokens (USD)</label>
               <input
                 type="number"
                 step="0.001"
                 value={form.input_price_per_1m_usd}
                 onChange={e => set('input_price_per_1m_usd', e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200
-                  focus:outline-none focus:border-blue-500"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                  focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Output price / 1M tokens (USD)</label>
+              <label className="block text-xs text-zinc-400 mb-1.5">Output price / 1M tokens (USD)</label>
               <input
                 type="number"
                 step="0.001"
                 value={form.output_price_per_1m_usd}
                 onChange={e => set('output_price_per_1m_usd', e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200
-                  focus:outline-none focus:border-blue-500"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                  focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
               />
             </div>
           </div>
 
           <div className="space-y-2.5">
-            <label className="block text-xs text-gray-400">Capabilities</label>
+            <label className="block text-xs text-zinc-400">Capabilities</label>
             {(
               [
                 { k: 'supports_vision', label: 'Vision' },
@@ -232,7 +232,7 @@ function ModelModal({
               ] as const
             ).map(({ k, label }) => (
               <div key={k} className="flex items-center justify-between">
-                <span className="text-sm text-gray-300">{label}</span>
+                <span className="text-sm text-zinc-300">{label}</span>
                 <Toggle k={k} />
               </div>
             ))}
@@ -245,12 +245,12 @@ function ModelModal({
           )}
         </div>
 
-        <div className="flex justify-end gap-3 px-5 py-4 border-t border-gray-800">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
+        <div className="flex justify-end gap-3 px-5 py-4 border-t border-zinc-800/50">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-zinc-400 hover:text-white">Cancel</button>
           <button
             onClick={() => onSave(form)}
             disabled={isSaving || !form.provider.trim() || !form.model_id.trim()}
-            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50
+            className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50
               text-white rounded-lg flex items-center gap-2 transition-colors"
           >
             {isSaving ? <RotateCcw size={14} className="animate-spin" /> : <Check size={14} />}
@@ -276,27 +276,27 @@ function DeleteConfirm({
   isDeleting: boolean
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-9 h-9 rounded-full bg-red-500/15 flex items-center justify-center">
             <AlertTriangle size={16} className="text-red-400" />
           </div>
           <div>
             <div className="font-semibold text-white">Remove from catalog</div>
-            <div className="text-xs text-gray-500">This removes only the catalog entry</div>
+            <div className="text-xs text-zinc-500">This removes only the catalog entry</div>
           </div>
         </div>
-        <p className="text-sm text-gray-400 mb-5">
+        <p className="text-sm text-zinc-400 mb-5">
           Remove <span className="text-white font-mono text-xs">{modelId}</span> from the model catalog?
         </p>
         <div className="flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-zinc-400 hover:text-white">Cancel</button>
           <button
             onClick={onConfirm}
             disabled={isDeleting}
             className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg
-              flex items-center gap-2"
+              flex items-center gap-2 active:scale-[0.98]"
           >
             {isDeleting ? <RotateCcw size={13} className="animate-spin" /> : <Trash2 size={13} />}
             Remove
@@ -376,13 +376,13 @@ export default function ModelCatalog() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Model Catalog</h1>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-zinc-400 mt-1">
             {filtered.length} models — pricing &amp; capabilities
           </p>
         </div>
         <button
           onClick={() => { setMutationError(null); setShowCreate(true) }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-sm rounded-lg transition-colors"
         >
           <Plus size={15} /> Add model
         </button>
@@ -395,7 +395,7 @@ export default function ModelCatalog() {
           placeholder="Search models..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="flex-1 min-w-[200px] px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+          className="flex-1 min-w-[200px] px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
         />
         <div className="flex gap-1.5 flex-wrap">
           {PROVIDERS.map(p => (
@@ -404,8 +404,8 @@ export default function ModelCatalog() {
               onClick={() => setProvider(p)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors
                 ${provider === p
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:text-white border border-gray-700'}`}
+                  ? 'bg-zinc-800 text-white'
+                  : 'bg-zinc-900 text-zinc-500 border border-zinc-800 hover:text-zinc-300'}`}
             >
               {p}
             </button>
@@ -425,7 +425,7 @@ export default function ModelCatalog() {
       {isLoading ? (
         <div className="space-y-4">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-20 bg-gray-800/40 rounded-2xl animate-pulse border border-gray-800/50" />
+            <div key={i} className="h-20 rounded-xl border border-zinc-800/50 bg-zinc-900/30 animate-pulse" />
           ))}
         </div>
       ) : (
@@ -439,52 +439,52 @@ export default function ModelCatalog() {
                   onClick={() => toggleProvider(prov)}
                 >
                   <div className="flex items-center gap-3">
-                    <h2 className="text-sm font-bold text-gray-200 capitalize flex items-center gap-2">
-                      <span className={`w-1.5 h-4 rounded-full transition-colors ${isCollapsed ? 'bg-gray-600' : 'bg-blue-500'}`} />
+                    <h2 className="text-sm font-bold text-zinc-200 capitalize flex items-center gap-2">
+                      <span className={`w-1.5 h-4 rounded-full ${isCollapsed ? 'bg-zinc-600' : 'bg-emerald-500'}`} />
                       {prov}
                     </h2>
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-800 text-gray-500 border border-gray-700/50">
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 border border-zinc-700/50">
                       {pModels.length} models
                     </span>
                   </div>
-                  <div className={`text-gray-500 group-hover:text-gray-300 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}>
+                  <div className={`text-zinc-500 group-hover:text-zinc-300 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}>
                     <ChevronDown size={16} />
                   </div>
                 </div>
 
                 {!isCollapsed && (
-                  <div className="rounded-2xl border border-gray-800/60 bg-gray-900/40 backdrop-blur-xl overflow-hidden shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/30 overflow-hidden">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-gray-800/30">
-                      <th className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest w-[30%]">Model</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest text-center">Context</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest text-right">Input /1M</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest text-right">Output /1M</th>
-                      <th className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest text-center">Capabilities</th>
+                    <tr className="bg-zinc-900/50">
+                      <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest w-[30%]">Model</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Context</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-right">Input /1M</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-right">Output /1M</th>
+                      <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Capabilities</th>
                       <th className="px-6 py-4 w-20"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-800/40">
+                  <tbody className="divide-y divide-zinc-800/40">
                     {pModels.map(({ id, pylos }) => (
                       <Fragment key={id}>
                         <tr
-                          className={`hover:bg-blue-500/5 transition-all cursor-pointer group
-                            ${expandedId === id ? 'bg-blue-500/5' : ''}`}
+                          className={`transition-colors cursor-pointer group
+                            ${expandedId === id ? 'bg-zinc-800/20' : 'hover:bg-zinc-800/30'}`}
                           onClick={() => setExpandedId(expandedId === id ? null : id)}
                         >
                           <td className="px-6 py-4">
                             <div className="flex flex-col">
-                              <span className="font-semibold text-gray-100 group-hover:text-blue-400 transition-colors">
+                              <span className="font-semibold text-zinc-100 group-hover:text-white transition-colors">
                                 {pylos?.display_name || pylos?.model_id || id}
                               </span>
-                              <span className="text-[10px] text-gray-500 font-mono mt-0.5">
+                              <span className="text-[10px] text-zinc-500 font-mono mt-0.5">
                                 {pylos?.model_id ?? id}
                               </span>
                             </div>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <span className="px-2 py-1 rounded-md bg-gray-800/50 text-gray-300 text-xs font-medium border border-gray-700/30">
+                            <span className="px-2 py-1 rounded-md bg-zinc-800/50 text-zinc-300 text-xs font-medium border border-zinc-700/30">
                               {formatContext(pylos?.context_window ?? 0)}
                             </span>
                           </td>
@@ -494,7 +494,7 @@ export default function ModelCatalog() {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <span className={`text-xs font-mono font-semibold ${pylos?.output_price_per_1m_usd === 0 ? 'text-emerald-400' : 'text-orange-400'}`}>
+                            <span className={`text-xs font-mono font-semibold ${pylos?.output_price_per_1m_usd === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
                               {formatPrice(pylos?.output_price_per_1m_usd ?? 0)}
                             </span>
                           </td>
@@ -512,54 +512,54 @@ export default function ModelCatalog() {
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button
                                     onClick={() => { setMutationError(null); setEditingModel(pylos) }}
-                                    className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-all"
+                                    className="p-1.5 text-zinc-500 hover:text-emerald-400 hover:bg-emerald-400/10 rounded-lg transition-all"
                                   >
                                     <Pencil size={14} />
                                   </button>
                                   <button
                                     onClick={() => setDeletingModel({ provider: pylos.provider, model_id: pylos.model_id })}
-                                    className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                                    className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
                                   >
                                     <Trash2 size={14} />
                                   </button>
                                 </div>
                               )}
-                              <div className={`text-gray-600 transition-transform duration-200 ${expandedId === id ? 'rotate-180' : ''}`}>
+                              <div className={`text-zinc-600 transition-transform duration-200 ${expandedId === id ? 'rotate-180' : ''}`}>
                                 <ChevronDown size={16} />
                               </div>
                             </div>
                           </td>
                         </tr>
                         {expandedId === id && pylos && (
-                          <tr className="bg-gray-800/20 border-l-2 border-l-blue-500">
+                          <tr className="bg-zinc-800/20 border-l-2 border-l-emerald-500">
                             <td colSpan={6} className="px-10 py-6">
-                              <div className="grid grid-cols-1 md:grid-cols-4 gap-8 animate-in fade-in slide-in-from-top-1 duration-200">
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
                                 <div>
-                                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Technical Details</div>
+                                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Technical Details</div>
                                   <div className="space-y-1.5">
                                     <div className="flex justify-between text-xs">
-                                      <span className="text-gray-400">Max Output</span>
-                                      <span className="text-gray-200 font-medium">{formatContext(pylos.max_output_tokens)} tokens</span>
+                                      <span className="text-zinc-400">Max Output</span>
+                                      <span className="text-zinc-200 font-medium">{formatContext(pylos.max_output_tokens)} tokens</span>
                                     </div>
                                     <div className="flex justify-between text-xs">
-                                      <span className="text-gray-400">Provider</span>
-                                      <span className="text-gray-200 font-medium capitalize">{pylos.provider}</span>
+                                      <span className="text-zinc-400">Provider</span>
+                                      <span className="text-zinc-200 font-medium capitalize">{pylos.provider}</span>
                                     </div>
                                   </div>
                                 </div>
                                 <div>
-                                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Cost Estimation</div>
+                                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Cost Estimation</div>
                                   <div className="space-y-1 text-xs">
-                                    <div className="text-gray-400">Avg. request cost</div>
+                                    <div className="text-zinc-400">Avg. request cost</div>
                                     <div className="text-lg font-mono text-white">
                                       ${((pylos.input_price_per_1m_usd / 1000) + (pylos.output_price_per_1m_usd / 2000)).toFixed(4)}
                                     </div>
-                                    <div className="text-[10px] text-gray-500">(1K prompt + 500 completion)</div>
+                                    <div className="text-[10px] text-zinc-500">(1K prompt + 500 completion)</div>
                                   </div>
                                 </div>
                                 <div className="md:col-span-2">
-                                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Integration Snippet</div>
-                                  <div className="bg-black/40 rounded-xl p-3 border border-gray-800/50 font-mono text-[10px] text-blue-300 overflow-x-auto">
+                                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Integration Snippet</div>
+                                  <div className="bg-zinc-950/50 rounded-xl p-3 border border-zinc-800/50 font-mono text-[10px] text-emerald-300 overflow-x-auto">
                                     {`model: "${pylos.model_id}", // Managed by Pylos`}
                                   </div>
                                 </div>
@@ -578,14 +578,14 @@ export default function ModelCatalog() {
           })}
 
           {filtered.length === 0 && !isError && (
-            <div className="flex flex-col items-center justify-center py-24 text-gray-500 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-gray-800/30 flex items-center justify-center">
-                <Search size={24} className="text-gray-600" />
+            <div className="flex flex-col items-center justify-center py-24 text-zinc-500 space-y-4">
+              <div className="w-16 h-16 rounded-full bg-zinc-800/30 flex items-center justify-center">
+                <Search size={24} className="text-zinc-600" />
               </div>
               <div className="text-sm">No models found matching your criteria</div>
               <button 
                 onClick={() => {setSearch(''); setProvider('all')}}
-                className="text-xs text-blue-500 hover:underline"
+                className="text-xs text-emerald-500 hover:underline"
               >
                 Clear all filters
               </button>
