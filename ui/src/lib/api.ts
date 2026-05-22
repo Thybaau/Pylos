@@ -3,11 +3,11 @@ import axios from 'axios'
 const getBaseUrl = (): string => {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) {
-    // Si l'API pointe vers localhost mais que le frontend est chargé sur un autre domaine,
+    // Si l'API pointe vers localhost/127.0.0.1 mais que le frontend est chargé sur un autre domaine,
     // on utilise des chemins relatifs pour passer par Nginx/reverse proxy.
     if (
       typeof window !== 'undefined' &&
-      envUrl.includes('localhost') &&
+      (envUrl.includes('localhost') || envUrl.includes('127.0.0.1')) &&
       window.location.hostname !== 'localhost' &&
       window.location.hostname !== '127.0.0.1'
     ) {
@@ -18,15 +18,13 @@ const getBaseUrl = (): string => {
   return '';
 };
 
-const BASE_URL = getBaseUrl();
-
 export const api = axios.create({
-  baseURL: BASE_URL,
   timeout: 30000,
 })
 
-// Request interceptor to attach the Admin Key from localStorage
+// Request interceptor to attach the Admin Key from localStorage and dynamically set baseURL
 api.interceptors.request.use((config) => {
+  config.baseURL = getBaseUrl();
   const adminKey = typeof window !== 'undefined' ? localStorage.getItem('pylos_admin_key') : null;
   if (adminKey) {
     config.headers['Authorization'] = `Bearer ${adminKey}`;
