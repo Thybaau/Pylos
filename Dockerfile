@@ -1,16 +1,24 @@
+# syntax=docker/dockerfile:1
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 0 — Get Cross-Compilation Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 1 — Builder
-# Utilise l'image officielle Rust avec les dépendances système nécessaires
-# (openssl, pkg-config) pour compiler le workspace
+# Utilise l'image officielle Rust avec les dépendances système nécessaires,
+# configurée pour la cross-compilation multi-architecture
 # ─────────────────────────────────────────────────────────────────────────────
-FROM rust:1.95-bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:1.95-bookworm AS builder
+COPY --from=xx / /
 
 WORKDIR /build
 
-# Dépendances système pour openssl (requis par reqwest)
+# Dépendances système de l'hôte pour la compilation (Clang, LLD et pkg-config)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    clang \
+    lld \
     pkg-config \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ─── Couche cache des dépendances ────────────────────────────────────────────
@@ -36,22 +44,29 @@ RUN echo "fn main() {}" > crates/pylos-server/src/main.rs && \
     echo "pub fn init() {}" > crates/pylos-application/src/lib.rs && \
     echo "pub fn init() {}" > crates/pylos-infrastructure/src/lib.rs
 
-# Pré-compilation des dépendances uniquement (layer cachée)
-RUN cargo build --release -p pylos-server 2>&1 | tail -5 || true
+# Déclaration de la plateforme cible et installation des librairies cibles correspondantes
+ARG TARGETPLATFORM
+RUN apt-get update && xx-apt-get install -y --no-install-recommends \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pré-compilation des dépendances uniquement (layer cachée) pour la cible
+RUN xx-cargo build --release -p pylos-server 2>&1 | tail -5 || true
 
 # ─── Build réel ──────────────────────────────────────────────────────────────
 # On supprime les artefacts des stubs pour forcer la recompilation du code réel
 RUN rm -rf \
-    target/release/.fingerprint/pylos-* \
-    target/release/deps/pylos_* \
-    target/release/pylos-*
+    target/*/release/.fingerprint/pylos-* \
+    target/*/release/deps/pylos_* \
+    target/*/release/pylos-*
 
 # Copie de tout le code source
 COPY crates/ crates/
 COPY rustfmt.toml ./
 
-# Build de release
-RUN cargo build --release -p pylos-server
+# Build de release pour la cible, et copie dans un chemin neutre
+RUN xx-cargo build --release -p pylos-server && \
+    cp target/$(xx-cargo --print-target-triple)/release/pylos-server ./pylos-server
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 2 — Runtime
@@ -69,7 +84,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copie du binaire compilé
-COPY --from=builder /build/target/release/pylos-server /app/pylos-server
+COPY --from=builder /build/pylos-server /app/pylos-server
 
 # Utilisateur non-root pour la sécurité
 RUN useradd --system --uid 1001 --no-create-home pylos && \
