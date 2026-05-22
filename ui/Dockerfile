@@ -7,7 +7,7 @@ COPY . .
 RUN npm run build
 
 # ── Runtime : nginx pour servir le SPA ──────────────────────────────────────
-FROM nginx:alpine AS runtime
+FROM nginx:1.27 AS runtime
 
 # Config nginx : SPA routing + proxy vers le backend Pylos
 COPY --from=builder /app/dist /usr/share/nginx/html
