@@ -59,7 +59,7 @@ RUN apt-get update && xx-apt-get install -y --no-install-recommends \
 RUN xx-clang --setup-target-triple
 
 # Pré-compilation des dépendances uniquement (layer cachée) pour la cible
-RUN PKG_CONFIG="$(xx-info)-pkg-config" xx-cargo build --release -p pylos-server 2>&1 | tail -5 || true
+RUN PKG_CONFIG=xx-pkg-config xx-cargo build --release -p pylos-server 2>&1 | tail -5 || true
 
 # ─── Build réel ──────────────────────────────────────────────────────────────
 # On supprime les artefacts des stubs pour forcer la recompilation du code réel
@@ -73,7 +73,7 @@ COPY crates/ crates/
 COPY rustfmt.toml ./
 
 # Build de release pour la cible, et copie dans un chemin neutre
-RUN PKG_CONFIG="$(xx-info)-pkg-config" xx-cargo build --release -p pylos-server && \
+RUN PKG_CONFIG=xx-pkg-config xx-cargo build --release -p pylos-server && \
     cp target/$(xx-cargo --print-target-triple)/release/pylos-server ./pylos-server
 
 # ─────────────────────────────────────────────────────────────────────────────
