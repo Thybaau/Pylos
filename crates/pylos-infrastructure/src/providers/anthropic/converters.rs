@@ -1,6 +1,6 @@
 use pylos_core::domain::openai::{
-    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole,
-    ToolCall, ToolCallFunction, Usage,
+    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole, ToolCall,
+    ToolCallFunction, Usage,
 };
 use pylos_core::domain::request::{PylosResponse, StreamChoice, StreamChunk, StreamDelta};
 use pylos_core::error::PylosError;
@@ -201,9 +201,7 @@ pub(crate) fn to_anthropic_request(
             MessageRole::User => {
                 messages.push(AnthropicMessage {
                     role: "user".into(),
-                    content: AnthropicMessageContent::Text(
-                        msg.content.clone().unwrap_or_default(),
-                    ),
+                    content: AnthropicMessageContent::Text(msg.content.clone().unwrap_or_default()),
                 });
             }
             MessageRole::Assistant => {
@@ -217,9 +215,8 @@ pub(crate) fn to_anthropic_request(
                         }
                     }
                     for tc in tool_calls {
-                        let input: serde_json::Value =
-                            serde_json::from_str(&tc.function.arguments)
-                                .unwrap_or(serde_json::Value::Object(Default::default()));
+                        let input: serde_json::Value = serde_json::from_str(&tc.function.arguments)
+                            .unwrap_or(serde_json::Value::Object(Default::default()));
                         blocks.push(AnthropicContentBlock::ToolUse {
                             id: tc.id.clone(),
                             name: tc.function.name.clone(),
@@ -279,17 +276,18 @@ pub(crate) fn to_anthropic_request(
     };
 
     // Conversion des tools OpenAI → Anthropic
-    let tools = req.tools.as_ref().map(|ts| {
-        ts.iter()
-            .map(|t| AnthropicTool {
-                name: t.function.name.clone(),
-                description: t.function.description.clone(),
-                input_schema: t.function.parameters.clone().unwrap_or_else(|| {
-                    serde_json::json!({ "type": "object", "properties": {} })
-                }),
-            })
-            .collect::<Vec<_>>()
-    });
+    let tools =
+        req.tools.as_ref().map(|ts| {
+            ts.iter()
+                .map(|t| AnthropicTool {
+                    name: t.function.name.clone(),
+                    description: t.function.description.clone(),
+                    input_schema: t.function.parameters.clone().unwrap_or_else(
+                        || serde_json::json!({ "type": "object", "properties": {} }),
+                    ),
+                })
+                .collect::<Vec<_>>()
+        });
 
     // Conversion du tool_choice OpenAI → Anthropic
     let tool_choice = req.tool_choice.as_ref().map(|tc| {

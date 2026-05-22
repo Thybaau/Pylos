@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use pylos_core::domain::embedding::{EmbeddingData, EmbeddingResponse, EmbeddingUsage};
 use pylos_core::domain::openai::{
-    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole,
-    ToolCall, ToolCallFunction, Usage,
+    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole, ToolCall,
+    ToolCallFunction, Usage,
 };
 use pylos_core::domain::request::{
     PylosResponse, StreamChoice, StreamChunk, StreamDelta, StreamToolCallChunk,
@@ -103,7 +103,10 @@ pub(crate) struct GeminiToolConfig {
 #[derive(Debug, Serialize)]
 pub(crate) struct GeminiFunctionCallingConfig {
     pub mode: String, // "AUTO" | "ANY" | "NONE"
-    #[serde(rename = "allowedFunctionNames", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "allowedFunctionNames",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub allowed_function_names: Option<Vec<String>>,
 }
 
@@ -247,9 +250,9 @@ pub(crate) fn to_gemini_request(
                     .content
                     .as_deref()
                     .and_then(|c| serde_json::from_str(c).ok())
-                    .unwrap_or_else(|| {
-                        serde_json::json!({ "output": msg.content.clone().unwrap_or_default() })
-                    });
+                    .unwrap_or_else(
+                        || serde_json::json!({ "output": msg.content.clone().unwrap_or_default() }),
+                    );
                 contents.push(GeminiContent {
                     role: "user".to_string(),
                     parts: vec![GeminiPart {
@@ -307,9 +310,7 @@ pub(crate) fn to_gemini_request(
                 "required" => ("ANY", None),
                 _ => ("AUTO", None),
             },
-            ToolChoice::Specific { function, .. } => {
-                ("ANY", Some(vec![function.name.clone()]))
-            }
+            ToolChoice::Specific { function, .. } => ("ANY", Some(vec![function.name.clone()])),
         };
         GeminiToolConfig {
             function_calling_config: GeminiFunctionCallingConfig {
@@ -449,7 +450,11 @@ pub(crate) fn from_gemini_stream_chunk(resp: GeminiResponse, model: &str) -> Opt
     }
 
     let content_text = text_parts.join("");
-    let content = if content_text.is_empty() { None } else { Some(content_text) };
+    let content = if content_text.is_empty() {
+        None
+    } else {
+        Some(content_text)
+    };
 
     Some(StreamChunk {
         id: format!("gemini-{}", fastrand::u64(..)),

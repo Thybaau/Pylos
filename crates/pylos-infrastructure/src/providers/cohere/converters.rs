@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use pylos_core::domain::embedding::{EmbeddingData, EmbeddingResponse, EmbeddingUsage};
 use pylos_core::domain::openai::{
-    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole,
-    ToolCall, ToolCallFunction, Usage,
+    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole, ToolCall,
+    ToolCallFunction, Usage,
 };
 use pylos_core::domain::request::{
     PylosResponse, StreamChoice, StreamChunk, StreamDelta, StreamToolCallChunk,

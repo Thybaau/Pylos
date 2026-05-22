@@ -72,7 +72,8 @@ impl ProviderKind {
         {
             return ProviderKind::OpenAI;
         }
-        if model.starts_with("gemini") || model.starts_with("google/") || model.contains("learnlm") {
+        if model.starts_with("gemini") || model.starts_with("google/") || model.contains("learnlm")
+        {
             return ProviderKind::Gemini;
         }
         if model.starts_with("command") || model.starts_with("embed-") {
@@ -84,7 +85,8 @@ impl ProviderKind {
         if model.starts_with("deepseek") {
             return ProviderKind::DeepSeek;
         }
-        if (model.starts_with("mistral") || model.starts_with("codestral")) && !model.contains(':') {
+        if (model.starts_with("mistral") || model.starts_with("codestral")) && !model.contains(':')
+        {
             return ProviderKind::Mistral;
         }
         if model.contains('/') {

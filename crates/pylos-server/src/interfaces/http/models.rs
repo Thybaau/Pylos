@@ -92,7 +92,9 @@ pub async fn list_models(
                     provider_model_ids.push(model.clone());
                 }
             }
-            if wildcard { break; }
+            if wildcard {
+                break;
+            }
         }
 
         if wildcard {
@@ -125,7 +127,12 @@ pub async fn list_models(
     models.sort_by(|a, b| {
         let pa = a["provider"].as_str().unwrap_or("");
         let pb = b["provider"].as_str().unwrap_or("");
-        pa.cmp(pb).then(a["id"].as_str().unwrap_or("").cmp(b["id"].as_str().unwrap_or("")))
+        pa.cmp(pb).then(
+            a["id"]
+                .as_str()
+                .unwrap_or("")
+                .cmp(b["id"].as_str().unwrap_or("")),
+        )
     });
     models.dedup_by(|a, b| a["provider"] == b["provider"] && a["id"] == b["id"]);
 

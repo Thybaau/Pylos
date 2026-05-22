@@ -213,7 +213,8 @@ impl Provider for AnthropicProvider {
                                             }
 
                                             let mut c = ctx.lock().await;
-                                            from_anthropic_stream_event(stream_event, &mut c).map(Ok)
+                                            from_anthropic_stream_event(stream_event, &mut c)
+                                                .map(Ok)
                                         }
                                         Err(parse_err) => {
                                             if !data.is_empty() {

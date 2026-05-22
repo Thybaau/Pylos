@@ -1,13 +1,13 @@
 use aws_sdk_bedrockruntime::types::{
-    ContentBlock, ConversationRole, InferenceConfiguration, Message, SystemContentBlock,
-    Tool, ToolConfiguration, ToolInputSchema, ToolResultBlock, ToolResultContentBlock,
-    ToolSpecification, ToolUseBlock,
+    ContentBlock, ConversationRole, InferenceConfiguration, Message, SystemContentBlock, Tool,
+    ToolConfiguration, ToolInputSchema, ToolResultBlock, ToolResultContentBlock, ToolSpecification,
+    ToolUseBlock,
 };
 use aws_smithy_types::Document;
 
 use pylos_core::domain::openai::{
-    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole,
-    ToolCall, ToolCallFunction, Usage,
+    ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole, ToolCall,
+    ToolCallFunction, Usage,
 };
 use pylos_core::domain::request::{
     PylosResponse, StreamChoice, StreamChunk, StreamDelta, StreamToolCallChunk,
@@ -58,9 +58,8 @@ pub(crate) fn convert_messages(
                         }
                     }
                     for tc in tool_calls {
-                        let input: serde_json::Value =
-                            serde_json::from_str(&tc.function.arguments)
-                                .unwrap_or(serde_json::Value::Object(Default::default()));
+                        let input: serde_json::Value = serde_json::from_str(&tc.function.arguments)
+                            .unwrap_or(serde_json::Value::Object(Default::default()));
                         let doc = json_to_bedrock_doc(&input);
                         let tool_use = ToolUseBlock::builder()
                             .tool_use_id(tc.id.clone())
@@ -123,9 +122,11 @@ pub(crate) fn build_tool_config(
 ) -> Result<ToolConfiguration, PylosError> {
     let mut bedrock_tools: Vec<Tool> = Vec::new();
     for t in tools {
-        let schema_json = t.function.parameters.clone().unwrap_or_else(|| {
-            serde_json::json!({ "type": "object", "properties": {} })
-        });
+        let schema_json = t
+            .function
+            .parameters
+            .clone()
+            .unwrap_or_else(|| serde_json::json!({ "type": "object", "properties": {} }));
         let schema_doc = json_to_bedrock_doc(&schema_json);
         let spec = ToolSpecification::builder()
             .name(t.function.name.clone())
@@ -153,9 +154,7 @@ fn json_to_bedrock_doc(val: &serde_json::Value) -> Document {
             } else if let Some(u) = n.as_u64() {
                 Document::Number(aws_smithy_types::Number::PosInt(u))
             } else {
-                Document::Number(aws_smithy_types::Number::Float(
-                    n.as_f64().unwrap_or(0.0),
-                ))
+                Document::Number(aws_smithy_types::Number::Float(n.as_f64().unwrap_or(0.0)))
             }
         }
         serde_json::Value::String(s) => Document::String(s.clone()),
@@ -436,9 +435,7 @@ mod tests {
             ChatCompletionMessage {
                 role: MessageRole::User,
                 content: Some("Hi".into()),
-                name: None,
-                tool_calls: None,
-                tool_call_id: None,
+                ..Default::default()
             },
             ChatCompletionMessage {
                 role: MessageRole::Assistant,

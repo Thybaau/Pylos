@@ -790,7 +790,10 @@ fn estimate_cost(provider: &str, model: &str, prompt: i32, completion: i32) -> f
                 (0.8, 4.0)
             } else if model.contains("haiku") {
                 (0.25, 1.25)
-            } else if model.contains("sonnet-4") || model.contains("sonnet-3-7") || model.contains("sonnet") {
+            } else if model.contains("sonnet-4")
+                || model.contains("sonnet-3-7")
+                || model.contains("sonnet")
+            {
                 (3.0, 15.0)
             } else {
                 // opus and unknown

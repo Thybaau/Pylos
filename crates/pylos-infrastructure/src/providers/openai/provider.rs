@@ -160,9 +160,9 @@ impl Provider for OpenAIProvider {
 
                 Ok(from_openai_text_response(openai_resp))
             }
-            PylosRequest::Embedding(_) => Err(
-                PylosError::InvalidRequest("Use the embed() method for embedding requests".into()),
-            ),
+            PylosRequest::Embedding(_) => Err(PylosError::InvalidRequest(
+                "Use the embed() method for embedding requests".into(),
+            )),
         }
     }
 
@@ -308,11 +308,9 @@ impl Provider for OpenAIProvider {
 
                 Ok(Box::pin(stream))
             }
-            PylosRequest::Embedding(_) => {
-                Err(PylosError::InvalidRequest(
-                    "Use the /v1/embeddings endpoint for embedding requests".into(),
-                ))
-            }
+            PylosRequest::Embedding(_) => Err(PylosError::InvalidRequest(
+                "Use the /v1/embeddings endpoint for embedding requests".into(),
+            )),
         }
     }
 

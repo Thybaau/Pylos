@@ -243,7 +243,9 @@ impl Provider for BedrockProvider {
                     if !tools.is_empty() {
                         match build_tool_config(tools) {
                             Ok(tc) => call = call.tool_config(tc),
-                            Err(e) => warn!(model = model_id, error = %e, "Failed to build tool config"),
+                            Err(e) => {
+                                warn!(model = model_id, error = %e, "Failed to build tool config")
+                            }
                         }
                     }
                 }
@@ -326,7 +328,9 @@ impl Provider for BedrockProvider {
                     if !tools.is_empty() {
                         match build_tool_config(tools) {
                             Ok(tc) => call = call.tool_config(tc),
-                            Err(e) => warn!(model = %model_id, error = %e, "Failed to build stream tool config"),
+                            Err(e) => {
+                                warn!(model = %model_id, error = %e, "Failed to build stream tool config")
+                            }
                         }
                     }
                 }

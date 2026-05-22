@@ -159,9 +159,11 @@ impl RateLimitStore {
 
         // Transaction IMMEDIATE → verrou exclusif dès le début, empêche les lectures
         // concurrentes de passer la même vérification (TOCTOU fix)
-        let mut tx = self.pool.begin().await.map_err(|e| {
-            PylosError::Internal(format!("Rate limit tx begin failed: {}", e))
-        })?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| PylosError::Internal(format!("Rate limit tx begin failed: {}", e)))?;
 
         let row = sqlx::query(
             "SELECT max_value, current_value, window_start_ms, window_duration_ms \
@@ -212,9 +214,9 @@ impl RateLimitStore {
         .execute(&mut *tx)
         .await;
 
-        tx.commit().await.map_err(|e| {
-            PylosError::Internal(format!("Rate limit tx commit failed: {}", e))
-        })?;
+        tx.commit()
+            .await
+            .map_err(|e| PylosError::Internal(format!("Rate limit tx commit failed: {}", e)))?;
 
         Ok(())
     }
