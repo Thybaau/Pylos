@@ -359,8 +359,6 @@ impl Provider for BedrockProvider {
 
                     let mut event_stream = event_stream;
                     // Accumulateur pour les tool calls en cours de streaming
-                    let mut current_tool_id = String::new();
-                    let mut current_tool_name = String::new();
                     let mut current_tool_index: i32 = 0;
 
                     loop {
@@ -373,8 +371,8 @@ impl Provider for BedrockProvider {
                                         if let Some(start) = start_event.start() {
                                             use aws_sdk_bedrockruntime::types::ContentBlockStart;
                                             if let ContentBlockStart::ToolUse(tu) = start {
-                                                current_tool_id = tu.tool_use_id().to_string();
-                                                current_tool_name = tu.name().to_string();
+                                                let tool_id = tu.tool_use_id().to_string();
+                                                let tool_name = tu.name().to_string();
                                                 current_tool_index = start_event.content_block_index();
                                                 // Émet le chunk d'annonce de l'outil
                                                 yield Ok(make_tool_stream_chunk(
@@ -382,10 +380,10 @@ impl Provider for BedrockProvider {
                                                     &model_clone,
                                                     pylos_core::domain::request::StreamToolCallChunk {
                                                         index: current_tool_index,
-                                                        id: Some(current_tool_id.clone()),
+                                                        id: Some(tool_id),
                                                         call_type: Some("function".into()),
                                                         function: Some(pylos_core::domain::request::StreamToolCallFunction {
-                                                            name: Some(current_tool_name.clone()),
+                                                            name: Some(tool_name),
                                                             arguments: None,
                                                         }),
                                                     },

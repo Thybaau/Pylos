@@ -11,7 +11,6 @@ use pylos_core::domain::openai::{
 };
 use pylos_core::domain::request::{
     PylosResponse, StreamChoice, StreamChunk, StreamDelta, StreamToolCallChunk,
-    StreamToolCallFunction,
 };
 use pylos_core::error::PylosError;
 
@@ -188,7 +187,6 @@ fn bedrock_doc_to_json(doc: &Document) -> serde_json::Value {
                 .map(|(k, v)| (k.clone(), bedrock_doc_to_json(v)))
                 .collect(),
         ),
-        _ => serde_json::Value::Null,
     }
 }
 

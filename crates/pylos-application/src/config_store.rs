@@ -634,7 +634,7 @@ fn build_runtime_providers(
     config: &PylosConfig,
 ) -> Vec<(Arc<dyn pylos_core::domain::traits::Provider>, RuntimeConfig)> {
     use pylos_core::domain::provider::{
-        AzureConfig, ProviderConfig as RuntimeCfg, ProviderKey, ProviderKind,
+        ProviderConfig as RuntimeCfg, ProviderKey, ProviderKind,
     };
     use pylos_infrastructure::{
         AnthropicProvider, AzureProvider, BedrockProvider, CohereProvider, GeminiProvider,
