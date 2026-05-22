@@ -51,6 +51,7 @@ impl Provider for MockProvider {
                     name: None,
                     tool_calls: None,
                     tool_call_id: None,
+                    ..Default::default()
                 },
                 finish_reason: Some("stop".into()),
             }],
@@ -58,6 +59,7 @@ impl Provider for MockProvider {
                 prompt_tokens: 10,
                 completion_tokens: 5,
                 total_tokens: 15,
+                ..Default::default()
             }),
         }))
     }
@@ -79,6 +81,7 @@ impl Provider for MockProvider {
                     role: Some("assistant".into()),
                     content: None,
                     tool_calls: None,
+                    ..Default::default()
                 },
                 finish_reason: None,
             }],
@@ -95,6 +98,7 @@ impl Provider for MockProvider {
                     role: None,
                     content: Some("Hello".into()),
                     tool_calls: None,
+                    ..Default::default()
                 },
                 finish_reason: Some("stop".into()),
             }],
