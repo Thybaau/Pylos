@@ -12,6 +12,9 @@ FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
 FROM --platform=$BUILDPLATFORM rust:1.95-bookworm AS builder
 COPY --from=xx / /
 
+# Disable CPU Jitter entropy in aws-lc-sys to avoid cross-compilation errors with clang/cc-rs optimization flags
+ENV AWS_LC_SYS_NO_JITTER_ENTROPY=1
+
 WORKDIR /build
 
 # Dépendances système de l'hôte pour la compilation (Clang, LLD et pkg-config)
