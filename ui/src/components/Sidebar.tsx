@@ -98,6 +98,24 @@ export function Sidebar() {
         )}
       </div>
 
+      {/* Admin Key Configuration */}
+      <button
+        onClick={() => {
+          const currentKey = localStorage.getItem('pylos_admin_key') || '';
+          const newKey = window.prompt("Configure Pylos Admin Key (PYLOS_ADMIN_KEY):", currentKey);
+          if (newKey !== null) {
+            localStorage.setItem('pylos_admin_key', newKey);
+            window.location.reload();
+          }
+        }}
+        className="flex items-center gap-3 px-4 py-3 border-t border-gray-800
+          text-gray-500 hover:text-white hover:bg-gray-800 transition-colors text-sm w-full text-left"
+        title="Configure Admin Key"
+      >
+        <KeyRound size={16} className="flex-shrink-0" />
+        {!collapsed && <span>Admin Key</span>}
+      </button>
+
       {/* Collapse button */}
       <button
         onClick={() => setCollapsed(!collapsed)}

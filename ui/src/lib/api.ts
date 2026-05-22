@@ -25,6 +25,45 @@ export const api = axios.create({
   timeout: 30000,
 })
 
+// Request interceptor to attach the Admin Key from localStorage
+api.interceptors.request.use((config) => {
+  const adminKey = typeof window !== 'undefined' ? localStorage.getItem('pylos_admin_key') : null;
+  if (adminKey) {
+    config.headers['Authorization'] = `Bearer ${adminKey}`;
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
+// Response interceptor to handle 401/403 and prompt for the Admin Key
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    if (
+      typeof window !== 'undefined' &&
+      error.response &&
+      (error.response.status === 401 || error.response.status === 403) &&
+      !originalRequest._retry
+    ) {
+      originalRequest._retry = true;
+      const currentKey = localStorage.getItem('pylos_admin_key');
+      const promptMsg = error.response.status === 401
+        ? "Administration key required. Please enter your PYLOS_ADMIN_KEY:"
+        : "Invalid administration key. Please enter a valid PYLOS_ADMIN_KEY:";
+      const adminKey = window.prompt(promptMsg, currentKey || '');
+      if (adminKey !== null) {
+        localStorage.setItem('pylos_admin_key', adminKey);
+        originalRequest.headers['Authorization'] = `Bearer ${adminKey}`;
+        return api(originalRequest);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface LogEntry {
