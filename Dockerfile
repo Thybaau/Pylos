@@ -47,6 +47,8 @@ RUN echo "fn main() {}" > crates/pylos-server/src/main.rs && \
 # Déclaration de la plateforme cible et installation des librairies cibles correspondantes
 ARG TARGETPLATFORM
 RUN apt-get update && xx-apt-get install -y --no-install-recommends \
+    gcc \
+    libc6-dev \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
