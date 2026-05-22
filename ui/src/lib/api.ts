@@ -1,6 +1,24 @@
 import axios from 'axios'
 
-const BASE_URL = import.meta.env.VITE_API_URL || ''
+const getBaseUrl = (): string => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) {
+    // Si l'API pointe vers localhost mais que le frontend est chargé sur un autre domaine,
+    // on utilise des chemins relatifs pour passer par Nginx/reverse proxy.
+    if (
+      typeof window !== 'undefined' &&
+      envUrl.includes('localhost') &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1'
+    ) {
+      return '';
+    }
+    return envUrl;
+  }
+  return '';
+};
+
+const BASE_URL = getBaseUrl();
 
 export const api = axios.create({
   baseURL: BASE_URL,
