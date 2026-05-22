@@ -53,7 +53,6 @@ ARG TARGETPLATFORM
 RUN apt-get update && xx-apt-get install -y --no-install-recommends \
     gcc \
     libc6-dev \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN xx-clang --setup-target-triple
