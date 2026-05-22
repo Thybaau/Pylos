@@ -25,6 +25,13 @@ pub struct AppState {
 
 impl AppState {
     pub async fn from_config(config_path: Option<PathBuf>) -> anyhow::Result<Self> {
+        Self::from_config_with_dir(config_path, None).await
+    }
+
+    pub async fn from_config_with_dir(
+        config_path: Option<PathBuf>,
+        data_dir: Option<PathBuf>,
+    ) -> anyhow::Result<Self> {
         let config_store = ConfigStore::load(config_path.as_deref()).await?;
         let config_store = Arc::new(config_store);
 
@@ -41,10 +48,12 @@ impl AppState {
         }
 
         // ── Data directory ───────────────────────────────────────────────
-        let data_dir = std::env::var("PYLOS_DATA_DIR")
-            .ok()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."));
+        let data_dir = data_dir.unwrap_or_else(|| {
+            std::env::var("PYLOS_DATA_DIR")
+                .ok()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."))
+        });
         std::fs::create_dir_all(&data_dir).ok();
 
         // ── Log store ────────────────────────────────────────────────────

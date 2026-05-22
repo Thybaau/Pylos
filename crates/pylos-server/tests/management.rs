@@ -10,9 +10,10 @@ use tower::ServiceExt;
 #[tokio::test]
 async fn test_management_api_auth() {
     let tdir = tempdir().unwrap();
-    std::env::set_var("PYLOS_DATA_DIR", tdir.path());
 
-    let state = AppState::from_config(None).await.unwrap();
+    let state = AppState::from_config_with_dir(None, Some(tdir.path().to_path_buf()))
+        .await
+        .unwrap();
     // On force une clé admin pour le test
     let mut state_with_key = state.clone();
     state_with_key.admin_key = Some("test-admin-key".into());
@@ -49,9 +50,10 @@ async fn test_management_api_auth() {
 #[tokio::test]
 async fn test_provider_management() {
     let tdir = tempdir().unwrap();
-    std::env::set_var("PYLOS_DATA_DIR", tdir.path());
 
-    let state = AppState::from_config(None).await.unwrap();
+    let state = AppState::from_config_with_dir(None, Some(tdir.path().to_path_buf()))
+        .await
+        .unwrap();
     let mut state_with_key = state.clone();
     state_with_key.admin_key = Some("test-admin-key".into());
     let app = pylos_server::routes::create_router(state_with_key);
