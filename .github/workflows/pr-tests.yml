@@ -61,7 +61,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit || true
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
 
       - name: Add comment to PR
         if: github.event.pull_request.number
@@ -71,9 +73,8 @@ jobs:
           gh pr comment ${{ github.event.pull_request.number }} --body "🧪 **Test run starting for Pylos...**
 
           **Test Suite Includes:**
-          - 📦 Workspace Build Validation
           - 🔍 Clippy Lints
-          - 🧪 Unit Tests
+          - 🧪 Unit & Integration Tests
           - 🛡️ Security Audit
 
           [View workflow run →](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"

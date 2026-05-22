@@ -33,7 +33,7 @@ report_result() {
 
 # 1. Formatting Check
 echo ""
-echo "📝 1/5 - Running Formatting Check..."
+echo "📝 1/4 - Running Formatting Check..."
 echo "-----------------------------------"
 if cargo fmt --all -- --check; then
   report_result "Formatting Check" 0
@@ -41,19 +41,9 @@ else
   report_result "Formatting Check" 1
 fi
 
-# 2. Workspace Build Validation
+# 2. Linting (Clippy)
 echo ""
-echo "📦 2/5 - Validating Workspace Build..."
-echo "-----------------------------------"
-if cargo build --workspace; then
-  report_result "Workspace Build" 0
-else
-  report_result "Workspace Build" 1
-fi
-
-# 3. Linting (Clippy)
-echo ""
-echo "🔍 3/5 - Running Linting (Clippy)..."
+echo "🔍 2/4 - Running Linting (Clippy)..."
 echo "-----------------------------------"
 if cargo clippy --workspace -- -D warnings; then
   report_result "Clippy Lints" 0
@@ -61,19 +51,19 @@ else
   report_result "Clippy Lints" 1
 fi
 
-# 4. Unit Tests
+# 3. Unit & Integration Tests
 echo ""
-echo "🧪 4/5 - Running Unit Tests..."
+echo "🧪 3/4 - Running Unit & Integration Tests..."
 echo "-----------------------------------"
 if cargo test --workspace; then
-  report_result "Unit Tests" 0
+  report_result "Unit & Integration Tests" 0
 else
-  report_result "Unit Tests" 1
+  report_result "Unit & Integration Tests" 1
 fi
 
-# 5. Security Audit
+# 4. Security Audit
 echo ""
-echo "🛡️  5/5 - Running Security Audit..."
+echo "🛡️  4/4 - Running Security Audit..."
 echo "-----------------------------------"
 # We check if cargo-audit is installed, otherwise we skip but warn
 if command -v cargo-audit &> /dev/null; then
