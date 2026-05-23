@@ -44,6 +44,8 @@ export const PROVIDER_COLORS: Record<string, string> = {
   deepseek: '#4b8bf4',
   ollama: '#f9f9f9',
   lemonade: '#e2b13c',
+  'lemonade-jo3': '#e2b13c',
+  'lemonade-optimus': '#d4941a',
   unknown: '#6b7280',
 }
 
