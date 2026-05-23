@@ -19,13 +19,6 @@ spec:
       labels:
         app: pylos
     spec:
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/arch
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: pylos
       containers:
         - name: pylos
           image: ghcr.io/jzacharie/pylos:latest
