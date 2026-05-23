@@ -117,3 +117,42 @@ jobs:
           docker buildx imagetools create -t ghcr.io/jzacharie/pylos-ui:${{ github.sha }} \
             ghcr.io/jzacharie/pylos-ui:${{ github.sha }}-amd64 \
             ghcr.io/jzacharie/pylos-ui:${{ github.sha }}-arm64
+
+  deploy:
+    name: Deploy to Kubernetes
+    needs: [merge-manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Apply Kubernetes manifests
+        run: kubectl apply -f k8s/
+
+      - name: Rolling update - pylos backend
+        run: |
+          kubectl set image deployment/pylos pylos=ghcr.io/jzacharie/pylos:${{ github.sha }}
+          kubectl rollout status deployment/pylos --timeout=5m
+
+      - name: Rolling update - pylos UI
+        run: |
+          kubectl set image deployment/pylos-ui pylos-ui=ghcr.io/jzacharie/pylos-ui:${{ github.sha }}
+          kubectl rollout status deployment/pylos-ui --timeout=5m
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -l app=pylos -o wide
+          kubectl get pods -l app=pylos-ui -o wide
