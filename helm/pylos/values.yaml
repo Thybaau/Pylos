@@ -1,0 +1,58 @@
+namespace: pylos
+
+imagePullSecrets:
+  - name: ghcr-auth
+
+backend:
+  name: pylos
+  replicaCount: 2
+  image:
+    repository: ghcr.io/jzacharie/pylos
+    tag: latest
+    pullPolicy: Always
+  service:
+    port: 3000
+    type: ClusterIP
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  dataDir: /data
+
+ui:
+  name: pylos-ui
+  replicaCount: 1
+  image:
+    repository: ghcr.io/jzacharie/pylos-ui
+    tag: latest
+    pullPolicy: Always
+  service:
+    port: 80
+    type: ClusterIP
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+dev:
+  enabled: false
+  name: pylos-dev
+  replicaCount: 1
+  image:
+    repository: ghcr.io/jzacharie/pylos
+    tag: latest
+    pullPolicy: Always
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  dataDir: /data

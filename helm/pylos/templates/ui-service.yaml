@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pylos.ui.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "pylos.ui.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "pylos.ui.labels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.ui.service.port }}
+      targetPort: {{ .Values.ui.service.port }}
+      protocol: TCP
+  type: {{ .Values.ui.service.type }}

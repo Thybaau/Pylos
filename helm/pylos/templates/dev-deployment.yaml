@@ -1,0 +1,45 @@
+{{- if .Values.dev.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pylos.dev.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "pylos.dev.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.dev.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "pylos.dev.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pylos.dev.labels" . | nindent 8 }}
+    spec:
+      imagePullSecrets: {{ toYaml .Values.imagePullSecrets | nindent 8 }}
+      containers:
+        - name: pylos
+          image: "{{ .Values.dev.image.repository }}:{{ .Values.dev.image.tag }}"
+          imagePullPolicy: {{ .Values.dev.image.pullPolicy }}
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: PYLOS_DATA_DIR
+              value: {{ .Values.dev.dataDir }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{ toYaml .Values.dev.resources | nindent 12 }}
+{{- end }}

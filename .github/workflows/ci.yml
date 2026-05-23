@@ -128,8 +128,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
         with:
           version: latest
 
@@ -139,10 +139,17 @@ jobs:
           echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Deploy new version to dev
+      - name: Deploy dev (canary)
         run: |
-          sed "s|image: ghcr.io/jzacharie/pylos:latest|image: ghcr.io/jzacharie/pylos:${{ github.sha }}|" k8s/pylos-dev-deployment.yaml | kubectl apply -n pylos -f -
-          kubectl rollout status -n pylos deployment/pylos-dev --timeout=5m
+          helm upgrade --install pylos-dev ./helm/pylos \
+            --namespace pylos --create-namespace \
+            -f helm/pylos/values.yaml \
+            -f helm/pylos/values-dev.yaml \
+            --set dev.enabled=true \
+            --set dev.image.tag=${{ github.sha }}
+
+      - name: Wait for dev rollout
+        run: kubectl rollout status -n pylos deployment/pylos-dev --timeout=5m
 
       - name: Diagnose on failure
         if: failure()
@@ -161,8 +168,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
         with:
           version: latest
 
@@ -172,20 +179,19 @@ jobs:
           echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Apply production manifests
-        run: kubectl apply -n pylos -f k8s/pylos-deployment.yaml -f k8s/pylos-service.yaml -f k8s/pylos-ui-deployment.yaml -f k8s/pylos-ui-service.yaml
-
-      - name: Rolling update - pylos backend
+      - name: Deploy production
         run: |
-          kubectl set image -n pylos deployment/pylos pylos=ghcr.io/jzacharie/pylos:${{ github.sha }}
-          kubectl rollout status -n pylos deployment/pylos --timeout=5m
+          helm upgrade --install pylos ./helm/pylos \
+            --namespace pylos --create-namespace \
+            -f helm/pylos/values.yaml \
+            --set backend.image.tag=${{ github.sha }} \
+            --set ui.image.tag=${{ github.sha }}
 
-      - name: Rolling update - pylos UI
-        run: |
-          kubectl set image -n pylos deployment/pylos-ui pylos-ui=ghcr.io/jzacharie/pylos-ui:${{ github.sha }}
-          kubectl rollout status -n pylos deployment/pylos-ui --timeout=5m
+      - name: Wait for backend rollout
+        run: kubectl rollout status -n pylos deployment/pylos --timeout=5m
+
+      - name: Wait for UI rollout
+        run: kubectl rollout status -n pylos deployment/pylos-ui --timeout=5m
 
       - name: Verify production deployment
-        run: |
-          kubectl get pods -n pylos -l app=pylos -o wide
-          kubectl get pods -n pylos -l app=pylos-ui -o wide
+        run: kubectl get pods -n pylos -o wide
