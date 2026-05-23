@@ -118,8 +118,8 @@ jobs:
             ghcr.io/jzacharie/pylos-ui:${{ github.sha }}-amd64 \
             ghcr.io/jzacharie/pylos-ui:${{ github.sha }}-arm64
 
-  deploy:
-    name: Deploy to Kubernetes
+  deploy-dev:
+    name: Deploy to Dev (canary)
     needs: [merge-manifest]
     runs-on: ubuntu-latest
     permissions:
@@ -139,8 +139,40 @@ jobs:
           echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Apply Kubernetes manifests
-        run: kubectl apply -f k8s/
+      - name: Apply dev manifest
+        run: kubectl apply -f k8s/pylos-dev-deployment.yaml
+
+      - name: Deploy new version to dev
+        run: |
+          kubectl set image deployment/pylos-dev pylos=ghcr.io/jzacharie/pylos:${{ github.sha }}
+          kubectl rollout status deployment/pylos-dev --timeout=5m
+
+      - name: Verify dev pod
+        run: kubectl get pods -l app=pylos-dev -o wide
+
+  deploy-prod:
+    name: Deploy to Production
+    needs: [deploy-dev]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Apply production manifests
+        run: kubectl apply -f k8s/pylos-deployment.yaml -f k8s/pylos-service.yaml -f k8s/pylos-ui-deployment.yaml -f k8s/pylos-ui-service.yaml
 
       - name: Rolling update - pylos backend
         run: |
@@ -152,7 +184,7 @@ jobs:
           kubectl set image deployment/pylos-ui pylos-ui=ghcr.io/jzacharie/pylos-ui:${{ github.sha }}
           kubectl rollout status deployment/pylos-ui --timeout=5m
 
-      - name: Verify deployment
+      - name: Verify production deployment
         run: |
           kubectl get pods -l app=pylos -o wide
           kubectl get pods -l app=pylos-ui -o wide
