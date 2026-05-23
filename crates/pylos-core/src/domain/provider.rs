@@ -19,6 +19,7 @@ pub enum ProviderKind {
     OpenRouter,
     Vertex,
     DeepSeek,
+    Lemonade,
     /// Provider custom via URL de base configurable
     Custom(String),
 }
@@ -43,6 +44,7 @@ impl std::fmt::Display for ProviderKind {
             ProviderKind::OpenRouter => write!(f, "openrouter"),
             ProviderKind::Vertex => write!(f, "vertex"),
             ProviderKind::DeepSeek => write!(f, "deepseek"),
+            ProviderKind::Lemonade => write!(f, "lemonade"),
             ProviderKind::Custom(name) => write!(f, "custom:{}", name),
         }
     }
@@ -100,6 +102,9 @@ impl ProviderKind {
             || model.contains("phi")
         {
             return ProviderKind::Ollama;
+        }
+        if model.contains("lemonade") {
+            return ProviderKind::Lemonade;
         }
         ProviderKind::Custom("unknown".into())
     }

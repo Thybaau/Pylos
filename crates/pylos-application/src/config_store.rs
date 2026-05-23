@@ -780,6 +780,7 @@ fn build_runtime_providers(
             "deepseek" => ProviderKind::DeepSeek,
             "ollama" => ProviderKind::Ollama,
             "openrouter" => ProviderKind::OpenRouter,
+            "lemonade" => ProviderKind::Lemonade,
             other => ProviderKind::Custom(other.to_string()),
         };
 

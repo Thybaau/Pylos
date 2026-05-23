@@ -425,7 +425,7 @@ fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
                 && !model.starts_with("anthropic.")
         }
         ProviderKind::OpenRouter => model.contains('/'),
-        ProviderKind::Custom(_) | ProviderKind::Vertex => true,
+        ProviderKind::Custom(_) | ProviderKind::Vertex | ProviderKind::Lemonade => true,
         _ => true,
     }
 }
