@@ -101,10 +101,26 @@ pub async fn list_models(
             let mut fetched_dynamic = false;
             if let Some(base_url) = &provider_cfg.network.base_url {
                 let is_custom_or_lemonade = provider_name == "lemonade"
-                    || !["openai", "anthropic", "gemini", "google", "cohere", "groq", "mistral",
-                         "cerebras", "perplexity", "fireworks", "xai", "x-ai", "nebius",
-                         "deepseek", "bedrock", "azure", "ollama"]
-                        .contains(&provider_name.as_str());
+                    || ![
+                        "openai",
+                        "anthropic",
+                        "gemini",
+                        "google",
+                        "cohere",
+                        "groq",
+                        "mistral",
+                        "cerebras",
+                        "perplexity",
+                        "fireworks",
+                        "xai",
+                        "x-ai",
+                        "nebius",
+                        "deepseek",
+                        "bedrock",
+                        "azure",
+                        "ollama",
+                    ]
+                    .contains(&provider_name.as_str());
 
                 if is_custom_or_lemonade {
                     let client = reqwest::Client::builder()
@@ -113,7 +129,8 @@ pub async fn list_models(
                         .unwrap_or_default();
                     let url = format!("{}/models", base_url.trim_end_matches('/'));
                     let mut req = client.get(&url);
-                    if let Some(api_key) = provider_cfg.keys.first().and_then(|k| k.value.resolve()) {
+                    if let Some(api_key) = provider_cfg.keys.first().and_then(|k| k.value.resolve())
+                    {
                         if !api_key.is_empty() {
                             req = req.bearer_auth(api_key);
                         }
@@ -124,14 +141,19 @@ pub async fn list_models(
                                 if let Some(data_array) = body["data"].as_array() {
                                     for m in data_array {
                                         if let Some(id) = m["id"].as_str() {
-                                            let info = state.model_catalog.get_model(provider_name, id).await;
+                                            let info = state
+                                                .model_catalog
+                                                .get_model(provider_name, id)
+                                                .await;
                                             let pylos_field = info
                                                 .as_ref()
                                                 .map(model_info_pylos_field)
                                                 .unwrap_or_else(|| {
-                                                    let mut min_p = make_minimal_pylos(provider_name, id, None);
+                                                    let mut min_p =
+                                                        make_minimal_pylos(provider_name, id, None);
                                                     if id.to_lowercase().contains("embed") {
-                                                        min_p["supports_embeddings"] = serde_json::json!(true);
+                                                        min_p["supports_embeddings"] =
+                                                            serde_json::json!(true);
                                                     }
                                                     min_p
                                                 });
