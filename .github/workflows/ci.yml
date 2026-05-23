@@ -141,12 +141,15 @@ jobs:
 
       - name: Deploy new version to dev
         run: |
-          kubectl delete deployment pylos-dev --ignore-not-found --now
           sed "s|image: ghcr.io/jzacharie/pylos:latest|image: ghcr.io/jzacharie/pylos:${{ github.sha }}|" k8s/pylos-dev-deployment.yaml | kubectl apply -f -
           kubectl rollout status deployment/pylos-dev --timeout=5m
 
-      - name: Verify dev pod
-        run: kubectl get pods -l app=pylos-dev -o wide
+      - name: Diagnose on failure
+        if: failure()
+        run: |
+          kubectl get pods -l app=pylos-dev -o wide
+          kubectl describe pod -l app=pylos-dev 2>&1 | tail -40 || true
+          kubectl get events --sort-by='.lastTimestamp' 2>&1 | tail -20 || true
 
   deploy-prod:
     name: Deploy to Production

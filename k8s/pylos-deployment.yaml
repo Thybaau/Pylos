@@ -19,6 +19,8 @@ spec:
       labels:
         app: pylos
     spec:
+      imagePullSecrets:
+        - name: ghcr-auth
       containers:
         - name: pylos
           image: ghcr.io/jzacharie/pylos:latest
