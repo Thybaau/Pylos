@@ -98,12 +98,68 @@ pub async fn list_models(
         }
 
         if wildcard {
-            let catalog_models = state
-                .model_catalog
-                .list_models(Some(provider_name), false)
-                .await;
-            for info in catalog_models {
-                models.push(model_info_to_entry(&info));
+            let mut fetched_dynamic = false;
+            if let Some(base_url) = &provider_cfg.network.base_url {
+                let is_custom_or_lemonade = provider_name == "lemonade"
+                    || !["openai", "anthropic", "gemini", "google", "cohere", "groq", "mistral",
+                         "cerebras", "perplexity", "fireworks", "xai", "x-ai", "nebius",
+                         "deepseek", "bedrock", "azure", "ollama"]
+                        .contains(&provider_name.as_str());
+
+                if is_custom_or_lemonade {
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(3))
+                        .build()
+                        .unwrap_or_default();
+                    let url = format!("{}/models", base_url.trim_end_matches('/'));
+                    let mut req = client.get(&url);
+                    if let Some(api_key) = provider_cfg.keys.first().and_then(|k| k.value.resolve()) {
+                        if !api_key.is_empty() {
+                            req = req.bearer_auth(api_key);
+                        }
+                    }
+                    if let Ok(resp) = req.send().await {
+                        if resp.status().is_success() {
+                            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                                if let Some(data_array) = body["data"].as_array() {
+                                    for m in data_array {
+                                        if let Some(id) = m["id"].as_str() {
+                                            let info = state.model_catalog.get_model(provider_name, id).await;
+                                            let pylos_field = info
+                                                .as_ref()
+                                                .map(model_info_pylos_field)
+                                                .unwrap_or_else(|| {
+                                                    let mut min_p = make_minimal_pylos(provider_name, id, None);
+                                                    if id.to_lowercase().contains("embed") {
+                                                        min_p["supports_embeddings"] = serde_json::json!(true);
+                                                    }
+                                                    min_p
+                                                });
+                                            models.push(json!({
+                                                "id": id,
+                                                "provider": provider_name,
+                                                "object": "model",
+                                                "owned_by": provider_name,
+                                                "pylos": pylos_field,
+                                            }));
+                                        }
+                                    }
+                                    fetched_dynamic = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !fetched_dynamic {
+                let catalog_models = state
+                    .model_catalog
+                    .list_models(Some(provider_name), false)
+                    .await;
+                for info in catalog_models {
+                    models.push(model_info_to_entry(&info));
+                }
             }
         } else {
             for model_id in &provider_model_ids {
