@@ -18,9 +18,15 @@ spec:
       labels:
         {{- include "pylos.dev.labels" . | nindent 8 }}
     spec:
+      securityContext:
+        runAsNonRoot: true
       imagePullSecrets: {{ toYaml .Values.imagePullSecrets | nindent 8 }}
       containers:
         - name: pylos
+          securityContext:
+            runAsUser: 1001
+            runAsGroup: 1001
+            allowPrivilegeEscalation: false
           image: "{{ .Values.dev.image.repository }}:{{ .Values.dev.image.tag }}"
           imagePullPolicy: {{ .Values.dev.image.pullPolicy }}
           ports:
