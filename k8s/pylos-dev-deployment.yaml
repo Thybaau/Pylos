@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pylos-dev
+  namespace: pylos
   labels:
     app: pylos-dev
 spec:
@@ -25,6 +26,9 @@ spec:
           ports:
             - containerPort: 3000
               protocol: TCP
+          env:
+            - name: PYLOS_DATA_DIR
+              value: /data
           envFrom:
             - configMapRef:
                 name: pylos-config

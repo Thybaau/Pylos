@@ -141,15 +141,15 @@ jobs:
 
       - name: Deploy new version to dev
         run: |
-          sed "s|image: ghcr.io/jzacharie/pylos:latest|image: ghcr.io/jzacharie/pylos:${{ github.sha }}|" k8s/pylos-dev-deployment.yaml | kubectl apply -f -
-          kubectl rollout status deployment/pylos-dev --timeout=5m
+          sed "s|image: ghcr.io/jzacharie/pylos:latest|image: ghcr.io/jzacharie/pylos:${{ github.sha }}|" k8s/pylos-dev-deployment.yaml | kubectl apply -n pylos -f -
+          kubectl rollout status -n pylos deployment/pylos-dev --timeout=5m
 
       - name: Diagnose on failure
         if: failure()
         run: |
-          kubectl get pods -l app=pylos-dev -o wide
-          kubectl describe pod -l app=pylos-dev 2>&1 | tail -40 || true
-          kubectl get events --sort-by='.lastTimestamp' 2>&1 | tail -20 || true
+          kubectl get pods -n pylos -l app=pylos-dev -o wide
+          kubectl describe pod -n pylos -l app=pylos-dev 2>&1 | tail -40 || true
+          kubectl get events -n pylos --sort-by='.lastTimestamp' 2>&1 | tail -20 || true
 
   deploy-prod:
     name: Deploy to Production
@@ -173,19 +173,19 @@ jobs:
           chmod 600 $HOME/.kube/config
 
       - name: Apply production manifests
-        run: kubectl apply -f k8s/pylos-deployment.yaml -f k8s/pylos-service.yaml -f k8s/pylos-ui-deployment.yaml -f k8s/pylos-ui-service.yaml
+        run: kubectl apply -n pylos -f k8s/pylos-deployment.yaml -f k8s/pylos-service.yaml -f k8s/pylos-ui-deployment.yaml -f k8s/pylos-ui-service.yaml
 
       - name: Rolling update - pylos backend
         run: |
-          kubectl set image deployment/pylos pylos=ghcr.io/jzacharie/pylos:${{ github.sha }}
-          kubectl rollout status deployment/pylos --timeout=5m
+          kubectl set image -n pylos deployment/pylos pylos=ghcr.io/jzacharie/pylos:${{ github.sha }}
+          kubectl rollout status -n pylos deployment/pylos --timeout=5m
 
       - name: Rolling update - pylos UI
         run: |
-          kubectl set image deployment/pylos-ui pylos-ui=ghcr.io/jzacharie/pylos-ui:${{ github.sha }}
-          kubectl rollout status deployment/pylos-ui --timeout=5m
+          kubectl set image -n pylos deployment/pylos-ui pylos-ui=ghcr.io/jzacharie/pylos-ui:${{ github.sha }}
+          kubectl rollout status -n pylos deployment/pylos-ui --timeout=5m
 
       - name: Verify production deployment
         run: |
-          kubectl get pods -l app=pylos -o wide
-          kubectl get pods -l app=pylos-ui -o wide
+          kubectl get pods -n pylos -l app=pylos -o wide
+          kubectl get pods -n pylos -l app=pylos-ui -o wide

@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pylos-ui
+  namespace: pylos
   labels:
     app: pylos-ui
 spec:
