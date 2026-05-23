@@ -141,6 +141,7 @@ jobs:
 
       - name: Deploy new version to dev
         run: |
+          kubectl delete deployment pylos-dev --ignore-not-found --now
           sed "s|image: ghcr.io/jzacharie/pylos:latest|image: ghcr.io/jzacharie/pylos:${{ github.sha }}|" k8s/pylos-dev-deployment.yaml | kubectl apply -f -
           kubectl rollout status deployment/pylos-dev --timeout=5m
 
