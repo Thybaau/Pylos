@@ -20,7 +20,7 @@ use pylos_core::domain::traits::{ChunkStream, Provider};
 use pylos_core::error::PylosError;
 use pylos_server::metrics::Metrics;
 use pylos_server::routes::create_router;
-use pylos_server::state::AppState;
+use pylos_server::state::{AppState, LogStoreVariant};
 
 use async_trait::async_trait;
 
@@ -136,7 +136,7 @@ async fn test_chat_completions_unary() {
         config_store,
         metrics,
         vk_registry,
-        log_store,
+        log_store: LogStoreVariant::Sqlite(log_store),
         model_catalog,
         budget_store,
         rate_limit_store,
@@ -197,7 +197,7 @@ async fn test_chat_completions_stream() {
         config_store,
         metrics,
         vk_registry,
-        log_store,
+        log_store: LogStoreVariant::Sqlite(log_store),
         model_catalog,
         budget_store,
         rate_limit_store,
