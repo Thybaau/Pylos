@@ -210,4 +210,4 @@ jobs:
   #         git push 2>/dev/null || true
 
   #     - name: Verify production deployment
-        run: kubectl get pods -n pylos -o wide
+  #       run: kubectl get pods -n pylos -o wide
