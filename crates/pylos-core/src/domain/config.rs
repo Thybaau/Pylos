@@ -175,6 +175,13 @@ pub struct ServerConfig {
     /// Exemple : "./pylos-logs.db"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_db_path: Option<String>,
+
+    /// URL de connexion PostgreSQL
+    /// Exemple : "postgresql://user:password@pg-prd/pylos"
+    /// Si défini, remplace toutes les bases SQLite locales par PostgreSQL.
+    /// Les bases de données suivantes doivent exister : pylos (prod), pylos-dev (dev)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database_url: Option<String>,
 }
 
 fn default_port() -> u16 {
@@ -212,6 +219,7 @@ impl Default for ServerConfig {
             allowed_origins: vec!["*".into()],
             enforce_auth_on_inference: false,
             log_db_path: None,
+            database_url: None,
         }
     }
 }

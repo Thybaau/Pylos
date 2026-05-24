@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 use tokio::sync::Mutex;
@@ -10,14 +11,34 @@ use tracing::{debug, info};
 use pylos_core::domain::config::BudgetConfig;
 use pylos_core::error::PylosError;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BudgetStore — persistance SQLite des budgets USD par virtual key
-// Bifrost source: plugins/governance/budget_resolver.go + usage_tracker.go
-// ─────────────────────────────────────────────────────────────────────────────
+#[derive(Clone)]
+enum Pool {
+    Sqlite(SqlitePool),
+    Postgres(PgPool),
+}
+
+impl Pool {
+    async fn run_migrations(&self) -> Result<(), sqlx::Error> {
+        match self {
+            Pool::Sqlite(pool) => {
+                sqlx::migrate!("./migrations")
+                    .run(pool)
+                    .await
+                    .map_err(|e| sqlx::Error::Migrate(Box::new(e)))
+            }
+            Pool::Postgres(pool) => {
+                sqlx::migrate!("./migrations_postgres")
+                    .run(pool)
+                    .await
+                    .map_err(|e| sqlx::Error::Migrate(Box::new(e)))
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct BudgetStore {
-    pool: SqlitePool,
+    pool: Pool,
 }
 
 impl BudgetStore {
@@ -33,13 +54,28 @@ impl BudgetStore {
             .connect_with(options)
             .await?;
 
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| sqlx::Error::Migrate(Box::new(e)))?;
+        let store = Self {
+            pool: Pool::Sqlite(pool),
+        };
+        store.pool.run_migrations().await?;
 
-        info!(path = %db_path.display(), "Budget store opened");
-        Ok(Self { pool })
+        info!(path = %db_path.display(), "Budget store opened (SQLite)");
+        Ok(store)
+    }
+
+    pub async fn open_postgres(database_url: &str) -> Result<Self, sqlx::Error> {
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(database_url)
+            .await?;
+
+        let store = Self {
+            pool: Pool::Postgres(pool),
+        };
+        store.pool.run_migrations().await?;
+
+        info!("Budget store opened (PostgreSQL)");
+        Ok(store)
     }
 
     pub async fn in_memory() -> Result<Self, sqlx::Error> {
@@ -63,10 +99,11 @@ impl BudgetStore {
         .execute(&pool)
         .await?;
 
-        Ok(Self { pool })
+        Ok(Self {
+            pool: Pool::Sqlite(pool),
+        })
     }
 
-    /// Initialise ou met à jour un budget depuis la config
     pub async fn upsert_budget(
         &self,
         vk_id: &str,
@@ -74,56 +111,95 @@ impl BudgetStore {
     ) -> Result<(), sqlx::Error> {
         let period = detect_period(&budget.reset_duration.0);
         let reset_at = next_reset_ms(&budget.reset_duration.0);
+        let now = now_ms();
 
-        sqlx::query(
-            r#"
-            INSERT INTO vk_budgets (virtual_key_id, period, max_usd, current_usd, reset_at)
-            VALUES (?, ?, ?, 0.0, ?)
-            ON CONFLICT(virtual_key_id, period) DO UPDATE SET
-                max_usd = excluded.max_usd,
-                reset_at = CASE WHEN reset_at < ? THEN excluded.reset_at ELSE reset_at END
-            "#,
-        )
-        .bind(vk_id)
-        .bind(&period)
-        .bind(budget.max_limit)
-        .bind(reset_at)
-        .bind(now_ms())
-        .execute(&self.pool)
-        .await?;
-
+        match &self.pool {
+            Pool::Sqlite(pool) => {
+                sqlx::query(
+                    "INSERT INTO vk_budgets (virtual_key_id, period, max_usd, current_usd, reset_at) \
+                     VALUES ($1, $2, $3, 0.0, $4) \
+                     ON CONFLICT(virtual_key_id, period) DO UPDATE SET \
+                     max_usd = excluded.max_usd, \
+                     reset_at = CASE WHEN reset_at < $5 THEN excluded.reset_at ELSE reset_at END",
+                )
+                .bind(vk_id)
+                .bind(&period)
+                .bind(budget.max_limit)
+                .bind(reset_at)
+                .bind(now)
+                .execute(pool)
+                .await?;
+            }
+            Pool::Postgres(pool) => {
+                sqlx::query::<sqlx::Postgres>(
+                    "INSERT INTO vk_budgets (virtual_key_id, period, max_usd, current_usd, reset_at) \
+                     VALUES ($1, $2, $3, 0.0, $4) \
+                     ON CONFLICT(virtual_key_id, period) DO UPDATE SET \
+                     max_usd = excluded.max_usd, \
+                     reset_at = CASE WHEN reset_at < $5 THEN excluded.reset_at ELSE reset_at END",
+                )
+                .bind(vk_id)
+                .bind(&period)
+                .bind(budget.max_limit)
+                .bind(reset_at)
+                .bind(now)
+                .execute(pool)
+                .await?;
+            }
+        }
         Ok(())
     }
 
-    /// Vérifie si un virtual key a dépassé son budget
-    /// Retourne Ok(()) si dans le budget, Err(BudgetExceeded) sinon
     pub async fn check_budget(&self, vk_id: &str, estimated_cost: f64) -> Result<(), PylosError> {
         let now = now_ms();
 
-        let rows = sqlx::query(
-            "SELECT period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = ?",
-        )
-        .bind(vk_id)
-        .fetch_all(&self.pool)
-        .await
-        .unwrap_or_default();
+        let budget_row = match &self.pool {
+            Pool::Sqlite(pool) => {
+                let row: Option<sqlx::sqlite::SqliteRow> = sqlx::query(
+                    "SELECT period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1",
+                )
+                .bind(vk_id)
+                .fetch_optional(pool)
+                .await
+                .unwrap_or(None);
 
-        for row in &rows {
-            let period: String = row.try_get("period").unwrap_or_default();
-            let max_usd: f64 = row.try_get("max_usd").unwrap_or(f64::MAX);
-            let current_usd: f64 = row.try_get("current_usd").unwrap_or(0.0);
-            let reset_at: i64 = row.try_get("reset_at").unwrap_or(0);
+                row.map(|r| {
+                    let p: String = r.try_get("period").unwrap_or_default();
+                    let max: f64 = r.try_get("max_usd").unwrap_or(f64::MAX);
+                    let cur: f64 = r.try_get("current_usd").unwrap_or(0.0);
+                    let res: i64 = r.try_get("reset_at").unwrap_or(0);
+                    (p, max, cur, res)
+                })
+            }
+            Pool::Postgres(pool) => {
+                let row: Option<sqlx::postgres::PgRow> = sqlx::query::<sqlx::Postgres>(
+                    "SELECT period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1",
+                )
+                .bind(vk_id)
+                .fetch_optional(pool)
+                .await
+                .unwrap_or(None);
 
-            // Reset si la période est expirée
-            if now >= reset_at {
-                debug!(vk_id = %vk_id, period = %period, "Budget period expired, will reset on next charge");
-                continue; // On laisse la charge faire le reset
+                row.map(|r| {
+                    let p: String = r.try_get("period").unwrap_or_default();
+                    let max: f64 = r.try_get("max_usd").unwrap_or(f64::MAX);
+                    let cur: f64 = r.try_get("current_usd").unwrap_or(0.0);
+                    let res: i64 = r.try_get("reset_at").unwrap_or(0);
+                    (p, max, cur, res)
+                })
+            }
+        };
+
+        if let Some((_period, _max_usd, _current_usd, _reset_at)) = budget_row {
+            if now >= _reset_at {
+                debug!(vk_id = %vk_id, period = %_period, "Budget period expired, will reset on next charge");
+                return Ok(());
             }
 
-            if current_usd + estimated_cost > max_usd {
+            if _current_usd + estimated_cost > _max_usd {
                 return Err(PylosError::BudgetExceeded(format!(
                     "Virtual key '{}' has exceeded its {} budget: ${:.4} used / ${:.2} max",
-                    vk_id, period, current_usd, max_usd
+                    vk_id, _period, _current_usd, _max_usd
                 )));
             }
         }
@@ -131,80 +207,147 @@ impl BudgetStore {
         Ok(())
     }
 
-    /// Enregistre l'utilisation après une requête réussie
-    /// Gère le reset automatique si la période est expirée
     pub async fn record_usage(&self, vk_id: &str, cost_usd: f64) {
         if cost_usd <= 0.0 {
             return;
         }
         let now = now_ms();
 
-        let rows = sqlx::query(
-            "SELECT rowid, period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = ?",
-        )
-        .bind(vk_id)
-        .fetch_all(&self.pool)
-        .await
-        .unwrap_or_default();
-
-        for row in rows {
-            let rowid: i64 = row.try_get("rowid").unwrap_or(0);
-            let period: String = row.try_get("period").unwrap_or_default();
-            let reset_at: i64 = row.try_get("reset_at").unwrap_or(0);
-
-            if now >= reset_at {
-                // Période expirée → reset + nouvel incrément
-                let new_reset = reset_at + period_ms(&period);
-                let _ = sqlx::query(
-                    "UPDATE vk_budgets SET current_usd = ?, reset_at = ? WHERE rowid = ?",
+        match &self.pool {
+            Pool::Sqlite(pool) => {
+                let rows = sqlx::query(
+                    "SELECT period, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1",
                 )
-                .bind(cost_usd)
-                .bind(new_reset)
-                .bind(rowid)
-                .execute(&self.pool)
-                .await;
-            } else {
-                let _ = sqlx::query(
-                    "UPDATE vk_budgets SET current_usd = current_usd + ? WHERE rowid = ?",
+                .bind(vk_id)
+                .fetch_all(pool)
+                .await
+                .unwrap_or_default();
+
+                for row in &rows {
+                    let period: String = row.try_get("period").unwrap_or_default();
+                    let reset_at: i64 = row.try_get("reset_at").unwrap_or(0);
+
+                    if now >= reset_at {
+                        let new_reset = reset_at + period_ms(&period);
+                        let _ = sqlx::query(
+                            "UPDATE vk_budgets SET current_usd = $1, reset_at = $2 WHERE virtual_key_id = $3 AND period = $4",
+                        )
+                        .bind(cost_usd)
+                        .bind(new_reset)
+                        .bind(vk_id)
+                        .bind(&period)
+                        .execute(pool)
+                        .await;
+                    } else {
+                        let _ = sqlx::query(
+                            "UPDATE vk_budgets SET current_usd = current_usd + $1 WHERE virtual_key_id = $2 AND period = $3",
+                        )
+                        .bind(cost_usd)
+                        .bind(vk_id)
+                        .bind(&period)
+                        .execute(pool)
+                        .await;
+                    }
+                }
+            }
+            Pool::Postgres(pool) => {
+                let rows = sqlx::query::<sqlx::Postgres>(
+                    "SELECT period, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1",
                 )
-                .bind(cost_usd)
-                .bind(rowid)
-                .execute(&self.pool)
-                .await;
+                .bind(vk_id)
+                .fetch_all(pool)
+                .await
+                .unwrap_or_default();
+
+                for row in &rows {
+                    let period: String = row.try_get("period").unwrap_or_default();
+                    let reset_at: i64 = row.try_get("reset_at").unwrap_or(0);
+
+                    if now >= reset_at {
+                        let new_reset = reset_at + period_ms(&period);
+                        let _ = sqlx::query::<sqlx::Postgres>(
+                            "UPDATE vk_budgets SET current_usd = $1, reset_at = $2 WHERE virtual_key_id = $3 AND period = $4",
+                        )
+                        .bind(cost_usd)
+                        .bind(new_reset)
+                        .bind(vk_id)
+                        .bind(&period)
+                        .execute(pool)
+                        .await;
+                    } else {
+                        let _ = sqlx::query::<sqlx::Postgres>(
+                            "UPDATE vk_budgets SET current_usd = current_usd + $1 WHERE virtual_key_id = $2 AND period = $3",
+                        )
+                        .bind(cost_usd)
+                        .bind(vk_id)
+                        .bind(&period)
+                        .execute(pool)
+                        .await;
+                    }
+                }
             }
         }
     }
 
-    /// Retourne l'utilisation actuelle d'un VK
     pub async fn get_usage(&self, vk_id: &str) -> Vec<BudgetUsage> {
-        let rows = sqlx::query(
-            "SELECT period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = ? ORDER BY period",
-        )
-        .bind(vk_id)
-        .fetch_all(&self.pool)
-        .await
-        .unwrap_or_default();
+        match &self.pool {
+            Pool::Sqlite(pool) => {
+                let rows = sqlx::query(
+                    "SELECT period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1 ORDER BY period",
+                )
+                .bind(vk_id)
+                .fetch_all(pool)
+                .await
+                .unwrap_or_default();
 
-        rows.iter()
-            .map(|row| BudgetUsage {
-                period: row.try_get("period").unwrap_or_default(),
-                max_usd: row.try_get("max_usd").unwrap_or(0.0),
-                current_usd: row.try_get("current_usd").unwrap_or(0.0),
-                reset_at_ms: row.try_get("reset_at").unwrap_or(0),
-            })
-            .collect()
+                rows.iter()
+                    .map(|r| BudgetUsage {
+                        period: r.try_get("period").unwrap_or_default(),
+                        max_usd: r.try_get("max_usd").unwrap_or(0.0),
+                        current_usd: r.try_get("current_usd").unwrap_or(0.0),
+                        reset_at_ms: r.try_get("reset_at").unwrap_or(0),
+                    })
+                    .collect()
+            }
+            Pool::Postgres(pool) => {
+                let rows = sqlx::query::<sqlx::Postgres>(
+                    "SELECT period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1 ORDER BY period",
+                )
+                .bind(vk_id)
+                .fetch_all(pool)
+                .await
+                .unwrap_or_default();
+
+                rows.iter()
+                    .map(|r| BudgetUsage {
+                        period: r.try_get("period").unwrap_or_default(),
+                        max_usd: r.try_get("max_usd").unwrap_or(0.0),
+                        current_usd: r.try_get("current_usd").unwrap_or(0.0),
+                        reset_at_ms: r.try_get("reset_at").unwrap_or(0),
+                    })
+                    .collect()
+            }
+        }
     }
 
-    /// Supprime toutes les entrées de budget pour un virtual key (appelé lors de la suppression de la VK)
     pub async fn delete_vk_entries(&self, vk_id: &str) {
-        let _ = sqlx::query("DELETE FROM vk_budgets WHERE virtual_key_id = ?")
-            .bind(vk_id)
-            .execute(&self.pool)
-            .await;
+        match &self.pool {
+            Pool::Sqlite(pool) => {
+                let _ = sqlx::query("DELETE FROM vk_budgets WHERE virtual_key_id = $1")
+                    .bind(vk_id)
+                    .execute(pool)
+                    .await;
+            }
+            Pool::Postgres(pool) => {
+                let _ = sqlx::query::<sqlx::Postgres>("DELETE FROM vk_budgets WHERE virtual_key_id = $1")
+                    .bind(vk_id)
+                    .execute(pool)
+                    .await;
+            }
+        }
     }
 }
 
-/// Usage courant d'un budget
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BudgetUsage {
     pub period: String,
@@ -213,14 +356,10 @@ pub struct BudgetUsage {
     pub reset_at_ms: i64,
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BudgetPlugin — plugin LLM qui vérifie/enregistre les budgets
-// S'installe dans le pipeline pre/post hook de l'InferenceOrchestrator
-// ─────────────────────────────────────────────────────────────────────────────
+// ── BudgetPlugin ─────────────────────────────────────────────────
 
 pub struct BudgetPlugin {
     store: Arc<BudgetStore>,
-    /// Coût estimé de la requête courante (partagé pre → post hook)
     pending_cost: Arc<Mutex<std::collections::HashMap<String, f64>>>,
 }
 
@@ -246,16 +385,12 @@ impl pylos_core::domain::traits::LlmPlugin for BudgetPlugin {
     ) -> Result<Option<pylos_core::domain::request::PylosResponse>, PylosError> {
         let vk_id = match &ctx.virtual_key {
             Some(vk) => vk.clone(),
-            None => return Ok(None), // Pas de VK → pas de budget
+            None => return Ok(None),
         };
 
-        // Estimation conservatrice du coût (basée sur le modèle)
         let estimated = estimate_request_cost(request.model());
-
-        // Vérifie le budget avant d'envoyer
         self.store.check_budget(&vk_id, estimated).await?;
 
-        // Stocke le coût estimé pour le post-hook
         let mut pending = self.pending_cost.lock().await;
         pending.insert(vk_id, estimated);
 
@@ -273,14 +408,12 @@ impl pylos_core::domain::traits::LlmPlugin for BudgetPlugin {
             None => return Ok(()),
         };
 
-        // Calcule le coût réel depuis l'usage de la réponse
         let actual_cost = match response {
             pylos_core::domain::request::PylosResponse::ChatCompletion(r) => {
                 r.usage
                     .as_ref()
                     .map(|u| {
                         crate::log_store::estimate_cost_pub(
-                            // On utilise le provider depuis le modèle
                             &guess_provider_from_model(&r.model),
                             &r.model,
                             u.prompt_tokens,
@@ -292,7 +425,6 @@ impl pylos_core::domain::traits::LlmPlugin for BudgetPlugin {
             _ => 0.0,
         };
 
-        // Retire l'estimation et enregistre le coût réel
         let mut pending = self.pending_cost.lock().await;
         pending.remove(&vk_id);
         drop(pending);
@@ -306,9 +438,7 @@ impl pylos_core::domain::traits::LlmPlugin for BudgetPlugin {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────
 
 fn now_ms() -> i64 {
     SystemTime::now()
@@ -319,7 +449,6 @@ fn now_ms() -> i64 {
 
 fn detect_period(duration_str: &str) -> String {
     let s = duration_str.trim();
-    // Weekly : "7d" ou "1w"
     if s == "1w" || s == "7d" || (s.ends_with('w') && s[..s.len() - 1].parse::<u64>().is_ok()) {
         return "weekly".to_string();
     }
@@ -332,7 +461,6 @@ fn detect_period(duration_str: &str) -> String {
     } else if s == "total" || s.ends_with('Y') {
         "total".to_string()
     } else {
-        // Durée arbitraire → label basé sur la string
         format!("window_{}", s)
     }
 }
@@ -343,7 +471,7 @@ fn period_ms(period: &str) -> i64 {
         "weekly" => 7 * 86_400_000,
         "monthly" => 30 * 86_400_000,
         "total" => i64::MAX / 2,
-        _ => 3_600_000, // 1h par défaut pour les fenêtres custom
+        _ => 3_600_000,
     }
 }
 
@@ -353,8 +481,6 @@ fn next_reset_ms(duration_str: &str) -> i64 {
 }
 
 fn estimate_request_cost(model: &str) -> f64 {
-    // Estimation très conservatrice pour la vérification pre-hook
-    // On suppose ~1000 tokens prompt + 500 tokens completion
     let (input_per_1m, output_per_1m): (f64, f64) = if model.contains("gpt-4o") {
         (5.0, 15.0)
     } else if model.contains("claude-3-5") || model.contains("claude-3.5") {
@@ -362,7 +488,7 @@ fn estimate_request_cost(model: &str) -> f64 {
     } else if model.contains("gemini-2.5-pro") {
         (7.0, 21.0)
     } else {
-        (1.0, 3.0) // conservatif
+        (1.0, 3.0)
     };
     (1000.0 / 1_000_000.0) * input_per_1m + (500.0 / 1_000_000.0) * output_per_1m
 }
@@ -370,10 +496,6 @@ fn estimate_request_cost(model: &str) -> f64 {
 fn guess_provider_from_model(model: &str) -> String {
     pylos_core::domain::provider::ProviderKind::guess_from_model(model).to_string()
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -398,7 +520,6 @@ mod tests {
         };
         store.upsert_budget("vk-1", &budget).await.unwrap();
 
-        // Under limit: should pass
         let result = store.check_budget("vk-1", 1.0).await;
         assert!(result.is_ok(), "Should be within budget");
     }
@@ -408,17 +529,15 @@ mod tests {
         let store = make_store().await;
         let budget = BudgetConfig {
             id: "b1".into(),
-            max_limit: 1.0, // très petit budget
+            max_limit: 1.0,
             reset_duration: Duration("1d".into()),
             current_usage: 0.0,
             virtual_key_id: Some("vk-2".into()),
         };
         store.upsert_budget("vk-2", &budget).await.unwrap();
 
-        // Record near-max usage
         store.record_usage("vk-2", 0.95).await;
 
-        // Exceeds limit
         let result = store.check_budget("vk-2", 0.10).await;
         assert!(result.is_err(), "Should exceed budget");
         assert!(matches!(result.unwrap_err(), PylosError::BudgetExceeded(_)));
@@ -427,12 +546,8 @@ mod tests {
     #[tokio::test]
     async fn test_no_vk_no_budget_check() {
         let store = make_store().await;
-        // No budget registered for this VK — check should pass (no constraint)
         let result = store.check_budget("vk-unknown", 1000.0).await;
-        assert!(
-            result.is_ok(),
-            "Unknown VK should have no budget constraint"
-        );
+        assert!(result.is_ok(), "Unknown VK should have no budget constraint");
     }
 
     #[tokio::test]

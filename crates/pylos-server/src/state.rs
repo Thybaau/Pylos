@@ -3,11 +3,70 @@ use std::sync::Arc;
 
 use pylos_application::{
     BudgetPlugin, BudgetStore, ConfigStore, InferenceOrchestrator, LogStore, ModelCatalog,
-    OtelConfig, RateLimitPlugin, RateLimitStore,
+    OtelConfig, PgLogStore, RateLimitPlugin, RateLimitStore,
 };
 use pylos_core::domain::traits::LlmPlugin;
 
 use crate::metrics::Metrics;
+
+#[derive(Clone)]
+pub enum LogStoreVariant {
+    Sqlite(Arc<LogStore>),
+    Postgres(Arc<PgLogStore>),
+}
+
+impl LogStoreVariant {
+    pub async fn push(&self, entry: pylos_application::log_store::LogEntry) {
+        match self {
+            Self::Sqlite(s) => s.push(entry).await,
+            Self::Postgres(s) => s.push(entry).await,
+        }
+    }
+
+    pub async fn list(
+        &self,
+        limit: usize,
+        offset: usize,
+        filter: &pylos_application::log_store::LogFilter,
+    ) -> (Vec<pylos_application::log_store::LogEntry>, u64) {
+        match self {
+            Self::Sqlite(s) => s.list(limit, offset, filter).await,
+            Self::Postgres(s) => s.list(limit, offset, filter).await,
+        }
+    }
+
+    pub async fn stats(
+        &self,
+        filter: &pylos_application::log_store::LogFilter,
+    ) -> pylos_application::log_store::LogStats {
+        match self {
+            Self::Sqlite(s) => s.stats(filter).await,
+            Self::Postgres(s) => s.stats(filter).await,
+        }
+    }
+
+    pub async fn histogram(
+        &self,
+        filter: &pylos_application::log_store::LogFilter,
+        bucket_secs: i64,
+    ) -> Vec<pylos_application::log_store::HistogramBucket> {
+        match self {
+            Self::Sqlite(s) => s.histogram(filter, bucket_secs).await,
+            Self::Postgres(s) => s.histogram(filter, bucket_secs).await,
+        }
+    }
+
+    pub async fn token_histogram(
+        &self,
+        filter: &pylos_application::log_store::LogFilter,
+        bucket_secs: i64,
+    ) -> Vec<pylos_application::log_store::TokenBucket> {
+        match self {
+            Self::Sqlite(s) => s.token_histogram(filter, bucket_secs).await,
+            Self::Postgres(s) => s.token_histogram(filter, bucket_secs).await,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -15,7 +74,7 @@ pub struct AppState {
     pub config_store: Arc<ConfigStore>,
     pub metrics: Arc<Metrics>,
     pub vk_registry: Arc<pylos_core::domain::virtual_key::VirtualKeyRegistry>,
-    pub log_store: Arc<LogStore>,
+    pub log_store: LogStoreVariant,
     pub model_catalog: Arc<ModelCatalog>,
     pub budget_store: Arc<BudgetStore>,
     pub rate_limit_store: Arc<RateLimitStore>,
@@ -48,35 +107,94 @@ impl AppState {
         }
 
         // ── Data directory ───────────────────────────────────────────────
-        let data_dir = data_dir.unwrap_or_else(|| {
-            std::env::var("PYLOS_DATA_DIR")
-                .ok()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("."))
-        });
-        std::fs::create_dir_all(&data_dir).ok();
+        let database_url = cfg.server.database_url.clone();
 
-        // ── Log store ────────────────────────────────────────────────────
-        let log_db_path = data_dir.join("pylos-logs.db");
-        tracing::info!(path = %log_db_path.display(), "Log store path");
-        let retention_days = cfg.server.log_retention_days;
-        let log_store = Arc::new(LogStore::new(Some(log_db_path), retention_days, 10_000));
+        let (log_store, model_catalog, budget_store, rate_limit_store) =
+            if let Some(ref db_url) = database_url {
+                let db_display = if db_url.len() > 30 {
+                    format!("{}...", &db_url[..30])
+                } else {
+                    db_url.clone()
+                };
+                tracing::info!(database_url = %db_display, "Using PostgreSQL for all stores");
 
-        // ── Model catalog ─────────────────────────────────────────────────
-        let catalog_db_path = data_dir.join("pylos-catalog.db");
-        let model_catalog = Arc::new(
-            ModelCatalog::open(&catalog_db_path)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to open model catalog: {}", e))?,
-        );
+                // PostgreSQL
+                let pg_log = Arc::new(
+                    PgLogStore::new(db_url, cfg.server.log_retention_days)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to connect PostgreSQL log store: {}", e))?,
+                );
 
-        // ── Budget store ──────────────────────────────────────────────────
-        let budget_db_path = data_dir.join("pylos-budget.db");
-        let budget_store = Arc::new(
-            BudgetStore::open(&budget_db_path)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to open budget store: {}", e))?,
-        );
+                let pg_catalog = Arc::new(
+                    ModelCatalog::open_postgres(db_url)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to open PostgreSQL model catalog: {}", e))?,
+                );
+
+                let pg_budget = Arc::new(
+                    BudgetStore::open_postgres(db_url)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to open PostgreSQL budget store: {}", e))?,
+                );
+
+                let pg_rl = Arc::new(
+                    RateLimitStore::open_postgres(db_url)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to open PostgreSQL rate limit store: {}", e))?,
+                );
+
+                (
+                    LogStoreVariant::Postgres(pg_log),
+                    pg_catalog,
+                    pg_budget,
+                    pg_rl,
+                )
+            } else {
+                // SQLite
+                let data_dir = data_dir.unwrap_or_else(|| {
+                    std::env::var("PYLOS_DATA_DIR")
+                        .ok()
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("."))
+                });
+                std::fs::create_dir_all(&data_dir).ok();
+
+                let log_db_path = data_dir.join("pylos-logs.db");
+                tracing::info!(path = %log_db_path.display(), "Log store path (SQLite)");
+                let sqlite_log = Arc::new(LogStore::new(
+                    Some(log_db_path),
+                    cfg.server.log_retention_days,
+                    10_000,
+                ));
+
+                let catalog_db_path = data_dir.join("pylos-catalog.db");
+                let sqlite_catalog = Arc::new(
+                    ModelCatalog::open(&catalog_db_path)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to open model catalog: {}", e))?,
+                );
+
+                let budget_db_path = data_dir.join("pylos-budget.db");
+                let sqlite_budget = Arc::new(
+                    BudgetStore::open(&budget_db_path)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to open budget store: {}", e))?,
+                );
+
+                let rl_db_path = data_dir.join("pylos-ratelimit.db");
+                let sqlite_rl = Arc::new(
+                    RateLimitStore::open(&rl_db_path)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to open rate limit store: {}", e))?,
+                );
+
+                (
+                    LogStoreVariant::Sqlite(sqlite_log),
+                    sqlite_catalog,
+                    sqlite_budget,
+                    sqlite_rl,
+                )
+            };
 
         for budget_cfg in &cfg.governance.budgets {
             if let Some(vk_id) = &budget_cfg.virtual_key_id {
@@ -85,14 +203,6 @@ impl AppState {
                 }
             }
         }
-
-        // ── Rate limit store ──────────────────────────────────────────────
-        let rl_db_path = data_dir.join("pylos-ratelimit.db");
-        let rate_limit_store = Arc::new(
-            RateLimitStore::open(&rl_db_path)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to open rate limit store: {}", e))?,
-        );
 
         for vk_cfg in &cfg.governance.virtual_keys {
             if let Some(rl_id) = &vk_cfg.rate_limit_id {
