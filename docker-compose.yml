@@ -99,7 +99,7 @@ services:
   # Grafana — dashboards
   # ───────────────────────────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:10.4.2
+    image: grafana/grafana:10.4.19
     container_name: pylos-grafana
     restart: unless-stopped
     ports:
