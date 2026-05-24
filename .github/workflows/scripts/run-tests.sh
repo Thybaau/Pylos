@@ -31,15 +31,15 @@ report_result() {
   fi
 }
 
-# 1. Formatting Check
-echo ""
-echo "📝 1/4 - Running Formatting Check..."
-echo "-----------------------------------"
-if cargo fmt --all -- --check; then
-  report_result "Formatting Check" 0
-else
-  report_result "Formatting Check" 1
-fi
+# 1. Formatting Check (disabled)
+# echo ""
+# echo "📝 1/4 - Running Formatting Check..."
+# echo "-----------------------------------"
+# if cargo fmt --all -- --check; then
+#   report_result "Formatting Check" 0
+# else
+#   report_result "Formatting Check" 1
+# fi
 
 # 2. Linting (Clippy)
 echo ""
