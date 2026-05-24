@@ -6,13 +6,14 @@ use tokio::sync::Mutex;
 use tracing::info;
 
 use crate::log_store::{
-    now_ms, LogEntry, LogFilter, LogStats, LogStatus, HistogramBucket, TokenBucket,
+    now_ms, HistogramBucket, LogEntry, LogFilter, LogStats, LogStatus, TokenBucket,
 };
 
 #[derive(Clone)]
 pub struct PgLogStore {
     pool: PgPool,
     retention_days: u32,
+    #[allow(dead_code)]
     pending_purge: Arc<Mutex<bool>>,
 }
 
@@ -23,9 +24,7 @@ impl PgLogStore {
             .connect(database_url)
             .await?;
 
-        sqlx::migrate!("./migrations_postgres")
-            .run(&pool)
-            .await?;
+        sqlx::migrate!("./migrations_postgres").run(&pool).await?;
 
         info!("PostgreSQL log store opened");
 
@@ -95,7 +94,8 @@ impl PgLogStore {
         for p in &params {
             count_q = count_q.bind(p);
         }
-        let total: u64 = count_q.fetch_one(&self.pool)
+        let total: u64 = count_q
+            .fetch_one(&self.pool)
             .await
             .map(|r| r.try_get::<i64, _>(0).unwrap_or(0) as u64)
             .unwrap_or(0);
@@ -108,7 +108,8 @@ impl PgLogStore {
         for p in &params {
             data_q = data_q.bind(p);
         }
-        let rows = data_q.fetch_all(&self.pool)
+        let rows = data_q
+            .fetch_all(&self.pool)
             .await
             .unwrap_or_default()
             .iter()
@@ -168,11 +169,7 @@ impl PgLogStore {
         }
     }
 
-    pub async fn histogram(
-        &self,
-        filter: &LogFilter,
-        bucket_secs: i64,
-    ) -> Vec<HistogramBucket> {
+    pub async fn histogram(&self, filter: &LogFilter, bucket_secs: i64) -> Vec<HistogramBucket> {
         let bucket_ms = bucket_secs * 1000;
         let (where_clause, params) = build_where_clause(filter);
 
@@ -210,11 +207,7 @@ impl PgLogStore {
         }
     }
 
-    pub async fn token_histogram(
-        &self,
-        filter: &LogFilter,
-        bucket_secs: i64,
-    ) -> Vec<TokenBucket> {
+    pub async fn token_histogram(&self, filter: &LogFilter, bucket_secs: i64) -> Vec<TokenBucket> {
         let bucket_ms = bucket_secs * 1000;
         let (where_clause, params) = build_where_clause(filter);
 
@@ -262,7 +255,11 @@ impl PgLogStore {
             Ok(result) => {
                 let deleted = result.rows_affected();
                 if deleted > 0 {
-                    tracing::info!(deleted = deleted, retention_days = self.retention_days, "Purged old log entries");
+                    tracing::info!(
+                        deleted = deleted,
+                        retention_days = self.retention_days,
+                        "Purged old log entries"
+                    );
                 }
             }
             Err(e) => {

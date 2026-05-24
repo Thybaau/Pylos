@@ -20,18 +20,14 @@ enum Pool {
 impl Pool {
     async fn run_migrations(&self) -> Result<(), sqlx::Error> {
         match self {
-            Pool::Sqlite(pool) => {
-                sqlx::migrate!("./migrations")
-                    .run(pool)
-                    .await
-                    .map_err(|e| sqlx::Error::Migrate(Box::new(e)))
-            }
-            Pool::Postgres(pool) => {
-                sqlx::migrate!("./migrations_postgres")
-                    .run(pool)
-                    .await
-                    .map_err(|e| sqlx::Error::Migrate(Box::new(e)))
-            }
+            Pool::Sqlite(pool) => sqlx::migrate!("./migrations")
+                .run(pool)
+                .await
+                .map_err(|e| sqlx::Error::Migrate(Box::new(e))),
+            Pool::Postgres(pool) => sqlx::migrate!("./migrations_postgres")
+                .run(pool)
+                .await
+                .map_err(|e| sqlx::Error::Migrate(Box::new(e))),
         }
     }
 }
@@ -339,10 +335,12 @@ impl BudgetStore {
                     .await;
             }
             Pool::Postgres(pool) => {
-                let _ = sqlx::query::<sqlx::Postgres>("DELETE FROM vk_budgets WHERE virtual_key_id = $1")
-                    .bind(vk_id)
-                    .execute(pool)
-                    .await;
+                let _ = sqlx::query::<sqlx::Postgres>(
+                    "DELETE FROM vk_budgets WHERE virtual_key_id = $1",
+                )
+                .bind(vk_id)
+                .execute(pool)
+                .await;
             }
         }
     }
@@ -409,19 +407,18 @@ impl pylos_core::domain::traits::LlmPlugin for BudgetPlugin {
         };
 
         let actual_cost = match response {
-            pylos_core::domain::request::PylosResponse::ChatCompletion(r) => {
-                r.usage
-                    .as_ref()
-                    .map(|u| {
-                        crate::log_store::estimate_cost_pub(
-                            &guess_provider_from_model(&r.model),
-                            &r.model,
-                            u.prompt_tokens,
-                            u.completion_tokens,
-                        )
-                    })
-                    .unwrap_or(0.0)
-            }
+            pylos_core::domain::request::PylosResponse::ChatCompletion(r) => r
+                .usage
+                .as_ref()
+                .map(|u| {
+                    crate::log_store::estimate_cost_pub(
+                        &guess_provider_from_model(&r.model),
+                        &r.model,
+                        u.prompt_tokens,
+                        u.completion_tokens,
+                    )
+                })
+                .unwrap_or(0.0),
             _ => 0.0,
         };
 
@@ -547,7 +544,10 @@ mod tests {
     async fn test_no_vk_no_budget_check() {
         let store = make_store().await;
         let result = store.check_budget("vk-unknown", 1000.0).await;
-        assert!(result.is_ok(), "Unknown VK should have no budget constraint");
+        assert!(
+            result.is_ok(),
+            "Unknown VK should have no budget constraint"
+        );
     }
 
     #[tokio::test]

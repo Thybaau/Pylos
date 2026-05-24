@@ -19,18 +19,14 @@ enum Pool {
 impl Pool {
     async fn run_migrations(&self) -> Result<(), sqlx::Error> {
         match self {
-            Pool::Sqlite(pool) => {
-                sqlx::migrate!("./migrations")
-                    .run(pool)
-                    .await
-                    .map_err(|e| sqlx::Error::Migrate(Box::new(e)))
-            }
-            Pool::Postgres(pool) => {
-                sqlx::migrate!("./migrations_postgres")
-                    .run(pool)
-                    .await
-                    .map_err(|e| sqlx::Error::Migrate(Box::new(e)))
-            }
+            Pool::Sqlite(pool) => sqlx::migrate!("./migrations")
+                .run(pool)
+                .await
+                .map_err(|e| sqlx::Error::Migrate(Box::new(e))),
+            Pool::Postgres(pool) => sqlx::migrate!("./migrations_postgres")
+                .run(pool)
+                .await
+                .map_err(|e| sqlx::Error::Migrate(Box::new(e))),
         }
     }
 }
@@ -221,10 +217,9 @@ impl RateLimitStore {
 
         match &self.pool {
             Pool::Sqlite(pool) => {
-                let mut tx = pool
-                    .begin()
-                    .await
-                    .map_err(|e| PylosError::Internal(format!("Rate limit tx begin failed: {}", e)))?;
+                let mut tx = pool.begin().await.map_err(|e| {
+                    PylosError::Internal(format!("Rate limit tx begin failed: {}", e))
+                })?;
 
                 let row = sqlx::query(
                     "SELECT max_value, current_value, window_start_ms, window_duration_ms \
@@ -272,17 +267,16 @@ impl RateLimitStore {
                 .execute(&mut *tx)
                 .await;
 
-                tx.commit()
-                    .await
-                    .map_err(|e| PylosError::Internal(format!("Rate limit tx commit failed: {}", e)))?;
+                tx.commit().await.map_err(|e| {
+                    PylosError::Internal(format!("Rate limit tx commit failed: {}", e))
+                })?;
 
                 Ok(())
             }
             Pool::Postgres(pool) => {
-                let mut tx = pool
-                    .begin()
-                    .await
-                    .map_err(|e| PylosError::Internal(format!("Rate limit tx begin failed: {}", e)))?;
+                let mut tx = pool.begin().await.map_err(|e| {
+                    PylosError::Internal(format!("Rate limit tx begin failed: {}", e))
+                })?;
 
                 let row = sqlx::query::<sqlx::Postgres>(
                     "SELECT max_value, current_value, window_start_ms, window_duration_ms \
@@ -330,9 +324,9 @@ impl RateLimitStore {
                 .execute(&mut *tx)
                 .await;
 
-                tx.commit()
-                    .await
-                    .map_err(|e| PylosError::Internal(format!("Rate limit tx commit failed: {}", e)))?;
+                tx.commit().await.map_err(|e| {
+                    PylosError::Internal(format!("Rate limit tx commit failed: {}", e))
+                })?;
 
                 Ok(())
             }
@@ -358,7 +352,11 @@ impl RateLimitStore {
                         let window_dur: i64 = row.try_get("window_duration_ms").unwrap_or(60_000);
                         let current: i64 = row.try_get("current_value").unwrap_or(0);
                         let max: i64 = row.try_get("max_value").unwrap_or(0);
-                        let effective_current = if now - window_start >= window_dur { 0 } else { current };
+                        let effective_current = if now - window_start >= window_dur {
+                            0
+                        } else {
+                            current
+                        };
 
                         RateLimitStatus {
                             window_type: row.try_get("window_type").unwrap_or_default(),
@@ -384,7 +382,11 @@ impl RateLimitStore {
                         let window_dur: i64 = row.try_get("window_duration_ms").unwrap_or(60_000);
                         let current: i64 = row.try_get("current_value").unwrap_or(0);
                         let max: i64 = row.try_get("max_value").unwrap_or(0);
-                        let effective_current = if now - window_start >= window_dur { 0 } else { current };
+                        let effective_current = if now - window_start >= window_dur {
+                            0
+                        } else {
+                            current
+                        };
 
                         RateLimitStatus {
                             window_type: row.try_get("window_type").unwrap_or_default(),
@@ -407,10 +409,12 @@ impl RateLimitStore {
                     .await;
             }
             Pool::Postgres(pool) => {
-                let _ = sqlx::query::<sqlx::Postgres>("DELETE FROM vk_rate_limits WHERE virtual_key_id = $1")
-                    .bind(vk_id)
-                    .execute(pool)
-                    .await;
+                let _ = sqlx::query::<sqlx::Postgres>(
+                    "DELETE FROM vk_rate_limits WHERE virtual_key_id = $1",
+                )
+                .bind(vk_id)
+                .execute(pool)
+                .await;
             }
         }
     }

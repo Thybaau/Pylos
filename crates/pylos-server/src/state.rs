@@ -122,26 +122,24 @@ impl AppState {
                 let pg_log = Arc::new(
                     PgLogStore::new(db_url, cfg.server.log_retention_days)
                         .await
-                        .map_err(|e| anyhow::anyhow!("Failed to connect PostgreSQL log store: {}", e))?,
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to connect PostgreSQL log store: {}", e)
+                        })?,
                 );
 
-                let pg_catalog = Arc::new(
-                    ModelCatalog::open_postgres(db_url)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Failed to open PostgreSQL model catalog: {}", e))?,
-                );
+                let pg_catalog =
+                    Arc::new(ModelCatalog::open_postgres(db_url).await.map_err(|e| {
+                        anyhow::anyhow!("Failed to open PostgreSQL model catalog: {}", e)
+                    })?);
 
-                let pg_budget = Arc::new(
-                    BudgetStore::open_postgres(db_url)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Failed to open PostgreSQL budget store: {}", e))?,
-                );
+                let pg_budget =
+                    Arc::new(BudgetStore::open_postgres(db_url).await.map_err(|e| {
+                        anyhow::anyhow!("Failed to open PostgreSQL budget store: {}", e)
+                    })?);
 
-                let pg_rl = Arc::new(
-                    RateLimitStore::open_postgres(db_url)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Failed to open PostgreSQL rate limit store: {}", e))?,
-                );
+                let pg_rl = Arc::new(RateLimitStore::open_postgres(db_url).await.map_err(|e| {
+                    anyhow::anyhow!("Failed to open PostgreSQL rate limit store: {}", e)
+                })?);
 
                 (
                     LogStoreVariant::Postgres(pg_log),

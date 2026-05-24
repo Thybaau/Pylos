@@ -15,18 +15,14 @@ enum Pool {
 impl Pool {
     async fn run_migrations(&self) -> Result<(), sqlx::Error> {
         match self {
-            Pool::Sqlite(pool) => {
-                sqlx::migrate!("./migrations")
-                    .run(pool)
-                    .await
-                    .map_err(|e| sqlx::Error::Migrate(Box::new(e)))
-            }
-            Pool::Postgres(pool) => {
-                sqlx::migrate!("./migrations_postgres")
-                    .run(pool)
-                    .await
-                    .map_err(|e| sqlx::Error::Migrate(Box::new(e)))
-            }
+            Pool::Sqlite(pool) => sqlx::migrate!("./migrations")
+                .run(pool)
+                .await
+                .map_err(|e| sqlx::Error::Migrate(Box::new(e))),
+            Pool::Postgres(pool) => sqlx::migrate!("./migrations_postgres")
+                .run(pool)
+                .await
+                .map_err(|e| sqlx::Error::Migrate(Box::new(e))),
         }
     }
 }
@@ -156,7 +152,7 @@ impl ModelCatalog {
                     .await
                     .unwrap_or_default()
                     .iter()
-                    .map(|row| row_to_model_info_sqlite(row))
+                    .map(row_to_model_info_sqlite)
                     .collect()
             }
             Pool::Postgres(pool) => {
@@ -168,7 +164,7 @@ impl ModelCatalog {
                     .await
                     .unwrap_or_default()
                     .iter()
-                    .map(|row| row_to_model_info_pg(row))
+                    .map(row_to_model_info_pg)
                     .collect()
             }
         }
@@ -185,19 +181,19 @@ impl ModelCatalog {
                     .ok()
                     .flatten()
                     .as_ref()
-                    .map(|row| row_to_model_info_sqlite(row))
+                    .map(row_to_model_info_sqlite)
             }
-            Pool::Postgres(pool) => {
-                sqlx::query::<sqlx::Postgres>("SELECT * FROM model_catalog WHERE provider = $1 AND model_id = $2")
-                    .bind(provider)
-                    .bind(model_id)
-                    .fetch_optional(pool)
-                    .await
-                    .ok()
-                    .flatten()
-                    .as_ref()
-                    .map(|row| row_to_model_info_pg(row))
-            }
+            Pool::Postgres(pool) => sqlx::query::<sqlx::Postgres>(
+                "SELECT * FROM model_catalog WHERE provider = $1 AND model_id = $2",
+            )
+            .bind(provider)
+            .bind(model_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .as_ref()
+            .map(row_to_model_info_pg),
         }
     }
 
@@ -315,14 +311,14 @@ impl ModelCatalog {
                     .await?
                     .rows_affected()
             }
-            Pool::Postgres(pool) => {
-                sqlx::query::<sqlx::Postgres>("DELETE FROM model_catalog WHERE provider = $1 AND model_id = $2")
-                    .bind(provider)
-                    .bind(model_id)
-                    .execute(pool)
-                    .await?
-                    .rows_affected()
-            }
+            Pool::Postgres(pool) => sqlx::query::<sqlx::Postgres>(
+                "DELETE FROM model_catalog WHERE provider = $1 AND model_id = $2",
+            )
+            .bind(provider)
+            .bind(model_id)
+            .execute(pool)
+            .await?
+            .rows_affected(),
         };
         Ok(rows_affected > 0)
     }
@@ -359,7 +355,9 @@ fn row_to_model_info_pg(row: &sqlx::postgres::PgRow) -> ModelInfo {
         supports_vision: row.try_get::<bool, _>("supports_vision").unwrap_or(false),
         supports_tools: row.try_get::<bool, _>("supports_tools").unwrap_or(true),
         supports_streaming: row.try_get::<bool, _>("supports_streaming").unwrap_or(true),
-        supports_embeddings: row.try_get::<bool, _>("supports_embeddings").unwrap_or(false),
+        supports_embeddings: row
+            .try_get::<bool, _>("supports_embeddings")
+            .unwrap_or(false),
         is_deprecated: row.try_get::<bool, _>("is_deprecated").unwrap_or(false),
     }
 }
@@ -403,47 +401,453 @@ fn m(
 
 fn builtin_models() -> Vec<ModelInfo> {
     vec![
-        m("openai", "gpt-4o", "GPT-4o", 128_000, 16_384, 5.0, 15.0, true, true, false),
-        m("openai", "gpt-4o-mini", "GPT-4o Mini", 128_000, 16_384, 0.15, 0.60, true, true, false),
-        m("openai", "gpt-4-turbo", "GPT-4 Turbo", 128_000, 4_096, 10.0, 30.0, true, true, false),
-        m("openai", "o1", "o1", 200_000, 100_000, 15.0, 60.0, false, true, false),
-        m("openai", "o1-mini", "o1-mini", 128_000, 65_536, 3.0, 12.0, false, false, false),
-        m("openai", "o3-mini", "o3-mini", 200_000, 100_000, 1.1, 4.4, false, true, false),
-        m("openai", "text-embedding-3-small", "Embedding 3 Small", 8_191, 0, 0.02, 0.0, false, false, true),
-        m("openai", "text-embedding-3-large", "Embedding 3 Large", 8_191, 0, 0.13, 0.0, false, false, true),
-        m("anthropic", "claude-opus-4-5", "Claude Opus 4.5", 200_000, 32_000, 15.0, 75.0, true, true, false),
-        m("anthropic", "claude-sonnet-4-5", "Claude Sonnet 4.5", 200_000, 64_000, 3.0, 15.0, true, true, false),
-        m("anthropic", "claude-haiku-3-5", "Claude Haiku 3.5", 200_000, 8_096, 0.8, 4.0, true, true, false),
-        m("anthropic", "claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet", 200_000, 8_096, 3.0, 15.0, true, true, false),
-        m("anthropic", "claude-3-opus-20240229", "Claude 3 Opus", 200_000, 4_096, 15.0, 75.0, true, true, false),
-        m("anthropic", "claude-3-haiku-20240307", "Claude 3 Haiku", 200_000, 4_096, 0.25, 1.25, true, true, false),
-        m("gemini", "gemini-2.5-pro", "Gemini 2.5 Pro", 1_000_000, 65_536, 7.0, 21.0, true, true, false),
-        m("gemini", "gemini-2.5-flash", "Gemini 2.5 Flash", 1_000_000, 65_536, 0.3, 2.5, true, true, false),
-        m("gemini", "gemini-2.0-flash", "Gemini 2.0 Flash", 1_000_000, 8_192, 0.1, 0.4, true, true, false),
-        m("gemini", "gemini-1.5-pro", "Gemini 1.5 Pro", 2_000_000, 8_192, 3.5, 10.5, true, true, false),
-        m("gemini", "text-embedding-004", "Gemini Embedding", 2_048, 0, 0.025, 0.0, false, false, true),
-        m("gemini", "gemini-embedding-001", "Gemini Embedding 001", 2_048, 0, 0.0, 0.0, false, false, true),
-        m("cohere", "command-a-03-2025", "Command A", 256_000, 8_000, 2.5, 10.0, true, true, false),
-        m("cohere", "command-r-plus", "Command R+", 128_000, 4_096, 3.0, 15.0, false, true, false),
-        m("cohere", "command-r", "Command R", 128_000, 4_096, 0.15, 0.60, false, true, false),
-        m("cohere", "embed-v4.0", "Embed v4", 512, 0, 0.1, 0.0, false, false, true),
-        m("groq", "llama-3.3-70b-versatile", "Llama 3.3 70B", 128_000, 32_768, 0.59, 0.79, false, true, false),
-        m("groq", "llama-3.1-8b-instant", "Llama 3.1 8B", 128_000, 8_192, 0.05, 0.08, false, true, false),
-        m("groq", "gemma2-9b-it", "Gemma 2 9B", 8_192, 8_192, 0.2, 0.2, false, true, false),
-        m("groq", "mixtral-8x7b-32768", "Mixtral 8x7B", 32_768, 32_768, 0.24, 0.24, false, true, false),
-        m("mistral", "mistral-large-latest", "Mistral Large", 128_000, 8_192, 3.0, 9.0, true, true, false),
-        m("mistral", "mistral-small-latest", "Mistral Small", 128_000, 8_192, 0.2, 0.6, false, true, false),
-        m("mistral", "codestral-latest", "Codestral", 256_000, 8_192, 0.3, 0.9, false, true, false),
-        m("xai", "grok-3", "Grok 3", 131_072, 8_192, 5.0, 15.0, true, true, false),
-        m("xai", "grok-3-mini", "Grok 3 Mini", 131_072, 8_192, 0.3, 0.5, true, true, false),
-        m("bedrock", "anthropic.claude-3-5-sonnet-20241022-v2:0", "Claude 3.5 Sonnet (Bedrock)", 200_000, 8_096, 3.0, 15.0, true, true, false),
-        m("bedrock", "amazon.nova-pro-v1:0", "Nova Pro", 300_000, 5_120, 0.8, 3.2, true, true, false),
-        m("bedrock", "amazon.nova-lite-v1:0", "Nova Lite", 300_000, 5_120, 0.06, 0.24, true, true, false),
-        m("bedrock", "amazon.nova-micro-v1:0", "Nova Micro", 128_000, 5_120, 0.035, 0.14, false, false, false),
-        m("deepseek", "deepseek-v4-pro", "DeepSeek V4 Pro", 1_000_000, 128_000, 0.435, 0.87, true, true, false),
-        m("deepseek", "deepseek-v4-flash", "DeepSeek V4 Flash", 1_000_000, 128_000, 0.14, 0.28, true, true, false),
-        m("deepseek", "deepseek-r1-v4", "DeepSeek R1 V4", 128_000, 16_384, 0.55, 2.19, false, true, false),
-        m("deepseek", "deepseek-chat", "DeepSeek V3", 64_000, 8_192, 0.14, 0.28, false, true, false),
+        m(
+            "openai", "gpt-4o", "GPT-4o", 128_000, 16_384, 5.0, 15.0, true, true, false,
+        ),
+        m(
+            "openai",
+            "gpt-4o-mini",
+            "GPT-4o Mini",
+            128_000,
+            16_384,
+            0.15,
+            0.60,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "openai",
+            "gpt-4-turbo",
+            "GPT-4 Turbo",
+            128_000,
+            4_096,
+            10.0,
+            30.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "openai", "o1", "o1", 200_000, 100_000, 15.0, 60.0, false, true, false,
+        ),
+        m(
+            "openai", "o1-mini", "o1-mini", 128_000, 65_536, 3.0, 12.0, false, false, false,
+        ),
+        m(
+            "openai", "o3-mini", "o3-mini", 200_000, 100_000, 1.1, 4.4, false, true, false,
+        ),
+        m(
+            "openai",
+            "text-embedding-3-small",
+            "Embedding 3 Small",
+            8_191,
+            0,
+            0.02,
+            0.0,
+            false,
+            false,
+            true,
+        ),
+        m(
+            "openai",
+            "text-embedding-3-large",
+            "Embedding 3 Large",
+            8_191,
+            0,
+            0.13,
+            0.0,
+            false,
+            false,
+            true,
+        ),
+        m(
+            "anthropic",
+            "claude-opus-4-5",
+            "Claude Opus 4.5",
+            200_000,
+            32_000,
+            15.0,
+            75.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "anthropic",
+            "claude-sonnet-4-5",
+            "Claude Sonnet 4.5",
+            200_000,
+            64_000,
+            3.0,
+            15.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "anthropic",
+            "claude-haiku-3-5",
+            "Claude Haiku 3.5",
+            200_000,
+            8_096,
+            0.8,
+            4.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "anthropic",
+            "claude-3-5-sonnet-20241022",
+            "Claude 3.5 Sonnet",
+            200_000,
+            8_096,
+            3.0,
+            15.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "anthropic",
+            "claude-3-opus-20240229",
+            "Claude 3 Opus",
+            200_000,
+            4_096,
+            15.0,
+            75.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "anthropic",
+            "claude-3-haiku-20240307",
+            "Claude 3 Haiku",
+            200_000,
+            4_096,
+            0.25,
+            1.25,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "gemini",
+            "gemini-2.5-pro",
+            "Gemini 2.5 Pro",
+            1_000_000,
+            65_536,
+            7.0,
+            21.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "gemini",
+            "gemini-2.5-flash",
+            "Gemini 2.5 Flash",
+            1_000_000,
+            65_536,
+            0.3,
+            2.5,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "gemini",
+            "gemini-2.0-flash",
+            "Gemini 2.0 Flash",
+            1_000_000,
+            8_192,
+            0.1,
+            0.4,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "gemini",
+            "gemini-1.5-pro",
+            "Gemini 1.5 Pro",
+            2_000_000,
+            8_192,
+            3.5,
+            10.5,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "gemini",
+            "text-embedding-004",
+            "Gemini Embedding",
+            2_048,
+            0,
+            0.025,
+            0.0,
+            false,
+            false,
+            true,
+        ),
+        m(
+            "gemini",
+            "gemini-embedding-001",
+            "Gemini Embedding 001",
+            2_048,
+            0,
+            0.0,
+            0.0,
+            false,
+            false,
+            true,
+        ),
+        m(
+            "cohere",
+            "command-a-03-2025",
+            "Command A",
+            256_000,
+            8_000,
+            2.5,
+            10.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "cohere",
+            "command-r-plus",
+            "Command R+",
+            128_000,
+            4_096,
+            3.0,
+            15.0,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "cohere",
+            "command-r",
+            "Command R",
+            128_000,
+            4_096,
+            0.15,
+            0.60,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "cohere",
+            "embed-v4.0",
+            "Embed v4",
+            512,
+            0,
+            0.1,
+            0.0,
+            false,
+            false,
+            true,
+        ),
+        m(
+            "groq",
+            "llama-3.3-70b-versatile",
+            "Llama 3.3 70B",
+            128_000,
+            32_768,
+            0.59,
+            0.79,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "groq",
+            "llama-3.1-8b-instant",
+            "Llama 3.1 8B",
+            128_000,
+            8_192,
+            0.05,
+            0.08,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "groq",
+            "gemma2-9b-it",
+            "Gemma 2 9B",
+            8_192,
+            8_192,
+            0.2,
+            0.2,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "groq",
+            "mixtral-8x7b-32768",
+            "Mixtral 8x7B",
+            32_768,
+            32_768,
+            0.24,
+            0.24,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "mistral",
+            "mistral-large-latest",
+            "Mistral Large",
+            128_000,
+            8_192,
+            3.0,
+            9.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "mistral",
+            "mistral-small-latest",
+            "Mistral Small",
+            128_000,
+            8_192,
+            0.2,
+            0.6,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "mistral",
+            "codestral-latest",
+            "Codestral",
+            256_000,
+            8_192,
+            0.3,
+            0.9,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "xai", "grok-3", "Grok 3", 131_072, 8_192, 5.0, 15.0, true, true, false,
+        ),
+        m(
+            "xai",
+            "grok-3-mini",
+            "Grok 3 Mini",
+            131_072,
+            8_192,
+            0.3,
+            0.5,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "bedrock",
+            "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "Claude 3.5 Sonnet (Bedrock)",
+            200_000,
+            8_096,
+            3.0,
+            15.0,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "bedrock",
+            "amazon.nova-pro-v1:0",
+            "Nova Pro",
+            300_000,
+            5_120,
+            0.8,
+            3.2,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "bedrock",
+            "amazon.nova-lite-v1:0",
+            "Nova Lite",
+            300_000,
+            5_120,
+            0.06,
+            0.24,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "bedrock",
+            "amazon.nova-micro-v1:0",
+            "Nova Micro",
+            128_000,
+            5_120,
+            0.035,
+            0.14,
+            false,
+            false,
+            false,
+        ),
+        m(
+            "deepseek",
+            "deepseek-v4-pro",
+            "DeepSeek V4 Pro",
+            1_000_000,
+            128_000,
+            0.435,
+            0.87,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "deepseek",
+            "deepseek-v4-flash",
+            "DeepSeek V4 Flash",
+            1_000_000,
+            128_000,
+            0.14,
+            0.28,
+            true,
+            true,
+            false,
+        ),
+        m(
+            "deepseek",
+            "deepseek-r1-v4",
+            "DeepSeek R1 V4",
+            128_000,
+            16_384,
+            0.55,
+            2.19,
+            false,
+            true,
+            false,
+        ),
+        m(
+            "deepseek",
+            "deepseek-chat",
+            "DeepSeek V3",
+            64_000,
+            8_192,
+            0.14,
+            0.28,
+            false,
+            true,
+            false,
+        ),
     ]
 }
 
