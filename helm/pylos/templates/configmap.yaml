@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configMapName | default (printf "%s-config" (include "pylos.name" .)) }}
+  namespace: {{ .Values.namespace }}
+data:
+  pylos.json: |
+    {{- .Values.config | nindent 4 }}

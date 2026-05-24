@@ -3,6 +3,28 @@ namespace: pylos
 imagePullSecrets:
   - name: ghcr-auth
 
+config: |
+  {
+    "version": 2,
+    "server": {
+      "port": 3000,
+      "log_level": "info",
+      "enable_logging": true,
+      "disable_content_logging": false,
+      "database_url": "env.DATABASE_URL"
+    },
+    "providers": {},
+    "governance": {
+      "virtual_keys": []
+    }
+  }
+
+database:
+  enabled: false
+  url: ""
+  existingSecret: ""
+  existingSecretKey: "DATABASE_URL"
+
 backend:
   name: pylos
   replicaCount: 2

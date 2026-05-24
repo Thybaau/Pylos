@@ -107,7 +107,7 @@ impl AppState {
         }
 
         // ── Data directory ───────────────────────────────────────────────
-        let database_url = cfg.server.database_url.clone();
+        let database_url = cfg.server.database_url.as_ref().and_then(|e| e.resolve());
 
         let (log_store, model_catalog, budget_store, rate_limit_store) =
             if let Some(ref db_url) = database_url {

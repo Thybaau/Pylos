@@ -181,7 +181,7 @@ pub struct ServerConfig {
     /// Si défini, remplace toutes les bases SQLite locales par PostgreSQL.
     /// Les bases de données suivantes doivent exister : pylos (prod), pylos-dev (dev)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub database_url: Option<String>,
+    pub database_url: Option<EnvVar>,
 }
 
 fn default_port() -> u16 {

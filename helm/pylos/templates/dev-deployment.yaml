@@ -35,6 +35,23 @@ spec:
           env:
             - name: PYLOS_DATA_DIR
               value: {{ .Values.dev.dataDir }}
+            - name: PYLOS_CONFIG
+              value: "/app/pylos.json"
+            {{- if .Values.database.enabled }}
+            - name: DATABASE_URL
+              {{- if .Values.database.url }}
+              value: {{ .Values.database.url | quote }}
+              {{- else if .Values.database.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretKey }}
+              {{- end }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/pylos.json
+              subPath: pylos.json
           livenessProbe:
             httpGet:
               path: /health
@@ -48,4 +65,8 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           resources: {{ toYaml .Values.dev.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.configMapName | default (printf "%s-config" (include "pylos.name" .)) }}
 {{- end }}

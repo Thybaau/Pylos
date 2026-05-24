@@ -290,11 +290,11 @@ fn build_where_clause(filter: &LogFilter) -> (String, Vec<String>) {
         params.push(s_str.to_string());
     }
     if let Some(since) = filter.since_ms {
-        conditions.push(format!("timestamp >= ${}", params.len() + 1));
+        conditions.push(format!("timestamp >= ${}::bigint", params.len() + 1));
         params.push(since.to_string());
     }
     if let Some(until) = filter.until_ms {
-        conditions.push(format!("timestamp <= ${}", params.len() + 1));
+        conditions.push(format!("timestamp <= ${}::bigint", params.len() + 1));
         params.push(until.to_string());
     }
     if let Some(ref vk) = filter.virtual_key {
