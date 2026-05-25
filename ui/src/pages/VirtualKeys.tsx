@@ -5,8 +5,9 @@ import { providerColor } from '../lib/utils'
 import {
   KeyRound, CheckCircle, XCircle, Shield, TrendingUp,
   ChevronDown, ChevronUp, Plus, Pencil, Trash2, X, Check,
-  AlertTriangle, RotateCcw, Copy, Server,
+  AlertTriangle, RotateCcw, Copy,
 } from 'lucide-react'
+import { ProviderIcon } from '../components/ProviderIcon'
 
 // ─── Budget / Rate panel (unchanged) ─────────────────────────────────────────
 
@@ -134,8 +135,8 @@ function ProviderSelector({ value, onChange }: { value: string; onChange: (v: st
 
   return (
     <div className="relative group">
-      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-blue-400">
-        <Server size={14} />
+      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-blue-400 flex items-center">
+        <ProviderIcon name={value} size={14} />
       </div>
       <select
         value={value}
@@ -660,8 +661,9 @@ export default function VirtualKeys() {
                         <div className="flex flex-wrap gap-1">
                           {vk.provider_configs.map(pc => (
                             <span key={pc.provider}
-                              className="px-2 py-0.5 rounded-full text-xs bg-gray-800 text-gray-300 border border-gray-700">
-                              {pc.provider}
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs bg-gray-800 text-gray-300 border border-gray-700">
+                              <ProviderIcon name={pc.provider} size={10} />
+                              <span className="capitalize">{pc.provider}</span>
                             </span>
                           ))}
                           {vk.provider_configs.length === 0 && (

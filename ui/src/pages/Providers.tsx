@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { providersApi, type Provider } from '../lib/api'
 import { providerColor } from '../lib/utils'
-import { Server, Key, Globe, RotateCcw, Plus, Pencil, Trash2, X, Check, AlertTriangle } from 'lucide-react'
+import { Key, Globe, RotateCcw, Plus, Pencil, Trash2, X, Check, AlertTriangle } from 'lucide-react'
+import { ProviderIcon } from '../components/ProviderIcon'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -451,7 +452,7 @@ function ProviderCard({
           className="w-9 h-9 rounded-lg flex items-center justify-center"
           style={{ background: color + '20', color }}
         >
-          <Server size={16} />
+          <ProviderIcon name={provider.name} size={16} />
         </div>
         <div className="min-w-0">
           <div className="font-semibold text-white capitalize truncate">{provider.name}</div>
