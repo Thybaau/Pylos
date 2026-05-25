@@ -24,8 +24,12 @@ pub struct VirtualKey {
 
 impl VirtualKey {
     pub fn new(key: impl Into<String>, name: impl Into<String>) -> Self {
+        let mut key_str = key.into();
+        if !key_str.starts_with(VIRTUAL_KEY_PREFIX) {
+            key_str = format!("{}{}", VIRTUAL_KEY_PREFIX, key_str);
+        }
         Self {
-            key: key.into(),
+            key: key_str,
             name: name.into(),
             rate_limit_rpm: 0,
             token_limit_tpm: 0,
