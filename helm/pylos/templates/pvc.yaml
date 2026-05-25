@@ -13,7 +13,9 @@ spec:
   resources:
     requests:
       storage: {{ .Values.backend.pvc.size }}
+  {{- if .Values.backend.pvc.storageClassName }}
   storageClassName: {{ .Values.backend.pvc.storageClassName | quote }}
+  {{- end }}
 ---
 {{- if .Values.dev.enabled }}
 apiVersion: v1
@@ -31,5 +33,7 @@ spec:
   resources:
     requests:
       storage: {{ .Values.dev.pvc.size }}
+  {{- if .Values.dev.pvc.storageClassName }}
   storageClassName: {{ .Values.dev.pvc.storageClassName | quote }}
+  {{- end }}
 {{- end }}

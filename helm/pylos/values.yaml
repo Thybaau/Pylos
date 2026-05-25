@@ -47,7 +47,6 @@ backend:
     accessModes:
       - ReadWriteOnce
     size: 1Gi
-    storageClassName: ""
 
 ui:
   name: pylos-ui
@@ -87,4 +86,4 @@ dev:
     accessModes:
       - ReadWriteOnce
     size: 1Gi
-    storageClassName: ""
+
