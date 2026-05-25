@@ -52,6 +52,8 @@ spec:
             - name: config
               mountPath: /app/pylos.json
               subPath: pylos.json
+            - name: data
+              mountPath: {{ .Values.dev.dataDir }}
           livenessProbe:
             httpGet:
               path: /health
@@ -69,4 +71,7 @@ spec:
         - name: config
           configMap:
             name: {{ .Values.configMapName | default (printf "%s-config" (include "pylos.name" .)) }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "pylos.dev.name" . }}-data
 {{- end }}

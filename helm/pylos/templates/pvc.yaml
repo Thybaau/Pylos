@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "pylos.name" . }}-data
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "pylos.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- range .Values.backend.pvc.accessModes }}
+    - {{ . }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backend.pvc.size }}
+  storageClassName: {{ .Values.backend.pvc.storageClassName | quote }}
+---
+{{- if .Values.dev.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "pylos.dev.name" . }}-data
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "pylos.dev.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- range .Values.dev.pvc.accessModes }}
+    - {{ . }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.dev.pvc.size }}
+  storageClassName: {{ .Values.dev.pvc.storageClassName | quote }}
+{{- end }}

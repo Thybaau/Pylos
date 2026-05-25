@@ -43,6 +43,11 @@ backend:
       cpu: 500m
       memory: 256Mi
   dataDir: /data
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    storageClassName: "default"
 
 ui:
   name: pylos-ui
@@ -78,3 +83,8 @@ dev:
       cpu: 200m
       memory: 128Mi
   dataDir: /data
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    storageClassName: "default"
