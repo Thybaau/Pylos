@@ -2,102 +2,57 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use sqlx::postgres::{PgPool, PgPoolOptions};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 use tracing::{debug, info};
 
+use crate::db_pool::DbPool;
 use pylos_core::domain::config::RateLimitConfig;
 use pylos_core::error::PylosError;
 
 #[derive(Clone)]
-enum Pool {
-    Sqlite(SqlitePool),
-    Postgres(PgPool),
-}
-
-impl Pool {
-    async fn run_migrations(&self) -> Result<(), sqlx::Error> {
-        match self {
-            Pool::Sqlite(pool) => sqlx::migrate!("./migrations")
-                .run(pool)
-                .await
-                .map_err(|e| sqlx::Error::Migrate(Box::new(e))),
-            Pool::Postgres(pool) => sqlx::migrate!("./migrations_postgres")
-                .run(pool)
-                .await
-                .map_err(|e| sqlx::Error::Migrate(Box::new(e))),
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct RateLimitStore {
-    pool: Pool,
+    pool: DbPool,
 }
 
 impl RateLimitStore {
     pub async fn open(db_path: &Path) -> Result<Self, sqlx::Error> {
-        let options = SqliteConnectOptions::new()
-            .filename(db_path)
-            .create_if_missing(true)
-            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-            .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
-
-        let pool = SqlitePoolOptions::new()
-            .max_connections(4)
-            .connect_with(options)
-            .await?;
-
-        let store = Self {
-            pool: Pool::Sqlite(pool),
-        };
+        let pool = DbPool::open_sqlite(db_path, "rate_limit_store", 4).await?;
+        let store = Self { pool };
         store.pool.run_migrations().await?;
-
         info!(path = %db_path.display(), "Rate limit store opened (SQLite)");
         Ok(store)
     }
 
     pub async fn open_postgres(database_url: &str) -> Result<Self, sqlx::Error> {
-        let pool = PgPoolOptions::new()
-            .max_connections(4)
-            .connect(database_url)
-            .await?;
-
-        let store = Self {
-            pool: Pool::Postgres(pool),
-        };
+        let pool = DbPool::open_postgres(database_url, "rate_limit_store").await?;
+        let store = Self { pool };
         store.pool.run_migrations().await?;
-
         info!("Rate limit store opened (PostgreSQL)");
         Ok(store)
     }
 
     pub async fn in_memory() -> Result<Self, sqlx::Error> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(2)
-            .connect("sqlite::memory:")
-            .await?;
+        let pool = DbPool::in_memory(2).await?;
 
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS vk_rate_limits (
-                virtual_key_id     TEXT    NOT NULL,
-                window_type        TEXT    NOT NULL,
-                max_value          INTEGER NOT NULL,
-                current_value      INTEGER NOT NULL DEFAULT 0,
-                window_start_ms    INTEGER NOT NULL,
-                window_duration_ms INTEGER NOT NULL,
-                PRIMARY KEY (virtual_key_id, window_type)
+        if let Some(p) = pool.as_sqlite() {
+            sqlx::query(
+                r#"
+                CREATE TABLE IF NOT EXISTS vk_rate_limits (
+                    virtual_key_id     TEXT    NOT NULL,
+                    window_type        TEXT    NOT NULL,
+                    max_value          INTEGER NOT NULL,
+                    current_value      INTEGER NOT NULL DEFAULT 0,
+                    window_start_ms    INTEGER NOT NULL,
+                    window_duration_ms INTEGER NOT NULL,
+                    PRIMARY KEY (virtual_key_id, window_type)
+                )
+                "#,
             )
-            "#,
-        )
-        .execute(&pool)
-        .await?;
+            .execute(p)
+            .await?;
+        }
 
-        Ok(Self {
-            pool: Pool::Sqlite(pool),
-        })
+        Ok(Self { pool })
     }
 
     pub async fn upsert_rate_limit(
@@ -115,7 +70,7 @@ impl RateLimitStore {
                 .unwrap_or(60_000);
 
             match &self.pool {
-                Pool::Sqlite(pool) => {
+                DbPool::Sqlite(pool) => {
                     sqlx::query(
                         "INSERT INTO vk_rate_limits (virtual_key_id, window_type, max_value, current_value, window_start_ms, window_duration_ms) \
                          VALUES ($1, 'requests', $2, 0, $3, $4) \
@@ -130,7 +85,7 @@ impl RateLimitStore {
                     .execute(pool)
                     .await?;
                 }
-                Pool::Postgres(pool) => {
+                DbPool::Postgres(pool) => {
                     sqlx::query::<sqlx::Postgres>(
                         "INSERT INTO vk_rate_limits (virtual_key_id, window_type, max_value, current_value, window_start_ms, window_duration_ms) \
                          VALUES ($1, 'requests', $2, 0, $3, $4) \
@@ -156,7 +111,7 @@ impl RateLimitStore {
                 .unwrap_or(60_000);
 
             match &self.pool {
-                Pool::Sqlite(pool) => {
+                DbPool::Sqlite(pool) => {
                     sqlx::query(
                         "INSERT INTO vk_rate_limits (virtual_key_id, window_type, max_value, current_value, window_start_ms, window_duration_ms) \
                          VALUES ($1, 'tokens', $2, 0, $3, $4) \
@@ -171,7 +126,7 @@ impl RateLimitStore {
                     .execute(pool)
                     .await?;
                 }
-                Pool::Postgres(pool) => {
+                DbPool::Postgres(pool) => {
                     sqlx::query::<sqlx::Postgres>(
                         "INSERT INTO vk_rate_limits (virtual_key_id, window_type, max_value, current_value, window_start_ms, window_duration_ms) \
                          VALUES ($1, 'tokens', $2, 0, $3, $4) \
@@ -216,7 +171,7 @@ impl RateLimitStore {
         let window_type = window_type.to_string();
 
         match &self.pool {
-            Pool::Sqlite(pool) => {
+            DbPool::Sqlite(pool) => {
                 let mut tx = pool.begin().await.map_err(|e| {
                     PylosError::Internal(format!("Rate limit tx begin failed: {}", e))
                 })?;
@@ -273,7 +228,7 @@ impl RateLimitStore {
 
                 Ok(())
             }
-            Pool::Postgres(pool) => {
+            DbPool::Postgres(pool) => {
                 let mut tx = pool.begin().await.map_err(|e| {
                     PylosError::Internal(format!("Rate limit tx begin failed: {}", e))
                 })?;
@@ -337,7 +292,7 @@ impl RateLimitStore {
         let now = now_ms();
 
         match &self.pool {
-            Pool::Sqlite(pool) => {
+            DbPool::Sqlite(pool) => {
                 let rows = sqlx::query(
                     "SELECT window_type, max_value, current_value, window_start_ms, window_duration_ms FROM vk_rate_limits WHERE virtual_key_id = $1",
                 )
@@ -367,7 +322,7 @@ impl RateLimitStore {
                     })
                     .collect()
             }
-            Pool::Postgres(pool) => {
+            DbPool::Postgres(pool) => {
                 let rows = sqlx::query::<sqlx::Postgres>(
                     "SELECT window_type, max_value, current_value, window_start_ms, window_duration_ms FROM vk_rate_limits WHERE virtual_key_id = $1",
                 )
@@ -402,13 +357,13 @@ impl RateLimitStore {
 
     pub async fn delete_vk_entries(&self, vk_id: &str) {
         match &self.pool {
-            Pool::Sqlite(pool) => {
+            DbPool::Sqlite(pool) => {
                 let _ = sqlx::query("DELETE FROM vk_rate_limits WHERE virtual_key_id = $1")
                     .bind(vk_id)
                     .execute(pool)
                     .await;
             }
-            Pool::Postgres(pool) => {
+            DbPool::Postgres(pool) => {
                 let _ = sqlx::query::<sqlx::Postgres>(
                     "DELETE FROM vk_rate_limits WHERE virtual_key_id = $1",
                 )

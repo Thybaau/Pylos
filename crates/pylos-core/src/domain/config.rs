@@ -11,6 +11,8 @@ use std::collections::HashMap;
 #[serde(untagged)]
 pub enum EnvVar {
     Literal(String),
+    /// Référence à une variable d'environnement (résolution différée)
+    EnvRef(String),
 }
 
 impl EnvVar {
@@ -26,6 +28,7 @@ impl EnvVar {
                     Some(s.clone())
                 }
             }
+            EnvVar::EnvRef(var_name) => std::env::var(var_name).ok(),
         }
     }
 
@@ -36,20 +39,34 @@ impl EnvVar {
             EnvVar::Literal(s) if s.len() > 8 => {
                 format!("{}****", &s[..4])
             }
+            EnvVar::EnvRef(s) => format!("env.{}", s),
             EnvVar::Literal(_) => "****".into(),
         }
+    }
+
+    /// Crée une référence à une variable d'environnement
+    pub fn from_env(var_name: impl Into<String>) -> Self {
+        EnvVar::EnvRef(var_name.into())
     }
 }
 
 impl From<&str> for EnvVar {
     fn from(s: &str) -> Self {
-        EnvVar::Literal(s.to_string())
+        if let Some(var_name) = s.strip_prefix("env.") {
+            EnvVar::EnvRef(var_name.to_string())
+        } else {
+            EnvVar::Literal(s.to_string())
+        }
     }
 }
 
 impl From<String> for EnvVar {
     fn from(s: String) -> Self {
-        EnvVar::Literal(s)
+        if let Some(var_name) = s.strip_prefix("env.") {
+            EnvVar::EnvRef(var_name.to_string())
+        } else {
+            EnvVar::Literal(s)
+        }
     }
 }
 
@@ -621,6 +638,27 @@ mod tests {
         let v2 = EnvVar::from("sk-abc123456");
         assert!(v2.redacted().ends_with("****"));
         assert!(v2.redacted().starts_with("sk-a"));
+    }
+
+    #[test]
+    fn test_env_var_env_ref() {
+        std::env::set_var("PYLOS_TEST_REF", "resolved-value");
+        let v = EnvVar::from_env("PYLOS_TEST_REF");
+        assert_eq!(v.resolve(), Some("resolved-value".into()));
+        assert_eq!(v.redacted(), "env.PYLOS_TEST_REF");
+    }
+
+    #[test]
+    fn test_env_var_from_str_with_env_prefix() {
+        std::env::set_var("PYLOS_VAR_FROM_STR", "hello");
+        let v = EnvVar::from("env.PYLOS_VAR_FROM_STR");
+        assert_eq!(v.resolve(), Some("hello".into()));
+    }
+
+    #[test]
+    fn test_env_var_env_ref_missing() {
+        let v = EnvVar::from_env("PYLOS_NONEXISTENT_REF");
+        assert_eq!(v.resolve(), None);
     }
 
     #[test]

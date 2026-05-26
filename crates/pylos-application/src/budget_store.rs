@@ -2,102 +2,57 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use sqlx::postgres::{PgPool, PgPoolOptions};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
 
+use crate::db_pool::DbPool;
 use pylos_core::domain::config::BudgetConfig;
 use pylos_core::error::PylosError;
 
 #[derive(Clone)]
-enum Pool {
-    Sqlite(SqlitePool),
-    Postgres(PgPool),
-}
-
-impl Pool {
-    async fn run_migrations(&self) -> Result<(), sqlx::Error> {
-        match self {
-            Pool::Sqlite(pool) => sqlx::migrate!("./migrations")
-                .run(pool)
-                .await
-                .map_err(|e| sqlx::Error::Migrate(Box::new(e))),
-            Pool::Postgres(pool) => sqlx::migrate!("./migrations_postgres")
-                .run(pool)
-                .await
-                .map_err(|e| sqlx::Error::Migrate(Box::new(e))),
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct BudgetStore {
-    pool: Pool,
+    pool: DbPool,
 }
 
 impl BudgetStore {
     pub async fn open(db_path: &Path) -> Result<Self, sqlx::Error> {
-        let options = SqliteConnectOptions::new()
-            .filename(db_path)
-            .create_if_missing(true)
-            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-            .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
-
-        let pool = SqlitePoolOptions::new()
-            .max_connections(4)
-            .connect_with(options)
-            .await?;
-
-        let store = Self {
-            pool: Pool::Sqlite(pool),
-        };
+        let pool = DbPool::open_sqlite(db_path, "budget_store", 4).await?;
+        let store = Self { pool };
         store.pool.run_migrations().await?;
-
         info!(path = %db_path.display(), "Budget store opened (SQLite)");
         Ok(store)
     }
 
     pub async fn open_postgres(database_url: &str) -> Result<Self, sqlx::Error> {
-        let pool = PgPoolOptions::new()
-            .max_connections(4)
-            .connect(database_url)
-            .await?;
-
-        let store = Self {
-            pool: Pool::Postgres(pool),
-        };
+        let pool = DbPool::open_postgres(database_url, "budget_store").await?;
+        let store = Self { pool };
         store.pool.run_migrations().await?;
-
         info!("Budget store opened (PostgreSQL)");
         Ok(store)
     }
 
     pub async fn in_memory() -> Result<Self, sqlx::Error> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(2)
-            .connect("sqlite::memory:")
-            .await?;
+        let pool = DbPool::in_memory(2).await?;
 
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS vk_budgets (
-                virtual_key_id TEXT NOT NULL,
-                period         TEXT NOT NULL,
-                max_usd        REAL NOT NULL,
-                current_usd    REAL NOT NULL DEFAULT 0.0,
-                reset_at       INTEGER NOT NULL,
-                PRIMARY KEY (virtual_key_id, period)
+        if let Some(p) = pool.as_sqlite() {
+            sqlx::query(
+                r#"
+                CREATE TABLE IF NOT EXISTS vk_budgets (
+                    virtual_key_id TEXT NOT NULL,
+                    period         TEXT NOT NULL,
+                    max_usd        REAL NOT NULL,
+                    current_usd    REAL NOT NULL DEFAULT 0.0,
+                    reset_at       INTEGER NOT NULL,
+                    PRIMARY KEY (virtual_key_id, period)
+                )
+                "#,
             )
-            "#,
-        )
-        .execute(&pool)
-        .await?;
+            .execute(p)
+            .await?;
+        }
 
-        Ok(Self {
-            pool: Pool::Sqlite(pool),
-        })
+        Ok(Self { pool })
     }
 
     pub async fn upsert_budget(
@@ -110,7 +65,7 @@ impl BudgetStore {
         let now = now_ms();
 
         match &self.pool {
-            Pool::Sqlite(pool) => {
+            DbPool::Sqlite(pool) => {
                 sqlx::query(
                     "INSERT INTO vk_budgets (virtual_key_id, period, max_usd, current_usd, reset_at) \
                      VALUES ($1, $2, $3, 0.0, $4) \
@@ -126,7 +81,7 @@ impl BudgetStore {
                 .execute(pool)
                 .await?;
             }
-            Pool::Postgres(pool) => {
+            DbPool::Postgres(pool) => {
                 sqlx::query::<sqlx::Postgres>(
                     "INSERT INTO vk_budgets (virtual_key_id, period, max_usd, current_usd, reset_at) \
                      VALUES ($1, $2, $3, 0.0, $4) \
@@ -150,7 +105,7 @@ impl BudgetStore {
         let now = now_ms();
 
         let budget_row = match &self.pool {
-            Pool::Sqlite(pool) => {
+            DbPool::Sqlite(pool) => {
                 let row: Option<sqlx::sqlite::SqliteRow> = sqlx::query(
                     "SELECT period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1",
                 )
@@ -167,7 +122,7 @@ impl BudgetStore {
                     (p, max, cur, res)
                 })
             }
-            Pool::Postgres(pool) => {
+            DbPool::Postgres(pool) => {
                 let row: Option<sqlx::postgres::PgRow> = sqlx::query::<sqlx::Postgres>(
                     "SELECT period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1",
                 )
@@ -210,7 +165,7 @@ impl BudgetStore {
         let now = now_ms();
 
         match &self.pool {
-            Pool::Sqlite(pool) => {
+            DbPool::Sqlite(pool) => {
                 let rows = sqlx::query(
                     "SELECT period, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1",
                 )
@@ -246,7 +201,7 @@ impl BudgetStore {
                     }
                 }
             }
-            Pool::Postgres(pool) => {
+            DbPool::Postgres(pool) => {
                 let rows = sqlx::query::<sqlx::Postgres>(
                     "SELECT period, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1",
                 )
@@ -287,7 +242,7 @@ impl BudgetStore {
 
     pub async fn get_usage(&self, vk_id: &str) -> Vec<BudgetUsage> {
         match &self.pool {
-            Pool::Sqlite(pool) => {
+            DbPool::Sqlite(pool) => {
                 let rows = sqlx::query(
                     "SELECT period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1 ORDER BY period",
                 )
@@ -305,7 +260,7 @@ impl BudgetStore {
                     })
                     .collect()
             }
-            Pool::Postgres(pool) => {
+            DbPool::Postgres(pool) => {
                 let rows = sqlx::query::<sqlx::Postgres>(
                     "SELECT period, max_usd, current_usd, reset_at FROM vk_budgets WHERE virtual_key_id = $1 ORDER BY period",
                 )
@@ -328,13 +283,13 @@ impl BudgetStore {
 
     pub async fn delete_vk_entries(&self, vk_id: &str) {
         match &self.pool {
-            Pool::Sqlite(pool) => {
+            DbPool::Sqlite(pool) => {
                 let _ = sqlx::query("DELETE FROM vk_budgets WHERE virtual_key_id = $1")
                     .bind(vk_id)
                     .execute(pool)
                     .await;
             }
-            Pool::Postgres(pool) => {
+            DbPool::Postgres(pool) => {
                 let _ = sqlx::query::<sqlx::Postgres>(
                     "DELETE FROM vk_budgets WHERE virtual_key_id = $1",
                 )

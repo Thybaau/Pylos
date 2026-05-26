@@ -554,17 +554,31 @@ impl LogStore {
     }
 
     pub async fn push(&self, entry: LogEntry) {
-        let mut g = self.inner.lock().await;
-        match &mut *g {
-            Backend::Sqlite(db) => {
-                if let Err(e) = db.insert(&entry) {
-                    tracing::warn!(error = %e, "Log insert failed");
+        // Determine backend type without holding the lock
+        let is_sqlite = {
+            let g = self.inner.lock().await;
+            matches!(&*g, Backend::Sqlite(_))
+        };
+
+        if is_sqlite {
+            let entry = entry.clone();
+            let inner = self.inner.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut g = inner.blocking_lock();
+                if let Backend::Sqlite(db) = &mut *g {
+                    if let Err(e) = db.insert(&entry) {
+                        tracing::warn!(error = %e, "Log insert failed");
+                    }
+                    if fastrand::u8(..) == 0 {
+                        let _ = db.prune_old();
+                    }
                 }
-                if fastrand::u8(..) == 0 {
-                    let _ = db.prune_old();
-                }
-            }
-            Backend::Memory { buf, max } => {
+            })
+            .await
+            .ok();
+        } else {
+            let mut g = self.inner.lock().await;
+            if let Backend::Memory { buf, max } = &mut *g {
                 if buf.len() >= *max {
                     buf.pop_front();
                 }

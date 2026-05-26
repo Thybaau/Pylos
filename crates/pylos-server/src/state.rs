@@ -315,9 +315,7 @@ impl AppState {
                 let key_value = vk_cfg
                     .value
                     .as_ref()
-                    .map(|v| match v {
-                        pylos_core::domain::config::EnvVar::Literal(s) => s.clone(),
-                    })
+                    .map(|v| v.resolve().unwrap_or_default())
                     .unwrap_or_else(|| {
                         format!("sk-pylos-{}", vk_cfg.id.replace(' ', "-").to_lowercase())
                     });

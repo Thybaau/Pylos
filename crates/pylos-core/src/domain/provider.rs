@@ -70,6 +70,7 @@ impl ProviderKind {
             || model.starts_with("o1")
             || model.starts_with("o3")
             || model.starts_with("o4")
+            || model.starts_with("dall-e")
             || model.starts_with("text-embedding")
         {
             return ProviderKind::OpenAI;
@@ -78,7 +79,7 @@ impl ProviderKind {
         {
             return ProviderKind::Gemini;
         }
-        if model.starts_with("command") || model.starts_with("embed-") {
+        if model.starts_with("command") || model.starts_with("embed-") || model.starts_with("rerank-") {
             return ProviderKind::Cohere;
         }
         if model.starts_with("grok") {
@@ -87,16 +88,23 @@ impl ProviderKind {
         if model.starts_with("deepseek") {
             return ProviderKind::DeepSeek;
         }
-        if (model.starts_with("mistral") || model.starts_with("codestral")) && !model.contains(':')
+        if (model.starts_with("mistral") || model.starts_with("codestral") || model.starts_with("open-") || model.starts_with("pixtral")) && !model.contains(':')
         {
             return ProviderKind::Mistral;
         }
         if model.contains('/') {
             return ProviderKind::OpenRouter;
         }
+        if model.contains("sonar") || (model.starts_with("llama-") && !model.contains(":")) {
+            return ProviderKind::Perplexity;
+        }
+        if model.contains("firefunction") || model.contains("fireworks") || model.starts_with("accounts/fireworks/") {
+            return ProviderKind::Fireworks;
+        }
+        if (model.starts_with("llama") || model.starts_with("qwen")) && !model.contains('-') {
+            return ProviderKind::Cerebras;
+        }
         if model.contains(':')
-            || model.contains("llama")
-            || model.contains("qwen")
             || model.contains("starcoder")
             || model.contains("nomic")
             || model.contains("phi")
@@ -107,6 +115,101 @@ impl ProviderKind {
             return ProviderKind::Lemonade;
         }
         ProviderKind::Custom("unknown".into())
+    }
+
+    /// Détermine si ce provider supporte un modèle donné.
+    /// Utilisé pour le tri des providers lors du fallback.
+    pub fn supports_model(&self, model: &str) -> bool {
+        match self {
+            ProviderKind::Bedrock => {
+                model.starts_with("us.")
+                    || model.starts_with("eu.")
+                    || model.starts_with("ap.")
+                    || model.starts_with("amazon.")
+                    || model.starts_with("anthropic.")
+                    || model.contains("nova")
+                    || model.contains("titan")
+            }
+            ProviderKind::OpenAI => {
+                model.starts_with("gpt")
+                    || model.starts_with("o1")
+                    || model.starts_with("o3")
+                    || model.starts_with("o4")
+                    || model.starts_with("dall-e")
+            }
+            ProviderKind::Anthropic => model.contains("claude"),
+            ProviderKind::Gemini => {
+                model.starts_with("gemini") || model.starts_with("google/") || model.contains("learnlm")
+            }
+            ProviderKind::Cohere => {
+                model.starts_with("command")
+                    || model.starts_with("embed-")
+                    || model.starts_with("rerank-")
+            }
+            ProviderKind::Groq => {
+                model.contains("llama")
+                    || model.contains("mixtral")
+                    || model.contains("whisper")
+                    || model.contains("gemma")
+            }
+            ProviderKind::Mistral => {
+                model.starts_with("mistral")
+                    || model.starts_with("codestral")
+                    || model.starts_with("open-")
+                    || model.starts_with("pixtral")
+            }
+            ProviderKind::Cerebras => model.starts_with("llama") || model.starts_with("qwen"),
+            ProviderKind::Perplexity => model.contains("sonar") || model.starts_with("llama-"),
+            ProviderKind::Fireworks => {
+                model.contains("firefunction")
+                    || model.contains("fireworks")
+                    || model.starts_with("accounts/fireworks/")
+            }
+            ProviderKind::XAI => model.starts_with("grok"),
+            ProviderKind::DeepSeek => model.starts_with("deepseek"),
+            ProviderKind::Nebius => {
+                model.contains("llama") || model.contains("qwen") || model.contains("deepseek")
+            }
+            ProviderKind::Ollama => {
+                !model.starts_with("gpt")
+                    && !model.starts_with("claude")
+                    && !model.starts_with("gemini")
+                    && !model.starts_with("command")
+                    && !model.starts_with("deepseek-v4")
+                    && !model.contains('/')
+                    && !model.starts_with("us.")
+                    && !model.starts_with("amazon.")
+                    && !model.starts_with("anthropic.")
+            }
+            ProviderKind::OpenRouter => model.contains('/'),
+            ProviderKind::Vertex | ProviderKind::Lemonade | ProviderKind::Custom(_) => true,
+            _ => true,
+        }
+    }
+
+    /// Retourne le nom du système pour les conventions OTel gen_ai.system
+    pub fn otel_system_name(&self) -> &'static str {
+        match self {
+            ProviderKind::OpenAI => "openai",
+            ProviderKind::Anthropic => "anthropic",
+            ProviderKind::Bedrock => "aws_bedrock",
+            ProviderKind::Azure => "azure_openai",
+            ProviderKind::Gemini => "google",
+            ProviderKind::Cohere => "cohere",
+            ProviderKind::Groq => "groq",
+            ProviderKind::Mistral => "mistral",
+            ProviderKind::Cerebras => "cerebras",
+            ProviderKind::Perplexity => "perplexity",
+            ProviderKind::Fireworks => "fireworks",
+            ProviderKind::XAI => "xai",
+            ProviderKind::Nebius => "nebius",
+            ProviderKind::Ollama => "ollama",
+            ProviderKind::OpenRouter => "openrouter",
+            ProviderKind::Vertex => "vertex",
+            ProviderKind::DeepSeek => "deepseek",
+            ProviderKind::Lemonade => "lemonade",
+            ProviderKind::Custom(_) => "custom",
+        }
     }
 }
 

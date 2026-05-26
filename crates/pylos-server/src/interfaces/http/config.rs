@@ -27,8 +27,10 @@ pub async fn get_config(State(state): State<AppState>) -> impl IntoResponse {
 pub async fn reload_config(State(state): State<AppState>) -> impl IntoResponse {
     match state.config_store.reload().await {
         Ok(summary) => {
-            let providers = state.config_store.runtime_providers().await;
-            state.orchestrator.update_providers(providers).await;
+            // Propager les nouveaux providers à l'orchestrateur avec les données atomiques de ReloadSummary
+            if summary.changed {
+                state.orchestrator.update_providers(summary.runtime_providers).await;
+            }
 
             Json(json!({
                 "changed": summary.changed,
@@ -338,9 +340,7 @@ pub async fn update_virtual_key(
         }
     };
 
-    let old_key_value = vk.value.as_ref().map(|v| match v {
-        EnvVar::Literal(s) => s.clone(),
-    });
+    let old_key_value = vk.value.as_ref().and_then(|v| v.resolve());
 
     if let Some(name) = req.name {
         vk.name = name;
@@ -374,7 +374,7 @@ pub async fn update_virtual_key(
                     .map(|rl| rl.request_max_limit)
                     .unwrap_or(0);
 
-                if let Some(EnvVar::Literal(ref key_str)) = vk.value {
+                if let Some(ref key_str) = vk.value.as_ref().and_then(|v| v.resolve()) {
                     let v_key = pylos_core::domain::virtual_key::VirtualKey::new(key_str.clone(), &vk.name)
                         .with_rpm(rpm);
                     state.vk_registry.register(v_key).await;
@@ -410,16 +410,12 @@ pub async fn delete_virtual_key(
 ) -> impl IntoResponse {
     // Récupère la clé avant de la supprimer pour pouvoir la deregister de la mémoire
     let key_value = match state.vk_store.get_key_by_id(&id).await {
-        Ok(Some(vk)) => vk.value.as_ref().map(|v| match v {
-            EnvVar::Literal(s) => s.clone(),
-        }),
+        Ok(Some(vk)) => vk.value.as_ref().and_then(|v| v.resolve()),
         _ => {
             let cfg = state.config_store.get().await;
             cfg.governance.virtual_keys.iter()
                 .find(|v| v.id == id)
-                .and_then(|vk| vk.value.as_ref().map(|v| match v {
-                    EnvVar::Literal(s) => s.clone(),
-                }))
+                .and_then(|vk| vk.value.as_ref().and_then(|v| v.resolve()))
         }
     };
 

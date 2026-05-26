@@ -359,84 +359,9 @@ fn exponential_backoff(attempt: u32, initial_ms: u64, max_ms: u64) -> u64 {
 }
 
 /// Détermine si un provider supporte explicitement un modèle donné.
-/// Retourne true si :
-///   - le provider a une clé avec ["*"] (wildcard)
-///   - le provider a une clé avec le modèle exact dans sa liste
-///   - Bedrock : le provider est bedrock ET le modèle contient des marqueurs bedrock
-///
-/// Retourne false uniquement si toutes les clés ont des listes explicites
-/// qui n'incluent pas le modèle — ce qui déclenche le fallback vers les autres providers.
+/// Délègue à ProviderKind::supports_model.
 fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
-    use pylos_core::domain::provider::ProviderKind;
-
-    // Bedrock : supporte les modèles avec préfixe us./eu./ap. ou "amazon."/"anthropic."
-    if config.kind == ProviderKind::Bedrock {
-        return model.starts_with("us.")
-            || model.starts_with("eu.")
-            || model.starts_with("ap.")
-            || model.starts_with("amazon.")
-            || model.starts_with("anthropic.")
-            || model.contains("nova")
-            || model.contains("titan");
-    }
-
-    // Pour les autres providers : heuristique sur le nom du provider et du modèle
-    match &config.kind {
-        ProviderKind::OpenAI => {
-            model.starts_with("gpt")
-                || model.starts_with("o1")
-                || model.starts_with("o3")
-                || model.starts_with("o4")
-                || model.starts_with("dall-e")
-        }
-        ProviderKind::Anthropic => model.contains("claude"),
-        ProviderKind::Gemini => {
-            model.starts_with("gemini") || model.starts_with("google/") || model.contains("learnlm")
-        }
-        ProviderKind::Cohere => {
-            model.starts_with("command")
-                || model.starts_with("embed-")
-                || model.starts_with("rerank-")
-        }
-        ProviderKind::Groq => {
-            model.contains("llama")
-                || model.contains("mixtral")
-                || model.contains("whisper")
-                || model.contains("gemma")
-        }
-        ProviderKind::Mistral => {
-            model.starts_with("mistral")
-                || model.starts_with("codestral")
-                || model.starts_with("open-")
-                || model.starts_with("pixtral")
-        }
-        ProviderKind::Cerebras => model.starts_with("llama") || model.starts_with("qwen"),
-        ProviderKind::Perplexity => model.contains("sonar") || model.starts_with("llama-"),
-        ProviderKind::Fireworks => {
-            model.contains("firefunction")
-                || model.contains("fireworks")
-                || model.starts_with("accounts/fireworks/")
-        }
-        ProviderKind::XAI => model.starts_with("grok"),
-        ProviderKind::DeepSeek => model.starts_with("deepseek"),
-        ProviderKind::Nebius => {
-            model.contains("llama") || model.contains("qwen") || model.contains("deepseek")
-        }
-        ProviderKind::Ollama => {
-            !model.starts_with("gpt")
-                && !model.starts_with("claude")
-                && !model.starts_with("gemini")
-                && !model.starts_with("command")
-                && !model.starts_with("deepseek-v4")
-                && !model.contains('/')
-                && !model.starts_with("us.")
-                && !model.starts_with("amazon.")
-                && !model.starts_with("anthropic.")
-        }
-        ProviderKind::OpenRouter => model.contains('/'),
-        ProviderKind::Custom(_) | ProviderKind::Vertex | ProviderKind::Lemonade => true,
-        _ => true,
-    }
+    config.kind.supports_model(model)
 }
 
 /// Crée un chunk de streaming terminal (finish_reason = "stop") à partir d'un contenu texte.

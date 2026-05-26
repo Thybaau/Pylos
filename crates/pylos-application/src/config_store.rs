@@ -200,6 +200,7 @@ impl ConfigStore {
                     return Ok(ReloadSummary {
                         changed: false,
                         providers_reloaded: vec![],
+                        runtime_providers: state.runtime_providers.clone(),
                     });
                 }
 
@@ -218,11 +219,13 @@ impl ConfigStore {
 
                 state.config = new_config;
                 state.config_hash = new_hash;
+                let runtime_for_return = runtime.clone();
                 state.runtime_providers = runtime;
 
                 return Ok(ReloadSummary {
                     changed: true,
                     providers_reloaded,
+                    runtime_providers: runtime_for_return,
                 });
             }
         }
@@ -256,6 +259,7 @@ impl ConfigStore {
             return Ok(ReloadSummary {
                 changed: false,
                 providers_reloaded: vec![],
+                runtime_providers: state.runtime_providers.clone(),
             });
         }
 
@@ -280,11 +284,12 @@ impl ConfigStore {
 
         state.config = new_config;
         state.config_hash = new_hash;
-        state.runtime_providers = runtime;
+        state.runtime_providers = runtime.clone();
 
         Ok(ReloadSummary {
             changed: true,
             providers_reloaded,
+            runtime_providers: runtime,
         })
     }
 
@@ -472,10 +477,21 @@ impl ConfigStore {
 }
 
 /// Résultat d'un hot reload
-#[derive(Debug)]
 pub struct ReloadSummary {
     pub changed: bool,
     pub providers_reloaded: Vec<String>,
+    /// Les providers runtime après rechargement (évite un TOCTOU entre reload() et runtime_providers())
+    pub runtime_providers: Vec<(Arc<dyn pylos_core::domain::traits::Provider>, RuntimeConfig)>,
+}
+
+impl std::fmt::Debug for ReloadSummary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReloadSummary")
+            .field("changed", &self.changed)
+            .field("providers_reloaded", &self.providers_reloaded)
+            .field("runtime_providers_count", &self.runtime_providers.len())
+            .finish()
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

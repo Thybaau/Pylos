@@ -1,5 +1,6 @@
 pub mod budget_store;
 pub mod config_store;
+pub(crate) mod db_pool;
 pub mod log_store;
 pub mod model_catalog;
 pub mod otel_plugin;
