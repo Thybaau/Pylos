@@ -12,6 +12,10 @@ use pylos_core::domain::config::{
 use pylos_core::domain::provider::ProviderConfig as RuntimeConfig;
 use pylos_core::error::PylosError;
 
+use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use sqlx::Row;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Empreinte hash pour la réconciliation fichier ↔ mémoire
 // Identique au mécanisme hash-based de bifrost
@@ -50,6 +54,12 @@ fn hash_provider(name: &str, provider: &ProviderConfig) -> String {
 // ConfigStore — source de vérité en mémoire avec hot-reload
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[derive(Clone)]
+enum Pool {
+    Sqlite(SqlitePool),
+    Postgres(PgPool),
+}
+
 /// État interne du store
 struct ConfigState {
     /// Config complète résolue
@@ -62,6 +72,8 @@ struct ConfigState {
     runtime_providers: Vec<(Arc<dyn pylos_core::domain::traits::Provider>, RuntimeConfig)>,
     /// Chemin du fichier source
     file_path: Option<PathBuf>,
+    /// Pool de base de données (si configuré)
+    db_pool: Option<Pool>,
 }
 
 /// Store de configuration partagé et rechargeable à chaud
@@ -120,6 +132,7 @@ impl ConfigStore {
             provider_hashes,
             runtime_providers,
             file_path: path,
+            db_pool: None,
         };
 
         Ok(Self {
@@ -145,10 +158,75 @@ impl ConfigStore {
         self.state.read().await.runtime_providers.clone()
     }
 
-    /// Recharge la config depuis le fichier sur disque (hot reload)
-    /// Même logique que bifrost : hash-based reconciliation
-    /// Seuls les providers dont le hash a changé sont mis à jour
+    /// Recharge la config depuis la base de données (si configurée) ou le fichier sur disque
     pub async fn reload(&self) -> Result<ReloadSummary, PylosError> {
+        let db_pool = {
+            let state = self.state.read().await;
+            state.db_pool.clone()
+        };
+
+        if let Some(pool) = db_pool {
+            let db_config: Option<String> = match &pool {
+                Pool::Sqlite(p) => {
+                    let row = sqlx::query("SELECT config FROM gateway_config WHERE id = 'pylos'")
+                        .fetch_optional(p)
+                        .await
+                        .unwrap_or(None);
+                    row.map(|r| r.get::<String, _>(0))
+                }
+                Pool::Postgres(p) => {
+                    let row = sqlx::query("SELECT config FROM gateway_config WHERE id = 'pylos'")
+                        .fetch_optional(p)
+                        .await
+                        .unwrap_or(None);
+                    row.map(|r| {
+                        let val: serde_json::Value = r.get(0);
+                        val.to_string()
+                    })
+                }
+            };
+
+            if let Some(cfg_str) = db_config {
+                let new_config: PylosConfig = serde_json::from_str(&cfg_str)
+                    .map_err(|e| PylosError::Internal(format!("Invalid database config: {}", e)))?;
+
+                validate_config(&new_config)?;
+                let new_hash = hash_config(&new_config);
+
+                let mut state = self.state.write().await;
+
+                if new_hash == state.config_hash {
+                    debug!("Config unchanged in database (hash match)");
+                    return Ok(ReloadSummary {
+                        changed: false,
+                        providers_reloaded: vec![],
+                    });
+                }
+
+                let mut providers_reloaded = vec![];
+                for (name, provider) in &new_config.providers {
+                    let new_phash = hash_provider(name, provider);
+                    let old_phash = state.provider_hashes.get(name).cloned().unwrap_or_default();
+                    if new_phash != old_phash {
+                        providers_reloaded.push(name.clone());
+                        state.provider_hashes.insert(name.clone(), new_phash);
+                    }
+                }
+
+                let runtime = build_runtime_providers(&new_config);
+                info!(providers_changed = providers_reloaded.len(), "Config reloaded from database");
+
+                state.config = new_config;
+                state.config_hash = new_hash;
+                state.runtime_providers = runtime;
+
+                return Ok(ReloadSummary {
+                    changed: true,
+                    providers_reloaded,
+                });
+            }
+        }
+
         let file_path = {
             let state = self.state.read().await;
             state.file_path.clone()
@@ -156,7 +234,7 @@ impl ConfigStore {
 
         let Some(path) = file_path else {
             return Err(PylosError::InvalidRequest(
-                "No config file to reload (auto-detected config)".into(),
+                "No config file or database pool to reload".into(),
             ));
         };
 
@@ -197,7 +275,7 @@ impl ConfigStore {
 
         info!(
             providers_changed = providers_reloaded.len(),
-            "Config reloaded"
+            "Config reloaded from file"
         );
 
         state.config = new_config;
@@ -208,6 +286,98 @@ impl ConfigStore {
             changed: true,
             providers_reloaded,
         })
+    }
+
+    /// Initialise le pool de base de données et charge/synchronise la configuration.
+    pub async fn init_database(&self, db_url: &str) -> Result<(), PylosError> {
+        let pool = if db_url.starts_with("postgres") || db_url.starts_with("postgresql") {
+            let p = PgPoolOptions::new()
+                .max_connections(2)
+                .connect(db_url)
+                .await
+                .map_err(|e| PylosError::Internal(format!("Failed to connect config Postgres: {}", e)))?;
+            Pool::Postgres(p)
+        } else {
+            let p = SqlitePoolOptions::new()
+                .max_connections(2)
+                .connect(db_url)
+                .await
+                .map_err(|e| PylosError::Internal(format!("Failed to connect config SQLite: {}", e)))?;
+            Pool::Sqlite(p)
+        };
+
+        match &pool {
+            Pool::Sqlite(p) => {
+                sqlx::query("CREATE TABLE IF NOT EXISTS gateway_config (id TEXT PRIMARY KEY, config TEXT NOT NULL)")
+                    .execute(p)
+                    .await
+                    .ok();
+            }
+            Pool::Postgres(p) => {
+                sqlx::query("CREATE TABLE IF NOT EXISTS gateway_config (id TEXT PRIMARY KEY, config JSONB NOT NULL)")
+                    .execute(p)
+                    .await
+                    .ok();
+            }
+        }
+
+        let db_config: Option<String> = match &pool {
+            Pool::Sqlite(p) => {
+                let row = sqlx::query("SELECT config FROM gateway_config WHERE id = 'pylos'")
+                    .fetch_optional(p)
+                    .await
+                    .unwrap_or(None);
+                row.map(|r| r.get::<String, _>(0))
+            }
+            Pool::Postgres(p) => {
+                let row = sqlx::query("SELECT config FROM gateway_config WHERE id = 'pylos'")
+                    .fetch_optional(p)
+                    .await
+                    .unwrap_or(None);
+                row.map(|r| {
+                    let val: serde_json::Value = r.get(0);
+                    val.to_string()
+                })
+            }
+        };
+
+        let mut state = self.state.write().await;
+        state.db_pool = Some(pool.clone());
+
+        if let Some(cfg_str) = db_config {
+            if let Ok(new_cfg) = serde_json::from_str::<PylosConfig>(&cfg_str) {
+                info!("Loaded configuration from database");
+                state.config = new_cfg;
+                state.config_hash = hash_config(&state.config);
+                state.provider_hashes.clear();
+                let mut hashes = std::collections::HashMap::new();
+                for (name, provider) in &state.config.providers {
+                    hashes.insert(name.clone(), hash_provider(name, provider));
+                }
+                state.provider_hashes = hashes;
+                state.runtime_providers = build_runtime_providers(&state.config);
+            }
+        } else {
+            info!("No configuration found in database, inserting bootstrap configuration");
+            let json = serde_json::to_string(&state.config).unwrap_or_default();
+            match &pool {
+                Pool::Sqlite(p) => {
+                    let _ = sqlx::query("INSERT INTO gateway_config (id, config) VALUES ('pylos', $1) ON CONFLICT(id) DO UPDATE SET config = excluded.config")
+                        .bind(&json)
+                        .execute(p)
+                        .await;
+                }
+                Pool::Postgres(p) => {
+                    let val: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+                    let _ = sqlx::query("INSERT INTO gateway_config (id, config) VALUES ('pylos', $1) ON CONFLICT(id) DO UPDATE SET config = excluded.config")
+                        .bind(&val)
+                        .execute(p)
+                        .await;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Met à jour un provider en mémoire et persiste sur disque

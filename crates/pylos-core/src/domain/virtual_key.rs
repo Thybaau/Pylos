@@ -92,6 +92,11 @@ impl VirtualKeyRegistry {
             .insert(vk.key.clone(), (vk, KeyUsage::default()));
     }
 
+    /// Retire une Virtual Key du registre
+    pub async fn deregister(&self, key: &str) {
+        self.inner.write().await.remove(key);
+    }
+
     /// Vérifie si la clé existe et si le rate limit est respecté (atomique, sans TOCTOU).
     /// Check + incrément se font sous un unique write lock.
     pub async fn check_and_increment(&self, key: &str) -> Result<VirtualKey, String> {

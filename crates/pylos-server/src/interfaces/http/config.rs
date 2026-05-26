@@ -176,29 +176,48 @@ pub async fn delete_provider(
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub async fn list_virtual_keys(State(state): State<AppState>) -> impl IntoResponse {
-    let cfg = state.config_store.get().await;
-    let vks: Vec<_> = cfg
-        .governance
-        .virtual_keys
-        .iter()
-        .map(|vk| {
-            json!({
-                "id": vk.id,
-                "name": vk.name,
-                "description": vk.description,
-                "is_active": vk.is_active,
-                "value": vk.value.as_ref().map(|v| v.redacted()).unwrap_or_default(),
-                "rate_limit_id": vk.rate_limit_id,
-                "provider_configs": vk.provider_configs.iter().map(|p| json!({
-                    "provider": p.provider,
-                    "allowed_models": p.allowed_models,
-                    "weight": p.weight
-                })).collect::<Vec<_>>()
-            })
-        })
-        .collect();
+    let mut all_vks = vec![];
 
-    Json(json!({ "virtual_keys": vks, "total": vks.len() }))
+    // 1. Clés statiques de la config pylos.json
+    let cfg = state.config_store.get().await;
+    for vk in &cfg.governance.virtual_keys {
+        all_vks.push(json!({
+            "id": vk.id,
+            "name": vk.name,
+            "description": vk.description,
+            "is_active": vk.is_active,
+            "value": vk.value.as_ref().map(|v| v.redacted()).unwrap_or_default(),
+            "rate_limit_id": vk.rate_limit_id,
+            "provider_configs": vk.provider_configs.iter().map(|p| json!({
+                "provider": p.provider,
+                "allowed_models": p.allowed_models,
+                "weight": p.weight
+            })).collect::<Vec<_>>()
+        }));
+    }
+
+    // 2. Clés dynamiques de la base de données
+    if let Ok(db_vks) = state.vk_store.list_keys().await {
+        for vk in db_vks {
+            if !all_vks.iter().any(|v| v.get("id").and_then(|i| i.as_str()) == Some(&vk.id)) {
+                all_vks.push(json!({
+                    "id": vk.id,
+                    "name": vk.name,
+                    "description": vk.description,
+                    "is_active": vk.is_active,
+                    "value": vk.value.as_ref().map(|v| v.redacted()).unwrap_or_default(),
+                    "rate_limit_id": vk.rate_limit_id,
+                    "provider_configs": vk.provider_configs.iter().map(|p| json!({
+                        "provider": p.provider,
+                        "allowed_models": p.allowed_models,
+                        "weight": p.weight
+                    })).collect::<Vec<_>>()
+                }));
+            }
+        }
+    }
+
+    Json(json!({ "virtual_keys": all_vks, "total": all_vks.len() }))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -243,7 +262,7 @@ pub async fn create_virtual_key(
         provider_configs: req.provider_configs,
     };
 
-    match state.config_store.add_virtual_key(vk_cfg).await {
+    match state.vk_store.upsert_key(&vk_cfg).await {
         Ok(()) => {
             // Résout le RPM depuis la config pour l'enregistrer correctement dans le registry
             let cfg = state.config_store.get().await;
@@ -258,7 +277,7 @@ pub async fn create_virtual_key(
                 .with_rpm(rpm);
             state.vk_registry.register(vk).await;
 
-            // Propage le rate limit au store SQLite persistant
+            // Propage le rate limit au store persistant
             if let Some(rl_id) = &req.rate_limit_id {
                 if let Some(rl_cfg) = cfg.governance.rate_limits.iter().find(|r| &r.id == rl_id) {
                     if let Err(e) = state.rate_limit_store.upsert_rate_limit(&id, rl_cfg).await {
@@ -304,32 +323,68 @@ pub async fn update_virtual_key(
     Path(id): Path<String>,
     Json(req): Json<UpdateVirtualKeyRequest>,
 ) -> impl IntoResponse {
-    let new_rate_limit_id = req.rate_limit_id.clone();
+    let mut vk = match state.vk_store.get_key_by_id(&id).await {
+        Ok(Some(v)) => v,
+        _ => {
+            let cfg = state.config_store.get().await;
+            if let Some(static_vk) = cfg.governance.virtual_keys.iter().find(|v| v.id == id) {
+                static_vk.clone()
+            } else {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({ "error": format!("Virtual key '{}' not found", id) })),
+                ).into_response();
+            }
+        }
+    };
 
-    match state
-        .config_store
-        .update_virtual_key(&id, |vk| {
-            if let Some(name) = req.name {
-                vk.name = name;
+    let old_key_value = vk.value.as_ref().and_then(|v| match v {
+        EnvVar::Literal(s) => Some(s.clone()),
+    });
+
+    if let Some(name) = req.name {
+        vk.name = name;
+    }
+    if let Some(desc) = req.description {
+        vk.description = Some(desc);
+    }
+    if let Some(active) = req.is_active {
+        vk.is_active = active;
+    }
+    if let Some(pcs) = req.provider_configs {
+        vk.provider_configs = pcs;
+    }
+    if req.rate_limit_id.is_some() {
+        vk.rate_limit_id = req.rate_limit_id.clone();
+    }
+
+    match state.vk_store.upsert_key(&vk).await {
+        Ok(()) => {
+            // Retire l'ancienne clé en mémoire si elle a changé ou est inactive
+            if let Some(ref old_val) = old_key_value {
+                state.vk_registry.deregister(old_val).await;
             }
-            if let Some(desc) = req.description {
-                vk.description = Some(desc);
+
+            // Met à jour la clé en mémoire si elle est active
+            if vk.is_active {
+                let cfg = state.config_store.get().await;
+                let rpm = vk.rate_limit_id
+                    .as_ref()
+                    .and_then(|rl_id| cfg.governance.rate_limits.iter().find(|r| &r.id == rl_id))
+                    .map(|rl| rl.request_max_limit)
+                    .unwrap_or(0);
+
+                if let Some(ref val) = vk.value {
+                    if let EnvVar::Literal(ref key_str) = val {
+                        let v_key = pylos_core::domain::virtual_key::VirtualKey::new(key_str.clone(), &vk.name)
+                            .with_rpm(rpm);
+                        state.vk_registry.register(v_key).await;
+                    }
+                }
             }
-            if let Some(active) = req.is_active {
-                vk.is_active = active;
-            }
-            if let Some(pcs) = req.provider_configs {
-                vk.provider_configs = pcs;
-            }
-            if req.rate_limit_id.is_some() {
-                vk.rate_limit_id = req.rate_limit_id;
-            }
-        })
-        .await
-    {
-        Ok(true) => {
+
             // Propage le nouveau rate_limit_id au store SQLite si modifié
-            if let Some(rl_id) = &new_rate_limit_id {
+            if let Some(rl_id) = &req.rate_limit_id {
                 let cfg = state.config_store.get().await;
                 if let Some(rl_cfg) = cfg.governance.rate_limits.iter().find(|r| &r.id == rl_id) {
                     if let Err(e) = state.rate_limit_store.upsert_rate_limit(&id, rl_cfg).await {
@@ -339,11 +394,6 @@ pub async fn update_virtual_key(
             }
             Json(json!({ "id": id, "message": "Virtual key updated" })).into_response()
         }
-        Ok(false) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": format!("Virtual key '{}' not found", id) })),
-        )
-            .into_response(),
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": e.to_string() })),
@@ -360,19 +410,40 @@ pub async fn delete_virtual_key(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    match state.config_store.remove_virtual_key(&id).await {
+    // Récupère la clé avant de la supprimer pour pouvoir la deregister de la mémoire
+    let key_value = match state.vk_store.get_key_by_id(&id).await {
+        Ok(Some(vk)) => vk.value.as_ref().and_then(|v| match v {
+            EnvVar::Literal(s) => Some(s.clone()),
+        }),
+        _ => {
+            let cfg = state.config_store.get().await;
+            cfg.governance.virtual_keys.iter()
+                .find(|v| v.id == id)
+                .and_then(|vk| vk.value.as_ref().and_then(|v| match v {
+                    EnvVar::Literal(s) => Some(s.clone()),
+                }))
+        }
+    };
+
+    match state.vk_store.delete_key(&id).await {
         Ok(true) => {
-            // Nettoie les entrées orphelines dans les stores SQLite
+            if let Some(ref val) = key_value {
+                state.vk_registry.deregister(val).await;
+            }
+
+            // Nettoie les entrées orphelines dans les stores
             state.budget_store.delete_vk_entries(&id).await;
             state.rate_limit_store.delete_vk_entries(&id).await;
 
             Json(json!({ "message": format!("Virtual key '{}' deleted", id) })).into_response()
         }
-        Ok(false) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": format!("Virtual key '{}' not found", id) })),
-        )
-            .into_response(),
+        Ok(false) => {
+            // Si présente uniquement en config statique (et qu'on ne l'a pas en DB), on la deregister quand même de la mémoire
+            if let Some(ref val) = key_value {
+                state.vk_registry.deregister(val).await;
+            }
+            Json(json!({ "message": format!("Virtual key '{}' deleted from memory", id) })).into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),

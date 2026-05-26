@@ -5,7 +5,10 @@ pub mod model_catalog;
 pub mod otel_plugin;
 pub mod pg_log_store;
 pub mod rate_limit_store;
+pub mod virtual_key_store;
 pub mod use_cases;
+
+pub use virtual_key_store::VirtualKeyStore;
 
 pub use budget_store::{BudgetPlugin, BudgetStore};
 pub use config_store::ConfigStore;

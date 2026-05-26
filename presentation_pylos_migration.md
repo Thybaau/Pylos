@@ -141,4 +141,23 @@ La plateforme cible est un cluster **Kubernetes** moderne où le gateway est dé
     *   Secrets d'API et identifiants de base de données injectés de manière sécurisée via **ExternalSecrets** / Kubernetes Secrets.
     *   **Sécurité des clés (Affichage unique)** : La valeur brute d'une clé d'API virtuelle (`sk-pylos-...`) n'est visible que lors de sa création. Elle est ensuite masquée dans la base et obfusquée dans l'API/UI (ex: `sk-py****`), empêchant toute consultation ou vol ultérieur.
 *   **Persistance centralisée** : Utilisation d'une base de données PostgreSQL `pylos` sur l'infrastructure `pg-prd`. Les conteneurs devenant stateless, le déploiement multi-replicas gagne en résilience et simplicité de mise à l'échelle (plus besoin de volumes persistants PVC locaux SQLite).
+*   **Configuration de la Base de Données (Hybride GitOps / SecOps)** :
+    *   **Déclaration GitOps (ConfigMap)** : La clé `"database_url"` est spécifiée dans le fichier `/app/pylos.json` de la ConfigMap `pylos-config`. Elle peut être configurée de deux manières dans GitOps :
+        *   **Via variable d'environnement (Recommandé)** : `"database_url": "env.DATABASE_URL"`. L'application résout la valeur dynamiquement depuis l'environnement.
+        *   **Via valeur littérale directe** : `"database_url": "postgresql://app:password@cluster-pg-rw.pg-prd.svc:5432/pylos"`.
+    *   **Résolution Sécurisée (SecOps & Vault)** : Pour éviter d'exposer les secrets dans le dépôt Git, un `ExternalSecret` (`pylos-database-secret`) est défini dans le GitOps. Il récupère le mot de passe dans HashiCorp Vault (`databases/prd/cluster-pg-app`) et reconstruit la variable d'environnement `DATABASE_URL` avec le host et le port de la base de données ciblée (`cluster-pg-rw.pg-prd.svc:5432/pylos`).
+*   **Séparation des flux de configuration (GitOps vs Manuel/DB)** :
+
+| Type de Donnée / Configuration | Source de Vérité (GitOps) | Source de Vérité (Manuel / DB) | Description & Utilisation |
+| :--- | :---: | :---: | :--- |
+| **Accès Base de Données** | **Oui** | Non | URL, hôte, port et résolutions de secrets pour PostgreSQL (`DATABASE_URL`). |
+| **Topologie & Réseau** | **Oui** | Non | Ports d'écoute HTTP, configurations CORS, hôtes réseaux, base URLs des fournisseurs. |
+| **Identifiants Fournisseurs (API Keys)** | **Oui** | Non | Clés d'API tierces (OpenAI, Anthropic, Gemini, Groq, Bedrock) injectées via variables d'environnement (`env.GEMINI_API_KEY`, etc.) résolues par ExternalSecrets. |
+| **Clés Virtuelles (Virtual Keys)** | Optionnel (bootstrap) | **Oui (Table `virtual_keys`)** | Clés créées dynamiquement par les administrateurs depuis l'UI pour authentifier les utilisateurs ou applications consommatrices. |
+| **Catalogue de Modèles & Tarification** | Non | **Oui (Table `model_catalog`)** | Définition des modèles supportés, de leurs alias et de leurs coûts (prompt, completion, image) modifiables sans redéploiement. |
+| **Limites de Débit (Rate Limits)** | Non | **Oui (Table `rate_limits`)** | Règles de limitation de requêtes configurées par l'administrateur. |
+| **Quotas & Budgets** | Non | **Oui (Table `budgets`)** | Budgets alloués aux utilisateurs/applications et consommation en temps réel. |
+| **Historique & Logs** | Non | **Oui (Table `gateway_logs` / `playground_logs`)** | Traces d'appels d'inférence et historique des tests interactifs effectués sur le Playground. |
+
 *   **Routage & Ingress** : Exposition via **Traefik Ingress Route** avec support HTTPS et configuration de serveurs de transport sécurisés (`serverstransport.yaml`).
+
