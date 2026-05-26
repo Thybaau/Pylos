@@ -153,12 +153,20 @@ pub async fn get_filter_data(State(state): State<AppState>) -> impl IntoResponse
     let cfg = state.config_store.get().await;
 
     let providers: Vec<String> = cfg.providers.keys().cloned().collect();
-    let virtual_keys: Vec<_> = cfg
+    let mut virtual_keys: Vec<_> = cfg
         .governance
         .virtual_keys
         .iter()
         .map(|vk| json!({"id": vk.id, "name": vk.name}))
         .collect();
+
+    if let Ok(db_vks) = state.vk_store.list_keys().await {
+        for vk in db_vks {
+            if !virtual_keys.iter().any(|v| v.get("id").and_then(|i| i.as_str()) == Some(&vk.id)) {
+                virtual_keys.push(json!({"id": vk.id, "name": vk.name}));
+            }
+        }
+    }
 
     Json(json!({
         "providers": providers,

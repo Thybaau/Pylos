@@ -121,6 +121,34 @@ export default function Logs() {
         </div>
       </div>
 
+      {/* Quick Stats Summary */}
+      {data?.stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-gray-950 border border-gray-800/80 rounded-xl p-4 text-sm">
+          <div className="space-y-0.5 border-r border-gray-800/60 pr-2">
+            <div className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold">Total Requests</div>
+            <div className="text-base font-bold text-white tabular-nums">{formatNumber(data.stats.total_requests)}</div>
+          </div>
+          <div className="space-y-0.5 sm:border-r border-gray-800/60 sm:px-2">
+            <div className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold">Success Rate</div>
+            <div className={`text-base font-bold tabular-nums ${data.stats.success_rate > 95 ? 'text-green-400' : 'text-red-400'}`}>
+              {data.stats.success_rate.toFixed(1)}%
+            </div>
+          </div>
+          <div className="space-y-0.5 border-r border-gray-800/60 px-2">
+            <div className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold">Avg Latency</div>
+            <div className="text-base font-bold text-yellow-500 tabular-nums">{formatLatency(data.stats.average_latency_ms)}</div>
+          </div>
+          <div className="space-y-0.5 border-r border-gray-800/60 px-2">
+            <div className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold">Total Tokens</div>
+            <div className="text-base font-bold text-purple-400 tabular-nums">{formatNumber(data.stats.total_tokens)}</div>
+          </div>
+          <div className="space-y-0.5 pl-2">
+            <div className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold">Total Cost</div>
+            <div className="text-base font-bold text-yellow-400 tabular-nums">{formatCost(data.stats.total_cost_usd)}</div>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="flex-1 overflow-auto rounded-xl border border-gray-800 bg-gray-900">
         <table className="w-full text-sm">

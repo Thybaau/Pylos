@@ -66,7 +66,7 @@ pub async fn virtual_key_middleware(
             };
 
             // 2. If active key is found in DB, register/update it in the in-memory registry
-            if let Some(vk_cfg) = db_vk {
+            let provider_configs = if let Some(ref vk_cfg) = db_vk {
                 let cfg = state.config_store.get().await;
                 let rate_limit = cfg
                     .governance
@@ -79,7 +79,22 @@ pub async fn virtual_key_middleware(
                 let v_key = pylos_core::domain::virtual_key::VirtualKey::new(token.to_string(), &vk_cfg.name)
                     .with_rpm(rate_limit);
                 state.vk_registry.register(v_key).await;
-            }
+                vk_cfg.provider_configs.clone()
+            } else {
+                let cfg = state.config_store.get().await;
+                cfg.governance
+                    .virtual_keys
+                    .iter()
+                    .find(|v| {
+                        v.value
+                            .as_ref()
+                            .and_then(|val| val.resolve())
+                            .as_deref()
+                            == Some(token)
+                    })
+                    .map(|v| v.provider_configs.clone())
+                    .unwrap_or_default()
+            };
 
             // 3. Verify in memory registry (for RPM rate limiting check & increment)
             match state.vk_registry.check_and_increment(token).await {
@@ -88,6 +103,7 @@ pub async fn virtual_key_middleware(
                     req.extensions_mut().insert(Some(VirtualKeyInfo {
                         name: vk.name.clone(),
                         key: vk.key.clone(),
+                        provider_configs,
                     }));
                     next.run(req).await
                 }
@@ -128,4 +144,5 @@ pub async fn virtual_key_middleware(
 pub struct VirtualKeyInfo {
     pub name: String,
     pub key: String,
+    pub provider_configs: Vec<pylos_core::domain::config::VkProviderConfig>,
 }

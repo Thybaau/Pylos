@@ -101,6 +101,7 @@ pub struct StreamToolCallFunction {
 pub struct RequestContext {
     pub headers: HashMap<String, String>,
     pub virtual_key: Option<String>,
+    pub provider_configs: Vec<crate::domain::config::VkProviderConfig>,
     pub customer_id: Option<String>,
     pub team_id: Option<String>,
     pub trace_id: Option<String>,
