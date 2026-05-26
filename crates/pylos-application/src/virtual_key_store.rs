@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::Arc;
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
@@ -170,8 +169,8 @@ impl VirtualKeyStore {
         let key_value = vk
             .value
             .as_ref()
-            .and_then(|v| match v {
-                EnvVar::Literal(s) => Some(s.clone()),
+            .map(|v| match v {
+                EnvVar::Literal(s) => s.clone(),
             })
             .ok_or_else(|| PylosError::InvalidRequest("Virtual key must have a value".into()))?;
 
