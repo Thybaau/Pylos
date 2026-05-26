@@ -317,7 +317,15 @@ impl InferenceOrchestrator {
         let max_retries = config.max_retries;
 
         loop {
-            match provider.complete(request, config).await {
+            let res = match request {
+                PylosRequest::Image(img_req) => provider
+                    .generate_image(img_req, config)
+                    .await
+                    .map(PylosResponse::Image),
+                _ => provider.complete(request, config).await,
+            };
+
+            match res {
                 Ok(resp) => return Ok(resp),
                 Err(e) if e.is_retriable() && attempt < max_retries => {
                     attempt += 1;
@@ -379,6 +387,7 @@ fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
                 || model.starts_with("o1")
                 || model.starts_with("o3")
                 || model.starts_with("o4")
+                || model.starts_with("dall-e")
         }
         ProviderKind::Anthropic => model.contains("claude"),
         ProviderKind::Gemini => {

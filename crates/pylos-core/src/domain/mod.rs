@@ -1,5 +1,6 @@
 pub mod config;
 pub mod embedding;
+pub mod image;
 pub mod openai;
 pub mod provider;
 pub mod request;

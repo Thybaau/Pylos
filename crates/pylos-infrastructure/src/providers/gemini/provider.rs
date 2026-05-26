@@ -136,9 +136,11 @@ impl Provider for GeminiProvider {
                 debug!(provider = "gemini", model = %model, "Gemini generateContent successful");
                 Ok(from_gemini_response(gemini_resp, model))
             }
-            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => Err(
-                PylosError::InvalidRequest("Use the embed() method for Gemini embeddings".into()),
-            ),
+            PylosRequest::TextCompletion(_)
+            | PylosRequest::Embedding(_)
+            | PylosRequest::Image(_) => Err(PylosError::InvalidRequest(
+                "Request type not supported by complete() on Gemini".into(),
+            )),
         }
     }
 
@@ -217,9 +219,11 @@ impl Provider for GeminiProvider {
 
                 Ok(Box::pin(stream))
             }
-            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => Err(
-                PylosError::InvalidRequest("Streaming not supported for embeddings".into()),
-            ),
+            PylosRequest::TextCompletion(_)
+            | PylosRequest::Embedding(_)
+            | PylosRequest::Image(_) => Err(PylosError::InvalidRequest(
+                "Streaming not supported for this request type".into(),
+            )),
         }
     }
 

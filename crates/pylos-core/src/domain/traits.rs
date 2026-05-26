@@ -47,6 +47,18 @@ pub trait Provider: Send + Sync {
         )))
     }
 
+    /// Génère des images
+    async fn generate_image(
+        &self,
+        _request: &crate::domain::image::ImageRequest,
+        _config: &ProviderConfig,
+    ) -> Result<crate::domain::image::ImageResponse, PylosError> {
+        Err(PylosError::Unsupported(format!(
+            "Provider '{}' does not support image generation",
+            self.name()
+        )))
+    }
+
     /// Vérifie la santé du provider
     async fn health_check(&self, config: &ProviderConfig) -> Result<(), PylosError> {
         let _ = config;

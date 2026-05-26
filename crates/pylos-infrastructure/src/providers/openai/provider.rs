@@ -163,6 +163,9 @@ impl Provider for OpenAIProvider {
             PylosRequest::Embedding(_) => Err(PylosError::InvalidRequest(
                 "Use the embed() method for embedding requests".into(),
             )),
+            PylosRequest::Image(_) => Err(PylosError::InvalidRequest(
+                "Use the generate_image() method for image requests".into(),
+            )),
         }
     }
 
@@ -311,6 +314,9 @@ impl Provider for OpenAIProvider {
             PylosRequest::Embedding(_) => Err(PylosError::InvalidRequest(
                 "Use the /v1/embeddings endpoint for embedding requests".into(),
             )),
+            PylosRequest::Image(_) => Err(PylosError::Unsupported(
+                "Image requests do not support streaming".into(),
+            )),
         }
     }
 
@@ -362,5 +368,54 @@ impl Provider for OpenAIProvider {
 
         debug!(provider = "openai", model = %openai_resp.model, "Embedding successful");
         Ok(from_openai_embedding_response(openai_resp))
+    }
+
+    /// Image Generation — POST /v1/images/generations (OpenAI)
+    async fn generate_image(
+        &self,
+        request: &pylos_core::domain::image::ImageRequest,
+        config: &ProviderConfig,
+    ) -> Result<pylos_core::domain::image::ImageResponse, PylosError> {
+        let api_key = self
+            .select_key(config)
+            .ok_or_else(|| PylosError::InvalidRequest("No API key configured for OpenAI".into()))?;
+
+        let base_url = self.base_url(config);
+        let url = format!("{}/images/generations", base_url);
+
+        debug!(provider = %self.name, model = %request.model, url = %url, "Sending image generation request");
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(api_key)
+            .json(request)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    PylosError::Timeout(e.to_string())
+                } else {
+                    PylosError::ProviderError {
+                        provider: self.name.clone(),
+                        message: e.to_string(),
+                    }
+                }
+            })?;
+
+        let status = response.status().as_u16();
+
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            warn!(provider = %self.name, status = status, body = %body, "Image generation failed");
+            return Err(map_openai_error(status, &body));
+        }
+
+        let resp: pylos_core::domain::image::ImageResponse =
+            response.json().await.map_err(|e| {
+                PylosError::Internal(format!("Failed to parse OpenAI image response: {}", e))
+            })?;
+
+        Ok(resp)
     }
 }

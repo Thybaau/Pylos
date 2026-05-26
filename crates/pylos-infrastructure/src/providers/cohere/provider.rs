@@ -133,9 +133,11 @@ impl Provider for CohereProvider {
                 }
                 Ok(pylos_resp)
             }
-            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => Err(
-                PylosError::InvalidRequest("Use the embed() method for Cohere embeddings".into()),
-            ),
+            PylosRequest::TextCompletion(_)
+            | PylosRequest::Embedding(_)
+            | PylosRequest::Image(_) => Err(PylosError::InvalidRequest(
+                "Request type not supported by complete() on Cohere".into(),
+            )),
         }
     }
 
@@ -219,9 +221,11 @@ impl Provider for CohereProvider {
 
                 Ok(Box::pin(stream))
             }
-            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => Err(
-                PylosError::InvalidRequest("Streaming not supported for embeddings".into()),
-            ),
+            PylosRequest::TextCompletion(_)
+            | PylosRequest::Embedding(_)
+            | PylosRequest::Image(_) => Err(PylosError::InvalidRequest(
+                "Streaming not supported for this request type".into(),
+            )),
         }
     }
 

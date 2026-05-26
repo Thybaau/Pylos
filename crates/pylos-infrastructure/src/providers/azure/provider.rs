@@ -135,12 +135,12 @@ impl Provider for AzureProvider {
                 debug!(provider = "azure", id = %resp.id, "Azure chat completion successful");
                 Ok(from_openai_response(resp))
             }
-            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => {
-                Err(PylosError::ProviderError {
-                    provider: "azure".into(),
-                    message: "Use a dedicated embeddings deployment for Azure embeddings".into(),
-                })
-            }
+            PylosRequest::TextCompletion(_)
+            | PylosRequest::Embedding(_)
+            | PylosRequest::Image(_) => Err(PylosError::ProviderError {
+                provider: "azure".into(),
+                message: "Request type not supported by complete() on Azure".into(),
+            }),
         }
     }
 
@@ -221,12 +221,12 @@ impl Provider for AzureProvider {
 
                 Ok(Box::pin(stream))
             }
-            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => {
-                Err(PylosError::ProviderError {
-                    provider: "azure".into(),
-                    message: "Streaming not supported for embeddings".into(),
-                })
-            }
+            PylosRequest::TextCompletion(_)
+            | PylosRequest::Embedding(_)
+            | PylosRequest::Image(_) => Err(PylosError::ProviderError {
+                provider: "azure".into(),
+                message: "Streaming not supported for this request type".into(),
+            }),
         }
     }
 }

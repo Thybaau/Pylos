@@ -201,6 +201,7 @@ fn operation_name(request: &PylosRequest) -> &'static str {
         PylosRequest::ChatCompletion(_) => "chat",
         PylosRequest::TextCompletion(_) => "text_completion",
         PylosRequest::Embedding(_) => "embeddings",
+        PylosRequest::Image(_) => "images",
     }
 }
 
@@ -249,6 +250,7 @@ fn extract_usage(response: &PylosResponse) -> (String, i32, i32) {
             (model, inp, out)
         }
         PylosResponse::Embedding(r) => (r.model.clone(), r.usage.prompt_tokens, 0),
+        PylosResponse::Image(_) => ("".to_string(), 0, 0),
     }
 }
 

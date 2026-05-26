@@ -8,6 +8,7 @@ pub enum PylosRequest {
     ChatCompletion(crate::domain::openai::ChatCompletionRequest),
     TextCompletion(crate::domain::openai::TextCompletionRequest),
     Embedding(crate::domain::embedding::EmbeddingRequest),
+    Image(crate::domain::image::ImageRequest),
 }
 
 impl PylosRequest {
@@ -16,6 +17,7 @@ impl PylosRequest {
             PylosRequest::ChatCompletion(req) => &req.model,
             PylosRequest::TextCompletion(req) => &req.model,
             PylosRequest::Embedding(req) => &req.model,
+            PylosRequest::Image(req) => &req.model,
         }
     }
 
@@ -24,6 +26,7 @@ impl PylosRequest {
             PylosRequest::ChatCompletion(req) => req.stream.unwrap_or(false),
             PylosRequest::TextCompletion(req) => req.stream.unwrap_or(false),
             PylosRequest::Embedding(_) => false,
+            PylosRequest::Image(_) => false,
         }
     }
 }
@@ -35,6 +38,7 @@ pub enum PylosResponse {
     ChatCompletion(crate::domain::openai::ChatCompletionResponse),
     TextCompletion(crate::domain::openai::TextCompletionResponse),
     Embedding(crate::domain::embedding::EmbeddingResponse),
+    Image(crate::domain::image::ImageResponse),
 }
 
 /// Un chunk de streaming SSE

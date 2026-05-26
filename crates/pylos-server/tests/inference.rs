@@ -108,6 +108,21 @@ impl Provider for MockProvider {
         let stream = futures::stream::iter(vec![Ok(chunk1), Ok(chunk2)]);
         Ok(Box::pin(stream))
     }
+
+    async fn generate_image(
+        &self,
+        request: &pylos_core::domain::image::ImageRequest,
+        _config: &ProviderConfig,
+    ) -> Result<pylos_core::domain::image::ImageResponse, PylosError> {
+        Ok(pylos_core::domain::image::ImageResponse {
+            created: 123456789,
+            data: vec![pylos_core::domain::image::ImageData {
+                url: Some("http://mock-url.com/image.png".to_string()),
+                b64_json: None,
+                revised_prompt: Some(request.prompt.clone()),
+            }],
+        })
+    }
 }
 
 #[tokio::test]
@@ -239,6 +254,70 @@ async fn test_chat_completions_stream() {
     assert!(text.contains("data: {\"id\":\"mock-id\""));
     assert!(text.contains("data: [DONE]"));
     assert!(text.contains("content\":\"Hello\""));
+}
+
+#[tokio::test]
+async fn test_image_generations() {
+    // 1. Setup Mock State
+    let mock_provider = Arc::new(MockProvider);
+    let mut config = ProviderConfig::new(ProviderKind::OpenAI, vec![]);
+    config.timeout_ms = 1000;
+
+    let orchestrator = Arc::new(InferenceOrchestrator::new(
+        vec![(mock_provider, config)],
+        vec![],
+    ));
+
+    let config_store = Arc::new(ConfigStore::load(None).await.unwrap());
+    let metrics = Arc::new(Metrics::new());
+    let vk_registry = Arc::new(pylos_core::domain::virtual_key::VirtualKeyRegistry::new());
+    let log_store = Arc::new(LogStore::new(None, 1, 100));
+    let model_catalog = Arc::new(ModelCatalog::in_memory().await.unwrap());
+    let budget_store = Arc::new(BudgetStore::in_memory().await.unwrap());
+    let rate_limit_store = Arc::new(RateLimitStore::in_memory().await.unwrap());
+
+    let state = AppState {
+        orchestrator,
+        config_store,
+        metrics,
+        vk_registry,
+        log_store: LogStoreVariant::Sqlite(log_store),
+        model_catalog,
+        budget_store,
+        rate_limit_store,
+        admin_key: None,
+    };
+
+    // 2. Create Router
+    let app = create_router(state);
+
+    // 3. Send Request
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/images/generations")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "prompt": "a futuristic city",
+                        "model": "dall-e-3",
+                        "n": 1
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // 4. Assertions
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = ax_body_to_json(response.into_body()).await;
+    assert_eq!(body["created"], 123456789);
+    assert_eq!(body["data"][0]["url"], "http://mock-url.com/image.png");
+    assert_eq!(body["data"][0]["revised_prompt"], "a futuristic city");
 }
 
 async fn ax_body_to_json(body: Body) -> Value {

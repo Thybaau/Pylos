@@ -90,6 +90,7 @@ async fn complete_response(
 
             Json(resp).into_response()
         }
+        Ok(pylos_core::domain::request::PylosResponse::Image(resp)) => Json(resp).into_response(),
         Ok(pylos_core::domain::request::PylosResponse::Embedding(resp)) => {
             Json(resp).into_response()
         }

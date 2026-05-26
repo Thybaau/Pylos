@@ -283,11 +283,11 @@ impl Provider for BedrockProvider {
                     id,
                 ))
             }
-            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => {
-                Err(PylosError::Unsupported(
-                    "Use Bedrock Titan Embeddings endpoint directly for embeddings".into(),
-                ))
-            }
+            PylosRequest::TextCompletion(_)
+            | PylosRequest::Embedding(_)
+            | PylosRequest::Image(_) => Err(PylosError::Unsupported(
+                "Bedrock provider complete() does not support this request type".into(),
+            )),
         }
     }
 
@@ -468,11 +468,11 @@ impl Provider for BedrockProvider {
 
                 Ok(Box::pin(stream))
             }
-            PylosRequest::TextCompletion(_) | PylosRequest::Embedding(_) => {
-                Err(PylosError::Unsupported(
-                    "Use Bedrock Titan Embeddings endpoint directly for embeddings".into(),
-                ))
-            }
+            PylosRequest::TextCompletion(_)
+            | PylosRequest::Embedding(_)
+            | PylosRequest::Image(_) => Err(PylosError::Unsupported(
+                "Bedrock provider stream() does not support this request type".into(),
+            )),
         }
     }
 
