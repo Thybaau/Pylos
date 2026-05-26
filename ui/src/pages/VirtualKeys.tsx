@@ -5,7 +5,7 @@ import { providerColor } from '../lib/utils'
 import {
   KeyRound, CheckCircle, XCircle, Shield, TrendingUp,
   ChevronDown, ChevronUp, Plus, Pencil, Trash2, X, Check,
-  AlertTriangle, RotateCcw, Copy,
+  AlertTriangle, RotateCcw, Copy, RotateCw,
 } from 'lucide-react'
 import { ProviderIcon } from '../components/ProviderIcon'
 
@@ -550,7 +550,7 @@ export default function VirtualKeys() {
   const [mutationError, setMutationError] = useState<string | null>(null)
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['virtual-keys'],
     queryFn: virtualKeysApi.getAll,
     refetchInterval: 30_000,
@@ -591,14 +591,24 @@ export default function VirtualKeys() {
             {data?.total ?? '—'} configured
           </p>
         </div>
-        <button
-          onClick={() => { setMutationError(null); setShowCreate(true) }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm
-            rounded-lg transition-colors"
-        >
-          <Plus size={15} />
-          Create key
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="flex items-center justify-center p-2 text-gray-400 hover:text-white bg-gray-900 hover:bg-gray-800 border border-gray-800 disabled:opacity-50 rounded-lg transition-colors"
+            title="Refresh keys"
+          >
+            <RotateCw size={15} className={isFetching ? 'animate-spin' : ''} />
+          </button>
+          <button
+            onClick={() => { setMutationError(null); setShowCreate(true) }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm
+              rounded-lg transition-colors"
+          >
+            <Plus size={15} />
+            Create key
+          </button>
+        </div>
       </div>
 
       {/* Table */}

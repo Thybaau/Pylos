@@ -35,10 +35,56 @@ pub async fn virtual_key_middleware(
 
     match auth_header {
         Some(token) if token.starts_with(VIRTUAL_KEY_PREFIX) => {
-            // C'est une Virtual Key Pylos — on la vérifie
+            // 1. Check in the database for absolute configuration freshness
+            let db_vk = match state.vk_store.get_key_by_value(token).await {
+                Ok(Some(vk_cfg)) => {
+                    if !vk_cfg.is_active {
+                        // Deactivated in DB -> ensure it is removed from memory
+                        state.vk_registry.deregister(token).await;
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({
+                                "error": {
+                                    "message": "Virtual key is inactive",
+                                    "type": "governance_error",
+                                    "code": 401
+                                }
+                            })),
+                        ).into_response();
+                    }
+                    Some(vk_cfg)
+                }
+                Ok(None) => {
+                    // Deleted in DB -> ensure it is removed from memory
+                    state.vk_registry.deregister(token).await;
+                    None
+                }
+                Err(_) => {
+                    // Fallback to memory registry if DB query fails
+                    None
+                }
+            };
+
+            // 2. If active key is found in DB, register/update it in the in-memory registry
+            if let Some(vk_cfg) = db_vk {
+                let cfg = state.config_store.get().await;
+                let rate_limit = cfg
+                    .governance
+                    .rate_limits
+                    .iter()
+                    .find(|rl| Some(&rl.id) == vk_cfg.rate_limit_id.as_ref())
+                    .map(|rl| rl.request_max_limit)
+                    .unwrap_or(0);
+
+                let v_key = pylos_core::domain::virtual_key::VirtualKey::new(token.to_string(), &vk_cfg.name)
+                    .with_rpm(rate_limit);
+                state.vk_registry.register(v_key).await;
+            }
+
+            // 3. Verify in memory registry (for RPM rate limiting check & increment)
             match state.vk_registry.check_and_increment(token).await {
                 Ok(vk) => {
-                    // Injecte le nom de la VK dans les extensions de la requête
+                    // Inject virtual key info into request extensions
                     req.extensions_mut().insert(Some(VirtualKeyInfo {
                         name: vk.name.clone(),
                         key: vk.key.clone(),
@@ -58,9 +104,9 @@ pub async fn virtual_key_middleware(
                         status,
                         Json(json!({
                             "error": {
-                                "message": reason,
-                                "type": "governance_error",
-                                "code": status.as_u16()
+                                        "message": reason,
+                                        "type": "governance_error",
+                                        "code": status.as_u16()
                             }
                         })),
                     )
@@ -69,7 +115,7 @@ pub async fn virtual_key_middleware(
             }
         }
         _ => {
-            // Pas de VK ou clé provider directe — insère None pour que l'extractor fonctionne
+            // No virtual key or direct provider key -> insert None for extractor
             req.extensions_mut().insert(None::<VirtualKeyInfo>);
             next.run(req).await
         }
