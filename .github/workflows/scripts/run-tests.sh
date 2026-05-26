@@ -21,13 +21,12 @@ TESTS_FAILED=0
 report_result() {
   local test_name=$1
   local result=$2
-  
   if [ "$result" -eq 0 ]; then
     echo -e "${GREEN}✅ $test_name passed${NC}"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     echo -e "${RED}❌ $test_name failed${NC}"
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 }
 
