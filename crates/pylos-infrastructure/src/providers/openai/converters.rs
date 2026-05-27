@@ -32,6 +32,10 @@ pub(crate) struct OpenAIChatRequest<'a> {
     pub max_completion_tokens: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_options: Option<StreamOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<&'a [pylos_core::domain::openai::Tool]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<&'a pylos_core::domain::openai::ToolChoice>,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,9 +68,14 @@ pub(crate) struct OpenAITextRequest<'a> {
 #[derive(Debug, Serialize)]
 pub(crate) struct OpenAIMessage<'a> {
     pub role: &'a str,
-    pub content: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<&'a [pylos_core::domain::openai::ToolCall]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<&'a str>,
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -189,8 +198,10 @@ pub(crate) fn to_openai_request<'a>(
             .iter()
             .map(|m| OpenAIMessage {
                 role: role_to_str(&m.role),
-                content: m.content.as_deref().unwrap_or(""),
+                content: m.content.as_deref(),
                 name: m.name.as_deref(),
+                tool_calls: m.tool_calls.as_deref(),
+                tool_call_id: m.tool_call_id.as_deref(),
             })
             .collect(),
         temperature: req.temperature,
@@ -209,6 +220,8 @@ pub(crate) fn to_openai_request<'a>(
         } else {
             None
         },
+        tools: req.tools.as_deref(),
+        tool_choice: req.tool_choice.as_ref(),
     }
 }
 
