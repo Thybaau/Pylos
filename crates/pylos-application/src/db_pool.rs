@@ -13,7 +13,11 @@ pub(crate) enum DbPool {
 }
 
 impl DbPool {
-    pub async fn open_sqlite(db_path: &Path, pool_name: &str, max_connections: u32) -> Result<Self, sqlx::Error> {
+    pub async fn open_sqlite(
+        db_path: &Path,
+        pool_name: &str,
+        max_connections: u32,
+    ) -> Result<Self, sqlx::Error> {
         let options = SqliteConnectOptions::new()
             .filename(db_path)
             .create_if_missing(true)
@@ -66,5 +70,4 @@ impl DbPool {
             DbPool::Postgres(_) => None,
         }
     }
-
 }

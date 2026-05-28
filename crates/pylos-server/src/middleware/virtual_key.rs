@@ -50,7 +50,8 @@ pub async fn virtual_key_middleware(
                                     "code": 401
                                 }
                             })),
-                        ).into_response();
+                        )
+                            .into_response();
                     }
                     Some(vk_cfg)
                 }
@@ -76,8 +77,11 @@ pub async fn virtual_key_middleware(
                     .map(|rl| rl.request_max_limit)
                     .unwrap_or(0);
 
-                let v_key = pylos_core::domain::virtual_key::VirtualKey::new(token.to_string(), &vk_cfg.name)
-                    .with_rpm(rate_limit);
+                let v_key = pylos_core::domain::virtual_key::VirtualKey::new(
+                    token.to_string(),
+                    &vk_cfg.name,
+                )
+                .with_rpm(rate_limit);
                 state.vk_registry.register(v_key).await;
                 vk_cfg.provider_configs.clone()
             } else {
@@ -86,11 +90,7 @@ pub async fn virtual_key_middleware(
                     .virtual_keys
                     .iter()
                     .find(|v| {
-                        v.value
-                            .as_ref()
-                            .and_then(|val| val.resolve())
-                            .as_deref()
-                            == Some(token)
+                        v.value.as_ref().and_then(|val| val.resolve()).as_deref() == Some(token)
                     })
                     .map(|v| v.provider_configs.clone())
                     .unwrap_or_default()

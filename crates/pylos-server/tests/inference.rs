@@ -146,7 +146,11 @@ async fn test_chat_completions_unary() {
     let budget_store = Arc::new(BudgetStore::in_memory().await.unwrap());
     let rate_limit_store = Arc::new(RateLimitStore::in_memory().await.unwrap());
 
-    let vk_store = Arc::new(pylos_application::VirtualKeyStore::in_memory().await.unwrap());
+    let vk_store = Arc::new(
+        pylos_application::VirtualKeyStore::in_memory()
+            .await
+            .unwrap(),
+    );
 
     let state = AppState {
         orchestrator,
@@ -210,7 +214,11 @@ async fn test_chat_completions_stream() {
     let budget_store = Arc::new(BudgetStore::in_memory().await.unwrap());
     let rate_limit_store = Arc::new(RateLimitStore::in_memory().await.unwrap());
 
-    let vk_store = Arc::new(pylos_application::VirtualKeyStore::in_memory().await.unwrap());
+    let vk_store = Arc::new(
+        pylos_application::VirtualKeyStore::in_memory()
+            .await
+            .unwrap(),
+    );
 
     let state = AppState {
         orchestrator,
@@ -282,7 +290,11 @@ async fn test_image_generations() {
     let budget_store = Arc::new(BudgetStore::in_memory().await.unwrap());
     let rate_limit_store = Arc::new(RateLimitStore::in_memory().await.unwrap());
 
-    let vk_store = Arc::new(pylos_application::VirtualKeyStore::in_memory().await.unwrap());
+    let vk_store = Arc::new(
+        pylos_application::VirtualKeyStore::in_memory()
+            .await
+            .unwrap(),
+    );
 
     let state = AppState {
         orchestrator,

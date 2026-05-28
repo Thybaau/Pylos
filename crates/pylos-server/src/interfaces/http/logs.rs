@@ -162,7 +162,10 @@ pub async fn get_filter_data(State(state): State<AppState>) -> impl IntoResponse
 
     if let Ok(db_vks) = state.vk_store.list_keys().await {
         for vk in db_vks {
-            if !virtual_keys.iter().any(|v| v.get("id").and_then(|i| i.as_str()) == Some(&vk.id)) {
+            if !virtual_keys
+                .iter()
+                .any(|v| v.get("id").and_then(|i| i.as_str()) == Some(&vk.id))
+            {
                 virtual_keys.push(json!({"id": vk.id, "name": vk.name}));
             }
         }

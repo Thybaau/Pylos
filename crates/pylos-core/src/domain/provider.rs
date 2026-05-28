@@ -79,7 +79,10 @@ impl ProviderKind {
         {
             return ProviderKind::Gemini;
         }
-        if model.starts_with("command") || model.starts_with("embed-") || model.starts_with("rerank-") {
+        if model.starts_with("command")
+            || model.starts_with("embed-")
+            || model.starts_with("rerank-")
+        {
             return ProviderKind::Cohere;
         }
         if model.starts_with("grok") {
@@ -88,7 +91,11 @@ impl ProviderKind {
         if model.starts_with("deepseek") {
             return ProviderKind::DeepSeek;
         }
-        if (model.starts_with("mistral") || model.starts_with("codestral") || model.starts_with("open-") || model.starts_with("pixtral")) && !model.contains(':')
+        if (model.starts_with("mistral")
+            || model.starts_with("codestral")
+            || model.starts_with("open-")
+            || model.starts_with("pixtral"))
+            && !model.contains(':')
         {
             return ProviderKind::Mistral;
         }
@@ -98,7 +105,10 @@ impl ProviderKind {
         if model.contains("sonar") || (model.starts_with("llama-") && !model.contains(":")) {
             return ProviderKind::Perplexity;
         }
-        if model.contains("firefunction") || model.contains("fireworks") || model.starts_with("accounts/fireworks/") {
+        if model.contains("firefunction")
+            || model.contains("fireworks")
+            || model.starts_with("accounts/fireworks/")
+        {
             return ProviderKind::Fireworks;
         }
         if (model.starts_with("llama") || model.starts_with("qwen")) && !model.contains('-') {
@@ -139,7 +149,9 @@ impl ProviderKind {
             }
             ProviderKind::Anthropic => model.contains("claude"),
             ProviderKind::Gemini => {
-                model.starts_with("gemini") || model.starts_with("google/") || model.contains("learnlm")
+                model.starts_with("gemini")
+                    || model.starts_with("google/")
+                    || model.contains("learnlm")
             }
             ProviderKind::Cohere => {
                 model.starts_with("command")

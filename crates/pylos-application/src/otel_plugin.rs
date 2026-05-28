@@ -208,7 +208,11 @@ fn operation_name(request: &PylosRequest) -> &'static str {
 fn guess_system(model: &str) -> &'static str {
     // Heuristique OTel gen_ai.system — différent de ProviderKind::guess_from_model
     // qui identifie le provider de déploiement, pas la famille du modèle.
-    if model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3") || model.starts_with("o4") {
+    if model.starts_with("gpt")
+        || model.starts_with("o1")
+        || model.starts_with("o3")
+        || model.starts_with("o4")
+    {
         "openai"
     } else if model.contains("claude") {
         "anthropic"

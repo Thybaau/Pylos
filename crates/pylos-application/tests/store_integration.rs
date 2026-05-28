@@ -2,15 +2,17 @@
 // Vérifie que tous les stores s'initialisent et interagissent correctement
 // avec le pool SQLite in-memory.
 
-use pylos_application::{
-    BudgetStore, ModelCatalog, RateLimitStore, VirtualKeyStore,
+use pylos_application::{BudgetStore, ModelCatalog, RateLimitStore, VirtualKeyStore};
+use pylos_core::domain::config::{
+    BudgetConfig, Duration, EnvVar, RateLimitConfig, VirtualKeyConfig, VkProviderConfig,
 };
-use pylos_core::domain::config::{BudgetConfig, Duration, EnvVar, RateLimitConfig, VirtualKeyConfig, VkProviderConfig};
 
 async fn setup_stores() -> (BudgetStore, RateLimitStore, VirtualKeyStore, ModelCatalog) {
     let budget = BudgetStore::in_memory().await.expect("budget store");
     let rl = RateLimitStore::in_memory().await.expect("rate limit store");
-    let vk = VirtualKeyStore::in_memory().await.expect("virtual key store");
+    let vk = VirtualKeyStore::in_memory()
+        .await
+        .expect("virtual key store");
     let catalog = ModelCatalog::in_memory().await.expect("model catalog");
     (budget, rl, vk, catalog)
 }
@@ -33,7 +35,10 @@ async fn test_all_stores_initialized() {
 
     // Model catalog
     let models = catalog.list_models(None, false).await;
-    assert!(!models.is_empty(), "Model catalog should have seeded models");
+    assert!(
+        !models.is_empty(),
+        "Model catalog should have seeded models"
+    );
 }
 
 #[tokio::test]
@@ -70,7 +75,8 @@ async fn test_cross_store_workflow() {
     vk.upsert_key(&vk_config).await.expect("upsert vk");
 
     // 3. Vérifier que la clé existe
-    let fetched = vk.get_key_by_value("sk-pylos-integration-test-123")
+    let fetched = vk
+        .get_key_by_value("sk-pylos-integration-test-123")
         .await
         .expect("get key by value");
     assert!(fetched.is_some(), "Key should exist");
@@ -88,7 +94,8 @@ async fn test_cross_store_workflow() {
         current_usage: 0.0,
         virtual_key_id: Some("vk-integration".into()),
     };
-    budget.upsert_budget("vk-integration", &budget_cfg)
+    budget
+        .upsert_budget("vk-integration", &budget_cfg)
         .await
         .expect("upsert budget");
 
@@ -106,9 +113,7 @@ async fn test_cross_store_workflow() {
     assert!(exceeded.is_err(), "Should exceed rate limit");
 
     // 8. Nettoyage
-    vk.delete_key("vk-integration")
-        .await
-        .expect("delete key");
+    vk.delete_key("vk-integration").await.expect("delete key");
     rl.delete_vk_entries("vk-integration").await;
     budget.delete_vk_entries("vk-integration").await;
 

@@ -142,9 +142,10 @@ impl AppState {
                     anyhow::anyhow!("Failed to open PostgreSQL rate limit store: {}", e)
                 })?);
 
-                let pg_vk = Arc::new(VirtualKeyStore::open_postgres(db_url).await.map_err(|e| {
-                    anyhow::anyhow!("Failed to open PostgreSQL virtual key store: {}", e)
-                })?);
+                let pg_vk =
+                    Arc::new(VirtualKeyStore::open_postgres(db_url).await.map_err(|e| {
+                        anyhow::anyhow!("Failed to open PostgreSQL virtual key store: {}", e)
+                    })?);
 
                 if let Err(e) = config_store.init_database(db_url).await {
                     tracing::warn!(error = %e, "Failed to initialize PostgreSQL config store");

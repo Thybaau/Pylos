@@ -215,7 +215,10 @@ impl ConfigStore {
                 }
 
                 let runtime = build_runtime_providers(&new_config);
-                info!(providers_changed = providers_reloaded.len(), "Config reloaded from database");
+                info!(
+                    providers_changed = providers_reloaded.len(),
+                    "Config reloaded from database"
+                );
 
                 state.config = new_config;
                 state.config_hash = new_hash;
@@ -300,14 +303,18 @@ impl ConfigStore {
                 .max_connections(2)
                 .connect(db_url)
                 .await
-                .map_err(|e| PylosError::Internal(format!("Failed to connect config Postgres: {}", e)))?;
+                .map_err(|e| {
+                    PylosError::Internal(format!("Failed to connect config Postgres: {}", e))
+                })?;
             Pool::Postgres(p)
         } else {
             let p = SqlitePoolOptions::new()
                 .max_connections(2)
                 .connect(db_url)
                 .await
-                .map_err(|e| PylosError::Internal(format!("Failed to connect config SQLite: {}", e)))?;
+                .map_err(|e| {
+                    PylosError::Internal(format!("Failed to connect config SQLite: {}", e))
+                })?;
             Pool::Sqlite(p)
         };
 

@@ -59,7 +59,9 @@ impl VirtualKeyStore {
                 let rows = sqlx::query("SELECT * FROM virtual_keys ORDER BY id")
                     .fetch_all(pool)
                     .await
-                    .map_err(|e| PylosError::Internal(format!("Failed to list virtual keys: {}", e)))?;
+                    .map_err(|e| {
+                        PylosError::Internal(format!("Failed to list virtual keys: {}", e))
+                    })?;
 
                 Ok(rows.iter().map(row_to_vk_config_sqlite).collect())
             }
@@ -67,30 +69,40 @@ impl VirtualKeyStore {
                 let rows = sqlx::query::<sqlx::Postgres>("SELECT * FROM virtual_keys ORDER BY id")
                     .fetch_all(pool)
                     .await
-                    .map_err(|e| PylosError::Internal(format!("Failed to list virtual keys: {}", e)))?;
+                    .map_err(|e| {
+                        PylosError::Internal(format!("Failed to list virtual keys: {}", e))
+                    })?;
 
                 Ok(rows.iter().map(row_to_vk_config_pg).collect())
             }
         }
     }
 
-    pub async fn get_key_by_value(&self, value: &str) -> Result<Option<VirtualKeyConfig>, PylosError> {
+    pub async fn get_key_by_value(
+        &self,
+        value: &str,
+    ) -> Result<Option<VirtualKeyConfig>, PylosError> {
         match &self.pool {
             DbPool::Sqlite(pool) => {
                 let row = sqlx::query("SELECT * FROM virtual_keys WHERE value = $1")
                     .bind(value)
                     .fetch_optional(pool)
                     .await
-                    .map_err(|e| PylosError::Internal(format!("Failed to get virtual key: {}", e)))?;
+                    .map_err(|e| {
+                        PylosError::Internal(format!("Failed to get virtual key: {}", e))
+                    })?;
 
                 Ok(row.as_ref().map(row_to_vk_config_sqlite))
             }
             DbPool::Postgres(pool) => {
-                let row = sqlx::query::<sqlx::Postgres>("SELECT * FROM virtual_keys WHERE value = $1")
-                    .bind(value)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(|e| PylosError::Internal(format!("Failed to get virtual key: {}", e)))?;
+                let row =
+                    sqlx::query::<sqlx::Postgres>("SELECT * FROM virtual_keys WHERE value = $1")
+                        .bind(value)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(|e| {
+                            PylosError::Internal(format!("Failed to get virtual key: {}", e))
+                        })?;
 
                 Ok(row.as_ref().map(row_to_vk_config_pg))
             }
@@ -104,7 +116,9 @@ impl VirtualKeyStore {
                     .bind(id)
                     .fetch_optional(pool)
                     .await
-                    .map_err(|e| PylosError::Internal(format!("Failed to get virtual key: {}", e)))?;
+                    .map_err(|e| {
+                        PylosError::Internal(format!("Failed to get virtual key: {}", e))
+                    })?;
 
                 Ok(row.as_ref().map(row_to_vk_config_sqlite))
             }
@@ -113,7 +127,9 @@ impl VirtualKeyStore {
                     .bind(id)
                     .fetch_optional(pool)
                     .await
-                    .map_err(|e| PylosError::Internal(format!("Failed to get virtual key: {}", e)))?;
+                    .map_err(|e| {
+                        PylosError::Internal(format!("Failed to get virtual key: {}", e))
+                    })?;
 
                 Ok(row.as_ref().map(row_to_vk_config_pg))
             }
@@ -121,14 +137,13 @@ impl VirtualKeyStore {
     }
 
     pub async fn upsert_key(&self, vk: &VirtualKeyConfig) -> Result<(), PylosError> {
-        let key_value = vk
-            .value
-            .as_ref()
-            .and_then(|v| v.resolve())
-            .ok_or_else(|| PylosError::InvalidRequest("Virtual key must have a value".into()))?;
+        let key_value =
+            vk.value.as_ref().and_then(|v| v.resolve()).ok_or_else(|| {
+                PylosError::InvalidRequest("Virtual key must have a value".into())
+            })?;
 
-        let provider_configs_json = serde_json::to_string(&vk.provider_configs)
-            .unwrap_or_else(|_| "[]".to_string());
+        let provider_configs_json =
+            serde_json::to_string(&vk.provider_configs).unwrap_or_else(|_| "[]".to_string());
 
         match &self.pool {
             DbPool::Sqlite(pool) => {
@@ -155,11 +170,14 @@ impl VirtualKeyStore {
                 .bind(&provider_configs_json)
                 .execute(pool)
                 .await
-                .map_err(|e| PylosError::Internal(format!("Failed to upsert virtual key: {}", e)))?;
+                .map_err(|e| {
+                    PylosError::Internal(format!("Failed to upsert virtual key: {}", e))
+                })?;
             }
             DbPool::Postgres(pool) => {
-                let provider_configs_val: serde_json::Value = serde_json::from_str(&provider_configs_json)
-                    .unwrap_or(serde_json::Value::Array(vec![]));
+                let provider_configs_val: serde_json::Value =
+                    serde_json::from_str(&provider_configs_json)
+                        .unwrap_or(serde_json::Value::Array(vec![]));
 
                 sqlx::query::<sqlx::Postgres>(
                     r#"
@@ -184,7 +202,9 @@ impl VirtualKeyStore {
                 .bind(&provider_configs_val)
                 .execute(pool)
                 .await
-                .map_err(|e| PylosError::Internal(format!("Failed to upsert virtual key: {}", e)))?;
+                .map_err(|e| {
+                    PylosError::Internal(format!("Failed to upsert virtual key: {}", e))
+                })?;
             }
         }
 
@@ -193,20 +213,20 @@ impl VirtualKeyStore {
 
     pub async fn delete_key(&self, id: &str) -> Result<bool, PylosError> {
         let rows_affected = match &self.pool {
-            DbPool::Sqlite(pool) => {
-                sqlx::query("DELETE FROM virtual_keys WHERE id = $1")
-                    .bind(id)
-                    .execute(pool)
-                    .await
-                    .map_err(|e| PylosError::Internal(format!("Failed to delete virtual key: {}", e)))?
-                    .rows_affected()
-            }
+            DbPool::Sqlite(pool) => sqlx::query("DELETE FROM virtual_keys WHERE id = $1")
+                .bind(id)
+                .execute(pool)
+                .await
+                .map_err(|e| PylosError::Internal(format!("Failed to delete virtual key: {}", e)))?
+                .rows_affected(),
             DbPool::Postgres(pool) => {
                 sqlx::query::<sqlx::Postgres>("DELETE FROM virtual_keys WHERE id = $1")
                     .bind(id)
                     .execute(pool)
                     .await
-                    .map_err(|e| PylosError::Internal(format!("Failed to delete virtual key: {}", e)))?
+                    .map_err(|e| {
+                        PylosError::Internal(format!("Failed to delete virtual key: {}", e))
+                    })?
                     .rows_affected()
             }
         };
@@ -217,7 +237,8 @@ impl VirtualKeyStore {
 
 fn row_to_vk_config_sqlite(row: &sqlx::sqlite::SqliteRow) -> VirtualKeyConfig {
     let raw_prov_configs: String = row.try_get("provider_configs").unwrap_or_default();
-    let provider_configs: Vec<VkProviderConfig> = serde_json::from_str(&raw_prov_configs).unwrap_or_default();
+    let provider_configs: Vec<VkProviderConfig> =
+        serde_json::from_str(&raw_prov_configs).unwrap_or_default();
     let value_str: String = row.try_get("value").unwrap_or_default();
 
     VirtualKeyConfig {
@@ -232,8 +253,11 @@ fn row_to_vk_config_sqlite(row: &sqlx::sqlite::SqliteRow) -> VirtualKeyConfig {
 }
 
 fn row_to_vk_config_pg(row: &sqlx::postgres::PgRow) -> VirtualKeyConfig {
-    let prov_configs_val: serde_json::Value = row.try_get("provider_configs").unwrap_or(serde_json::Value::Array(vec![]));
-    let provider_configs: Vec<VkProviderConfig> = serde_json::from_value(prov_configs_val).unwrap_or_default();
+    let prov_configs_val: serde_json::Value = row
+        .try_get("provider_configs")
+        .unwrap_or(serde_json::Value::Array(vec![]));
+    let provider_configs: Vec<VkProviderConfig> =
+        serde_json::from_value(prov_configs_val).unwrap_or_default();
     let value_str: String = row.try_get("value").unwrap_or_default();
 
     VirtualKeyConfig {

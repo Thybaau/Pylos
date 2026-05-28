@@ -10,8 +10,12 @@ async fn main() -> anyhow::Result<()> {
     let env_filter = tracing_subscriber::EnvFilter::new(
         std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
     );
-    
-    if std::env::var("LOG_FORMAT").map(|s| s.to_lowercase()).unwrap_or_default() == "json" {
+
+    if std::env::var("LOG_FORMAT")
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default()
+        == "json"
+    {
         tracing_subscriber::registry()
             .with(env_filter)
             .with(tracing_subscriber::fmt::layer().json())
