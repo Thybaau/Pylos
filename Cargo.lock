@@ -2541,6 +2541,7 @@ dependencies = [
  "opentelemetry_sdk",
  "pylos-core",
  "pylos-infrastructure",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",

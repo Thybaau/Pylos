@@ -240,6 +240,29 @@ impl AppState {
         // ── Plugins ────────────────────────────────────────────────────────
         let mut plugins: Vec<Arc<dyn LlmPlugin>> = Vec::new();
 
+        // Rag plugin
+        let qdrant_url = std::env::var("QDRANT_URL")
+            .unwrap_or_else(|_| "http://qdrant.qdrant.svc.cluster.local:6333".to_string());
+        let collection_name =
+            std::env::var("QDRANT_COLLECTION").unwrap_or_else(|_| "emails".to_string());
+        let pylos_base_url =
+            std::env::var("PYLOS_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
+        let pylos_api_key = std::env::var("PYLOS_API_KEY").ok();
+        let embedding_model = std::env::var("PYLOS_EMBEDDING_MODEL")
+            .unwrap_or_else(|_| "nomic-embed-text-v2-moe-GGUF".to_string());
+        let pylos_model =
+            std::env::var("PYLOS_MODEL").unwrap_or_else(|_| "deepseek-coder-v2:16b".to_string());
+
+        plugins.push(Arc::new(pylos_application::RagPlugin::new(
+            qdrant_url,
+            collection_name,
+            pylos_base_url,
+            pylos_api_key,
+            embedding_model,
+            pylos_model,
+        )));
+        tracing::info!("RagPlugin registered");
+
         // Budget plugin
         if !cfg.governance.budgets.is_empty() {
             plugins.push(Arc::new(BudgetPlugin::new(Arc::clone(&budget_store))));
