@@ -29,22 +29,27 @@ pub(crate) enum OpenAIEmbeddingInput {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct OpenAIEmbeddingResponse {
+    #[serde(default)]
     pub object: String,
     pub data: Vec<OpenAIEmbeddingData>,
     pub model: String,
+    #[serde(default)]
     pub usage: OpenAIEmbeddingUsage,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct OpenAIEmbeddingData {
     pub index: usize,
+    #[serde(default)]
     pub object: String,
     pub embedding: Vec<f32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub(crate) struct OpenAIEmbeddingUsage {
+    #[serde(default)]
     pub prompt_tokens: i32,
+    #[serde(default)]
     pub total_tokens: i32,
 }
 
