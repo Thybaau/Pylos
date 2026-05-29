@@ -364,7 +364,10 @@ impl ConfigStore {
                 // Merge missing providers
                 for (name, provider) in &state.config.providers {
                     if !new_cfg.providers.contains_key(name) {
-                        info!("Merging provider {} from file config into database config", name);
+                        info!(
+                            "Merging provider {} from file config into database config",
+                            name
+                        );
                         new_cfg.providers.insert(name.clone(), provider.clone());
                         merged = true;
                     }
@@ -372,8 +375,16 @@ impl ConfigStore {
 
                 // Merge missing virtual keys
                 for vk in &state.config.governance.virtual_keys {
-                    if !new_cfg.governance.virtual_keys.iter().any(|v| v.id == vk.id) {
-                        info!("Merging virtual key {} from file config into database config", vk.id);
+                    if !new_cfg
+                        .governance
+                        .virtual_keys
+                        .iter()
+                        .any(|v| v.id == vk.id)
+                    {
+                        info!(
+                            "Merging virtual key {} from file config into database config",
+                            vk.id
+                        );
                         new_cfg.governance.virtual_keys.push(vk.clone());
                         merged = true;
                     }
@@ -390,7 +401,8 @@ impl ConfigStore {
                                 .await;
                         }
                         Pool::Postgres(p) => {
-                            let val: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+                            let val: serde_json::Value =
+                                serde_json::from_str(&json).unwrap_or_default();
                             let _ = sqlx::query("INSERT INTO gateway_config (id, config) VALUES ('pylos', $1) ON CONFLICT(id) DO UPDATE SET config = excluded.config")
                                 .bind(&val)
                                 .execute(p)
