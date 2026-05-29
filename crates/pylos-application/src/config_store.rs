@@ -357,8 +357,48 @@ impl ConfigStore {
         state.db_pool = Some(pool.clone());
 
         if let Some(cfg_str) = db_config {
-            if let Ok(new_cfg) = serde_json::from_str::<PylosConfig>(&cfg_str) {
-                info!("Loaded configuration from database");
+            if let Ok(mut new_cfg) = serde_json::from_str::<PylosConfig>(&cfg_str) {
+                info!("Loaded configuration from database; merging missing items from file config");
+                let mut merged = false;
+
+                // Merge missing providers
+                for (name, provider) in &state.config.providers {
+                    if !new_cfg.providers.contains_key(name) {
+                        info!("Merging provider {} from file config into database config", name);
+                        new_cfg.providers.insert(name.clone(), provider.clone());
+                        merged = true;
+                    }
+                }
+
+                // Merge missing virtual keys
+                for vk in &state.config.governance.virtual_keys {
+                    if !new_cfg.governance.virtual_keys.iter().any(|v| v.id == vk.id) {
+                        info!("Merging virtual key {} from file config into database config", vk.id);
+                        new_cfg.governance.virtual_keys.push(vk.clone());
+                        merged = true;
+                    }
+                }
+
+                // If merged, we write it back to the database so that it's persisted there
+                if merged {
+                    let json = serde_json::to_string(&new_cfg).unwrap_or_default();
+                    match &pool {
+                        Pool::Sqlite(p) => {
+                            let _ = sqlx::query("INSERT INTO gateway_config (id, config) VALUES ('pylos', $1) ON CONFLICT(id) DO UPDATE SET config = excluded.config")
+                                .bind(&json)
+                                .execute(p)
+                                .await;
+                        }
+                        Pool::Postgres(p) => {
+                            let val: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+                            let _ = sqlx::query("INSERT INTO gateway_config (id, config) VALUES ('pylos', $1) ON CONFLICT(id) DO UPDATE SET config = excluded.config")
+                                .bind(&val)
+                                .execute(p)
+                                .await;
+                        }
+                    }
+                }
+
                 state.config = new_cfg;
                 state.config_hash = hash_config(&state.config);
                 state.provider_hashes.clear();
