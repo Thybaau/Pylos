@@ -848,6 +848,18 @@ fn builtin_models() -> Vec<ModelInfo> {
             true,
             false,
         ),
+        m(
+            "graphon-rag",
+            "graphon-rag",
+            "Graphon RAG",
+            8192,
+            2048,
+            0.0,
+            0.0,
+            false,
+            false,
+            false,
+        ),
     ]
 }
 
