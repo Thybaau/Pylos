@@ -11,6 +11,7 @@ use tracing::error;
 
 use pylos_application::log_store::{build_log_entry, LogStatus};
 use pylos_core::domain::embedding::EmbeddingRequest;
+use pylos_core::domain::request::RequestContext;
 use pylos_core::error::PylosError;
 
 use crate::middleware::virtual_key::VirtualKeyInfo;
@@ -28,9 +29,15 @@ pub async fn create_embeddings(
 ) -> impl IntoResponse {
     let model = payload.model.clone();
     let start = Instant::now();
+
+    let mut ctx = RequestContext::default();
+    if let Some(vk) = &vk_info {
+        ctx.virtual_key = Some(vk.name.clone());
+        ctx.provider_configs = vk.provider_configs.clone();
+    }
     let vk_name = vk_info.map(|v| v.name);
 
-    match state.orchestrator.embed(payload).await {
+    match state.orchestrator.embed(payload, ctx).await {
         Ok(resp) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
             let provider = guess_provider(&model);

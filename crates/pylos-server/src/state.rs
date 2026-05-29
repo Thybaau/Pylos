@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use pylos_application::{
-    BudgetPlugin, BudgetStore, ConfigStore, InferenceOrchestrator, LogStore, ModelCatalog,
-    OtelConfig, PgLogStore, RateLimitPlugin, RateLimitStore, VirtualKeyStore,
+    BudgetPlugin, BudgetStore, ConfigStore, GuardrailsPlugin, InferenceOrchestrator, LogStore,
+    ModelCatalog, OtelConfig, PgLogStore, RateLimitPlugin, RateLimitStore, SemanticCachePlugin,
+    StructuredOutputPlugin, VirtualKeyStore,
 };
 use pylos_core::domain::traits::LlmPlugin;
 
@@ -79,8 +80,11 @@ pub struct AppState {
     pub budget_store: Arc<BudgetStore>,
     pub rate_limit_store: Arc<RateLimitStore>,
     pub vk_store: Arc<VirtualKeyStore>,
-    /// Clé admin optionnelle — lue depuis PYLOS_ADMIN_KEY au démarrage
     pub admin_key: Option<String>,
+    pub inference_semaphore: Arc<tokio::sync::Semaphore>,
+    pub max_concurrency: usize,
+    pub max_queue_size: usize,
+    pub queue_timeout_ms: u64,
 }
 
 impl AppState {
@@ -240,6 +244,9 @@ impl AppState {
         // ── Plugins ────────────────────────────────────────────────────────
         let mut plugins: Vec<Arc<dyn LlmPlugin>> = Vec::new();
 
+        // Structured output verification plugin (unconditional)
+        plugins.push(Arc::new(StructuredOutputPlugin::new()));
+
         // Rag plugin
         let qdrant_url = std::env::var("QDRANT_URL")
             .unwrap_or_else(|_| "http://qdrant.qdrant.svc.cluster.local:6333".to_string());
@@ -295,6 +302,69 @@ impl AppState {
                     let otel_cfg = OtelConfig::from_plugin_config(&plugin_cfg.config);
                     plugins.push(Arc::new(otel_cfg.build_plugin()));
                     tracing::info!(name = "otel", "Plugin registered");
+                }
+                "semantic_cache" => {
+                    let qdrant_url = std::env::var("QDRANT_URL").unwrap_or_else(|_| {
+                        "http://qdrant.qdrant.svc.cluster.local:6333".to_string()
+                    });
+                    let collection_name = plugin_cfg
+                        .config
+                        .get("collection_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("pylos-cache")
+                        .to_string();
+                    let pylos_base_url = std::env::var("PYLOS_BASE_URL")
+                        .unwrap_or_else(|_| "http://localhost:3000".to_string());
+                    let pylos_api_key = std::env::var("PYLOS_API_KEY").ok();
+                    let embedding_model = plugin_cfg
+                        .config
+                        .get("embedding_model")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("nomic-embed-text-v2-moe-GGUF")
+                        .to_string();
+                    let similarity_threshold = plugin_cfg
+                        .config
+                        .get("similarity_threshold")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.9);
+                    let ttl_secs = plugin_cfg
+                        .config
+                        .get("ttl_secs")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(86400);
+
+                    let plugin = SemanticCachePlugin::new(
+                        qdrant_url,
+                        collection_name,
+                        pylos_base_url,
+                        pylos_api_key,
+                        embedding_model,
+                        similarity_threshold,
+                        ttl_secs,
+                    );
+                    plugins.push(Arc::new(plugin));
+                    tracing::info!(name = "semantic_cache", "Semantic Cache plugin enabled");
+                }
+                "guardrails" => {
+                    let mask_pii = plugin_cfg
+                        .config
+                        .get("mask_pii")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    let blocked_keywords = plugin_cfg
+                        .config
+                        .get("blocked_keywords")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|val| val.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    let plugin = GuardrailsPlugin::new(mask_pii, blocked_keywords);
+                    plugins.push(Arc::new(plugin));
+                    tracing::info!(name = "guardrails", "Guardrails plugin enabled");
                 }
                 name => {
                     tracing::debug!(name = %name, "Unknown plugin, skipping");
@@ -356,6 +426,11 @@ impl AppState {
             }
         }
 
+        let max_concurrency = cfg.server.queuing.max_concurrency;
+        let max_queue_size = cfg.server.queuing.max_queue_size;
+        let queue_timeout_ms = cfg.server.queuing.queue_timeout_ms;
+        let inference_semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrency));
+
         Ok(Self {
             orchestrator,
             config_store,
@@ -367,6 +442,10 @@ impl AppState {
             rate_limit_store,
             vk_store,
             admin_key: std::env::var("PYLOS_ADMIN_KEY").ok(),
+            inference_semaphore,
+            max_concurrency,
+            max_queue_size,
+            queue_timeout_ms,
         })
     }
 }

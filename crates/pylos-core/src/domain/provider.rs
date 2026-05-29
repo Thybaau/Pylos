@@ -304,6 +304,7 @@ pub struct ProviderConfig {
     pub bedrock: Option<crate::domain::config::BedrockKeyConfig>,
     /// Configuration Azure OpenAI spécifique
     pub azure: Option<AzureConfig>,
+    pub allowed_models: Vec<String>,
 }
 
 impl ProviderConfig {
@@ -318,6 +319,7 @@ impl ProviderConfig {
             retry_backoff_max_ms: 5_000,
             bedrock: None,
             azure: None,
+            allowed_models: Vec::new(),
         }
     }
 }

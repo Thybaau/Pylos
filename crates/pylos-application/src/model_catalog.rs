@@ -860,6 +860,18 @@ fn builtin_models() -> Vec<ModelInfo> {
             false,
             false,
         ),
+        m(
+            "mnemosyne",
+            "mnemosyne-search",
+            "Mnemosyne Search Engine",
+            8192,
+            2048,
+            0.0,
+            0.0,
+            false,
+            false,
+            false,
+        ),
     ]
 }
 

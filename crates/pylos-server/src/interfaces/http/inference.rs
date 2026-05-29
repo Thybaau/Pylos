@@ -42,6 +42,7 @@ pub async fn chat_completions(
     let mut ctx = RequestContext::default();
     if let Some(vk) = &vk_info {
         ctx.virtual_key = Some(vk.name.clone());
+        ctx.provider_configs = vk.provider_configs.clone();
     }
 
     if is_stream {
@@ -129,12 +130,16 @@ struct StreamAccumulator {
     output_parts: Vec<String>,
     finish_reason: Option<String>,
     completion_tokens: usize,
+    first_token_time: Option<Instant>,
 }
 
 impl StreamAccumulator {
     fn collect(&mut self, chunk: &StreamChunk) {
         for choice in &chunk.choices {
             if let Some(content) = &choice.delta.content {
+                if self.first_token_time.is_none() {
+                    self.first_token_time = Some(Instant::now());
+                }
                 // ~4 chars ≈ 1 token (approximation standard tiktoken)
                 self.completion_tokens += (content.len() / 4).max(1);
                 self.output_parts.push(content.clone());
@@ -206,8 +211,9 @@ async fn stream_response(
             let acc_log = Arc::clone(&accumulator);
             tokio::spawn(async move {
                 if log_rx.recv().await.is_some() {
-                    let latency = start.elapsed().as_secs_f64() * 1000.0;
-                    let (completion_tokens, output_preview, finish) = {
+                    let elapsed_total = start.elapsed().as_secs_f64();
+                    let latency = elapsed_total * 1000.0;
+                    let (completion_tokens, output_preview, finish, first_token_time) = {
                         let acc = acc_log.lock().expect("accumulator lock");
                         let tokens = acc.completion_tokens as i32;
                         let preview = if acc.output_parts.is_empty() {
@@ -216,8 +222,28 @@ async fn stream_response(
                             Some(acc.output_parts.join(""))
                         };
                         let finish = acc.finish_reason.clone().or_else(|| Some("stop".into()));
-                        (tokens, preview, finish)
+                        (tokens, preview, finish, acc.first_token_time)
                     };
+
+                    // Enregistrer le TTFT si disponible
+                    if let Some(ft_time) = first_token_time {
+                        let ttft = ft_time.duration_since(start).as_secs_f64();
+                        state_for_log
+                            .metrics
+                            .inference_ttft_seconds
+                            .with_label_values(&[&provider, &model_clone])
+                            .observe(ttft);
+                    }
+
+                    // Enregistrer le TPS si disponible
+                    if completion_tokens > 0 && elapsed_total > 0.0 {
+                        let tps = completion_tokens as f64 / elapsed_total;
+                        state_for_log
+                            .metrics
+                            .inference_tps
+                            .with_label_values(&[&provider, &model_clone])
+                            .observe(tps);
+                    }
 
                     let pseudo_usage = pylos_core::domain::openai::Usage {
                         prompt_tokens: 0,

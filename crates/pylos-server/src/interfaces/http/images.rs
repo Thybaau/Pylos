@@ -35,6 +35,7 @@ pub async fn generate_image(
     let mut request_ctx = RequestContext::default();
     if let Some(vk) = &vk_info {
         request_ctx.virtual_key = Some(vk.name.clone());
+        request_ctx.provider_configs = vk.provider_configs.clone();
     }
 
     match state.orchestrator.complete(request, request_ctx).await {

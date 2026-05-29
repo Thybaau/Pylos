@@ -1,5 +1,6 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -16,6 +17,15 @@ use pylos_core::error::PylosError;
 
 type ProviderList = Vec<(Arc<dyn Provider>, ProviderConfig)>;
 
+const MAX_CONSECUTIVE_FAILURES: u32 = 5;
+const COOLDOWN_SECS: u64 = 30;
+
+#[derive(Debug, Clone, Default)]
+struct CircuitBreakerState {
+    consecutive_failures: u32,
+    last_failure: Option<Instant>,
+}
+
 /// Orchestre une requête sur un ou plusieurs providers avec retry et fallback
 /// Équivalent de core/inference.go (bifrost) — SendRequest / inferenceLoopHelper
 pub struct InferenceOrchestrator {
@@ -23,6 +33,7 @@ pub struct InferenceOrchestrator {
     /// Identique au mécanisme atomic.Pointer de bifrost pour les plugins
     providers: Arc<RwLock<ProviderList>>,
     plugins: Vec<Arc<dyn LlmPlugin>>,
+    circuit_breakers: Arc<Mutex<HashMap<String, CircuitBreakerState>>>,
 }
 
 impl InferenceOrchestrator {
@@ -30,6 +41,7 @@ impl InferenceOrchestrator {
         Self {
             providers: Arc::new(RwLock::new(providers)),
             plugins,
+            circuit_breakers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -40,24 +52,171 @@ impl InferenceOrchestrator {
         info!("Inference providers updated (hot-reload)");
     }
 
+    fn is_circuit_breaker_open(&self, name: &str) -> bool {
+        let breakers = self.circuit_breakers.lock().unwrap();
+        if let Some(state) = breakers.get(name) {
+            if state.consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                if let Some(last_failure) = state.last_failure {
+                    if last_failure.elapsed().as_secs() < COOLDOWN_SECS {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn record_success(&self, name: &str) {
+        let mut breakers = self.circuit_breakers.lock().unwrap();
+        if let Some(state) = breakers.get_mut(name) {
+            state.consecutive_failures = 0;
+            state.last_failure = None;
+        }
+    }
+
+    fn record_failure(&self, name: &str) {
+        let mut breakers = self.circuit_breakers.lock().unwrap();
+        let state = breakers.entry(name.to_string()).or_default();
+        state.consecutive_failures += 1;
+        state.last_failure = Some(Instant::now());
+    }
+
+    fn select_and_order_providers(
+        &self,
+        providers: &ProviderList,
+        model: &str,
+        ctx: &RequestContext,
+    ) -> Vec<(Arc<dyn Provider>, ProviderConfig)> {
+        // 1. Filter providers based on allowed providers in virtual key context
+        let allowed_providers: Vec<&(Arc<dyn Provider>, ProviderConfig)> =
+            if ctx.virtual_key.is_some() {
+                providers
+                    .iter()
+                    .filter(|(provider, _config)| {
+                        ctx.provider_configs.iter().any(|allowed| {
+                            let provider_matches =
+                                allowed.provider == "*" || allowed.provider == provider.name();
+                            let model_matches =
+                                allowed.allowed_models.iter().any(|allowed_model| {
+                                    allowed_model == "*" || allowed_model == model
+                                });
+                            provider_matches && model_matches
+                        })
+                    })
+                    .collect()
+            } else {
+                providers.iter().collect()
+            };
+
+        // 2. Separate into supporting and non-supporting providers
+        let mut supporting = Vec::new();
+        let mut non_supporting = Vec::new();
+
+        for &(provider, config) in &allowed_providers {
+            let is_open = self.is_circuit_breaker_open(provider.name());
+
+            let weight = if ctx.virtual_key.is_some() {
+                ctx.provider_configs
+                    .iter()
+                    .find(|allowed| allowed.provider == "*" || allowed.provider == provider.name())
+                    .map(|allowed| allowed.weight)
+                    .unwrap_or(1.0)
+            } else {
+                1.0
+            };
+
+            let supports = model_supported_by(config, model);
+            if supports {
+                supporting.push((provider.clone(), config.clone(), weight, is_open));
+            } else {
+                non_supporting.push((provider.clone(), config.clone(), weight, is_open));
+            }
+        }
+
+        // 3. Weighted shuffle (A-Res algorithm) for supporting providers
+        let (mut active_supporting, mut broken_supporting): (Vec<_>, Vec<_>) = supporting
+            .into_iter()
+            .partition(|(_, _, _, is_open)| !*is_open);
+
+        active_supporting.sort_by(|a, b| {
+            let weight_a = a.2.max(0.0001);
+            let weight_b = b.2.max(0.0001);
+            let score_a = fastrand::f64().powf(1.0 / weight_a);
+            let score_b = fastrand::f64().powf(1.0 / weight_b);
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        broken_supporting.sort_by(|a, b| {
+            let weight_a = a.2.max(0.0001);
+            let weight_b = b.2.max(0.0001);
+            let score_a = fastrand::f64().powf(1.0 / weight_a);
+            let score_b = fastrand::f64().powf(1.0 / weight_b);
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // 4. Do the same for non-supporting
+        let (mut active_non_supporting, mut broken_non_supporting): (Vec<_>, Vec<_>) =
+            non_supporting
+                .into_iter()
+                .partition(|(_, _, _, is_open)| !*is_open);
+
+        active_non_supporting.sort_by(|a, b| {
+            let weight_a = a.2.max(0.0001);
+            let weight_b = b.2.max(0.0001);
+            let score_a = fastrand::f64().powf(1.0 / weight_a);
+            let score_b = fastrand::f64().powf(1.0 / weight_b);
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        broken_non_supporting.sort_by(|a, b| {
+            let weight_a = a.2.max(0.0001);
+            let weight_b = b.2.max(0.0001);
+            let score_a = fastrand::f64().powf(1.0 / weight_a);
+            let score_b = fastrand::f64().powf(1.0 / weight_b);
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut ordered = Vec::new();
+        for (prov, cfg, _, _) in active_supporting {
+            ordered.push((prov, cfg));
+        }
+        for (prov, cfg, _, _) in broken_supporting {
+            ordered.push((prov, cfg));
+        }
+        for (prov, cfg, _, _) in active_non_supporting {
+            ordered.push((prov, cfg));
+        }
+        for (prov, cfg, _, _) in broken_non_supporting {
+            ordered.push((prov, cfg));
+        }
+
+        ordered
+    }
+
     /// Calcule des embeddings avec fallback entre providers
-    pub async fn embed(&self, request: EmbeddingRequest) -> Result<EmbeddingResponse, PylosError> {
+    pub async fn embed(
+        &self,
+        request: EmbeddingRequest,
+        ctx: RequestContext,
+    ) -> Result<EmbeddingResponse, PylosError> {
         let providers = self.providers.read().await;
         let mut last_error: Option<PylosError> = None;
 
         let model = request.model.clone();
-        let mut ordered: Vec<_> = providers.iter().collect();
-        ordered.sort_by_key(|(_provider, config)| {
-            if model_supported_by(config, &model) {
-                0u8
-            } else {
-                1u8
-            }
-        });
+        let ordered = self.select_and_order_providers(&providers, &model, &ctx);
 
         for (provider, config) in ordered {
-            match provider.embed(&request, config).await {
+            match provider.embed(&request, &config).await {
                 Ok(resp) => {
+                    self.record_success(provider.name());
                     info!(provider = provider.name(), model = %model, "Embedding successful");
                     return Ok(resp);
                 }
@@ -69,6 +228,7 @@ impl InferenceOrchestrator {
                     continue;
                 }
                 Err(e) => {
+                    self.record_failure(provider.name());
                     warn!(provider = provider.name(), error = %e, "Embedding failed, trying fallback");
                     last_error = Some(e);
                 }
@@ -140,17 +300,8 @@ impl InferenceOrchestrator {
         let providers = self.providers.read().await;
         let mut last_error: Option<PylosError> = None;
 
-        // Tri des providers : ceux qui supportent explicitement le modèle demandé passent en premier
         let model = request.model().to_string();
-        let mut ordered: Vec<_> = providers.iter().collect();
-        ordered.sort_by_key(|(_provider, config)| {
-            let supports = model_supported_by(config, &model);
-            if supports {
-                0u8
-            } else {
-                1u8
-            }
-        });
+        let ordered = self.select_and_order_providers(&providers, &model, &ctx);
 
         for (provider, config) in ordered {
             if ctx.tried_providers.contains(&provider.name().to_string()) {
@@ -169,10 +320,11 @@ impl InferenceOrchestrator {
             ctx.tried_providers.push(provider.name().to_string());
 
             match self
-                .try_complete_with_retry(provider.as_ref(), config, &request)
+                .try_complete_with_retry(provider.as_ref(), &config, &request)
                 .await
             {
                 Ok(mut response) => {
+                    self.record_success(provider.name());
                     // Post-hooks (ordre inverse — LIFO)
                     for plugin in self.plugins.iter().rev() {
                         if let Err(e) = plugin.post_hook(&request, &mut response, &mut ctx).await {
@@ -216,6 +368,7 @@ impl InferenceOrchestrator {
                     return Ok(response);
                 }
                 Err(e) => {
+                    self.record_failure(provider.name());
                     warn!(
                         provider = provider.name(),
                         error = %e,
@@ -271,14 +424,7 @@ impl InferenceOrchestrator {
         let mut last_error: Option<PylosError> = None;
 
         let stream_model = request.model().to_string();
-        let mut ordered_stream: Vec<_> = providers.iter().collect();
-        ordered_stream.sort_by_key(|(_, config)| {
-            if model_supported_by(config, &stream_model) {
-                0u8
-            } else {
-                1u8
-            }
-        });
+        let ordered_stream = self.select_and_order_providers(&providers, &stream_model, &ctx);
 
         for (provider, config) in ordered_stream {
             if ctx.tried_providers.contains(&provider.name().to_string()) {
@@ -286,8 +432,9 @@ impl InferenceOrchestrator {
             }
             ctx.tried_providers.push(provider.name().to_string());
 
-            match provider.stream(&request, config).await {
+            match provider.stream(&request, &config).await {
                 Ok(stream) => {
+                    self.record_success(provider.name());
                     info!(
                         provider = provider.name(),
                         model = request.model(),
@@ -296,6 +443,7 @@ impl InferenceOrchestrator {
                     return Ok(stream);
                 }
                 Err(e) => {
+                    self.record_failure(provider.name());
                     warn!(provider = provider.name(), error = %e, "Provider stream failed, trying fallback");
                     last_error = Some(e);
                 }
@@ -361,6 +509,21 @@ fn exponential_backoff(attempt: u32, initial_ms: u64, max_ms: u64) -> u64 {
 /// Détermine si un provider supporte explicitement un modèle donné.
 /// Délègue à ProviderKind::supports_model.
 fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
+    if !config.allowed_models.is_empty() {
+        let matches = config.allowed_models.iter().any(|allowed| {
+            if allowed == "*" {
+                true
+            } else if allowed.contains('*') {
+                let prefix = allowed.trim_end_matches('*');
+                model.starts_with(prefix)
+            } else {
+                allowed == model
+            }
+        });
+        if !matches {
+            return false;
+        }
+    }
     config.kind.supports_model(model)
 }
 

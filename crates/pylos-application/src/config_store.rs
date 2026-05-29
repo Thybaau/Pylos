@@ -887,6 +887,15 @@ fn build_runtime_providers(
     let mut providers = vec![];
 
     for (name, provider_cfg) in &config.providers {
+        let mut allowed_models = Vec::new();
+        for key_cfg in &provider_cfg.keys {
+            for m in &key_cfg.models {
+                if !allowed_models.contains(m) {
+                    allowed_models.push(m.clone());
+                }
+            }
+        }
+
         // ── Cas Bedrock : gestion séparée (pas de clé API traditionnelle) ──
         if name == "bedrock" {
             // Extrait la BedrockKeyConfig depuis la première clé
@@ -941,6 +950,7 @@ fn build_runtime_providers(
             runtime_cfg.retry_backoff_initial_ms = provider_cfg.network.retry_backoff_initial_ms;
             runtime_cfg.retry_backoff_max_ms = provider_cfg.network.retry_backoff_max_ms;
             runtime_cfg.bedrock = Some(bedrock_cfg);
+            runtime_cfg.allowed_models = allowed_models.clone();
 
             info!(provider = "bedrock", region = %region, "Bedrock provider registered");
             providers.push((
@@ -985,6 +995,7 @@ fn build_runtime_providers(
             runtime_cfg.retry_backoff_initial_ms = provider_cfg.network.retry_backoff_initial_ms;
             runtime_cfg.retry_backoff_max_ms = provider_cfg.network.retry_backoff_max_ms;
             runtime_cfg.azure = azure_cfg;
+            runtime_cfg.allowed_models = allowed_models.clone();
 
             info!(provider = %name, "Azure OpenAI provider registered");
             providers.push((
@@ -1042,6 +1053,7 @@ fn build_runtime_providers(
         runtime_cfg.retry_backoff_max_ms = provider_cfg.network.retry_backoff_max_ms;
         runtime_cfg.bedrock = None;
         runtime_cfg.azure = None;
+        runtime_cfg.allowed_models = allowed_models.clone();
 
         let provider: Arc<dyn pylos_core::domain::traits::Provider> = match kind {
             ProviderKind::Anthropic => Arc::new(AnthropicProvider::new()),

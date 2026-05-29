@@ -33,6 +33,12 @@ pub struct Metrics {
 
     /// Requêtes en cours
     pub inference_in_flight: IntGauge,
+
+    /// Time-To-First-Token pour le streaming
+    pub inference_ttft_seconds: HistogramVec,
+
+    /// Débit de tokens par seconde (TPS)
+    pub inference_tps: HistogramVec,
 }
 
 impl Metrics {
@@ -95,6 +101,24 @@ impl Metrics {
         )
         .expect("Failed to register inference_in_flight");
 
+        let inference_ttft_seconds = register_histogram_vec_with_registry!(
+            "pylos_inference_ttft_seconds",
+            "Time to first token in seconds",
+            &["provider", "model"],
+            vec![0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0],
+            registry
+        )
+        .expect("Failed to register inference_ttft_seconds");
+
+        let inference_tps = register_histogram_vec_with_registry!(
+            "pylos_inference_tps",
+            "Tokens per second generated",
+            &["provider", "model"],
+            vec![1.0, 5.0, 10.0, 20.0, 40.0, 60.0, 80.0, 100.0, 150.0],
+            registry
+        )
+        .expect("Failed to register inference_tps");
+
         Self {
             registry: Arc::new(registry),
             inference_requests_total,
@@ -104,6 +128,8 @@ impl Metrics {
             prompt_tokens_total,
             completion_tokens_total,
             inference_in_flight,
+            inference_ttft_seconds,
+            inference_tps,
         }
     }
 

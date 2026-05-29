@@ -1,7 +1,7 @@
 use crate::interfaces::http::{
     completions, config, embeddings, health, images, inference, logs, metrics, models,
 };
-use crate::middleware::{management_auth_middleware, virtual_key_middleware};
+use crate::middleware::{management_auth_middleware, queuing_middleware, virtual_key_middleware};
 use crate::state::AppState;
 use axum::{
     middleware,
@@ -18,6 +18,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/completions", post(completions::text_completions))
         .route("/v1/embeddings", post(embeddings::create_embeddings))
         .route("/v1/images/generations", post(images::generate_image))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            queuing_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             virtual_key_middleware,

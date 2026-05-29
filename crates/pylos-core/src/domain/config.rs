@@ -199,6 +199,40 @@ pub struct ServerConfig {
     /// Les bases de données suivantes doivent exister : pylos (prod), pylos-dev (dev)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub database_url: Option<EnvVar>,
+
+    /// Configuration de la file d'attente de requêtes (queuing)
+    #[serde(default)]
+    pub queuing: QueuingConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueuingConfig {
+    #[serde(default = "default_max_concurrency")]
+    pub max_concurrency: usize,
+    #[serde(default = "default_max_queue_size")]
+    pub max_queue_size: usize,
+    #[serde(default = "default_queue_timeout_ms")]
+    pub queue_timeout_ms: u64,
+}
+
+fn default_max_concurrency() -> usize {
+    100
+}
+fn default_max_queue_size() -> usize {
+    1000
+}
+fn default_queue_timeout_ms() -> u64 {
+    30_000
+}
+
+impl Default for QueuingConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrency: default_max_concurrency(),
+            max_queue_size: default_max_queue_size(),
+            queue_timeout_ms: default_queue_timeout_ms(),
+        }
+    }
 }
 
 fn default_port() -> u16 {
@@ -237,6 +271,7 @@ impl Default for ServerConfig {
             enforce_auth_on_inference: false,
             log_db_path: None,
             database_url: None,
+            queuing: QueuingConfig::default(),
         }
     }
 }
