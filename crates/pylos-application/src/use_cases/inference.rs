@@ -328,7 +328,8 @@ impl InferenceOrchestrator {
                     // Post-hooks (ordre inverse — LIFO)
                     for plugin in self.plugins.iter().rev() {
                         if let Err(e) = plugin.post_hook(&request, &mut response, &mut ctx).await {
-                            warn!(plugin = plugin.name(), error = %e, "Post-hook error (ignored)");
+                            warn!(plugin = plugin.name(), error = %e, "Post-hook error");
+                            return Err(e);
                         }
                     }
                     info!(

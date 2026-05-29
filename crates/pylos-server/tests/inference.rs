@@ -711,3 +711,278 @@ async fn test_semantic_caching_flow() {
         "Fresh Response From Provider"
     );
 }
+
+#[tokio::test]
+async fn test_structured_outputs_validation() {
+    // 1. Mock provider returning invalid JSON format
+    struct BadSchemaMock;
+    #[async_trait]
+    impl Provider for BadSchemaMock {
+        fn name(&self) -> &str {
+            "bad-schema"
+        }
+        async fn complete(
+            &self,
+            request: &PylosRequest,
+            _config: &ProviderConfig,
+        ) -> Result<PylosResponse, PylosError> {
+            let model = request.model().to_string();
+            Ok(PylosResponse::ChatCompletion(ChatCompletionResponse {
+                id: "mock-id".into(),
+                object: "chat.completion".into(),
+                created: 123456789,
+                model,
+                choices: vec![ChatCompletionChoice {
+                    index: 0,
+                    message: ChatCompletionMessage {
+                        role: MessageRole::Assistant,
+                        content: Some("{\"age\": \"not-a-number\"}".into()),
+                        ..Default::default()
+                    },
+                    finish_reason: Some("stop".into()),
+                }],
+                usage: None,
+            }))
+        }
+        async fn stream(
+            &self,
+            _r: &PylosRequest,
+            _c: &ProviderConfig,
+        ) -> Result<ChunkStream, PylosError> {
+            Err(PylosError::Unsupported("Not implemented".into()))
+        }
+    }
+
+    let orchestrator = Arc::new(InferenceOrchestrator::new(
+        vec![(
+            Arc::new(BadSchemaMock),
+            ProviderConfig::new(ProviderKind::OpenAI, vec![]),
+        )],
+        vec![Arc::new(pylos_application::StructuredOutputPlugin::new())],
+    ));
+
+    let config_store = Arc::new(ConfigStore::load(None).await.unwrap());
+    let metrics = Arc::new(Metrics::new());
+    let vk_registry = Arc::new(pylos_core::domain::virtual_key::VirtualKeyRegistry::new());
+    let log_store = Arc::new(LogStore::new(None, 1, 100));
+    let model_catalog = Arc::new(ModelCatalog::in_memory().await.unwrap());
+    let budget_store = Arc::new(BudgetStore::in_memory().await.unwrap());
+    let rate_limit_store = Arc::new(RateLimitStore::in_memory().await.unwrap());
+    let vk_store = Arc::new(
+        pylos_application::VirtualKeyStore::in_memory()
+            .await
+            .unwrap(),
+    );
+
+    let state = AppState {
+        orchestrator,
+        config_store,
+        metrics,
+        vk_registry,
+        log_store: LogStoreVariant::Sqlite(log_store),
+        model_catalog,
+        budget_store,
+        rate_limit_store,
+        vk_store,
+        admin_key: None,
+        inference_semaphore: Arc::new(tokio::sync::Semaphore::new(10)),
+        max_concurrency: 10,
+        max_queue_size: 100,
+        queue_timeout_ms: 30000,
+    };
+
+    let app = create_router(state);
+
+    // Send request requiring schema: age must be integer
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "model": "gpt-4o",
+                        "messages": [{"role": "user", "content": "Tell me age"}],
+                        "response_format": {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "type": "object",
+                                "properties": {
+                                    "age": { "type": "integer" }
+                                },
+                                "required": ["age"]
+                            }
+                        }
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Must be BAD_REQUEST (400) because validation fails
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_inference_queuing_and_timeout() {
+    // Mock slow provider
+    struct SlowMock;
+    #[async_trait]
+    impl Provider for SlowMock {
+        fn name(&self) -> &str {
+            "slow"
+        }
+        async fn complete(
+            &self,
+            request: &PylosRequest,
+            _config: &ProviderConfig,
+        ) -> Result<PylosResponse, PylosError> {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let model = request.model().to_string();
+            Ok(PylosResponse::ChatCompletion(ChatCompletionResponse {
+                id: "slow-id".into(),
+                object: "chat.completion".into(),
+                created: 123456789,
+                model,
+                choices: vec![ChatCompletionChoice {
+                    index: 0,
+                    message: ChatCompletionMessage {
+                        role: MessageRole::Assistant,
+                        content: Some("Slow Hello".into()),
+                        ..Default::default()
+                    },
+                    finish_reason: Some("stop".into()),
+                }],
+                usage: None,
+            }))
+        }
+        async fn stream(
+            &self,
+            _r: &PylosRequest,
+            _c: &ProviderConfig,
+        ) -> Result<ChunkStream, PylosError> {
+            Err(PylosError::Unsupported("Not implemented".into()))
+        }
+    }
+
+    let orchestrator = Arc::new(InferenceOrchestrator::new(
+        vec![(
+            Arc::new(SlowMock),
+            ProviderConfig::new(ProviderKind::OpenAI, vec![]),
+        )],
+        vec![],
+    ));
+
+    let config_store = Arc::new(ConfigStore::load(None).await.unwrap());
+    let metrics = Arc::new(Metrics::new());
+    let vk_registry = Arc::new(pylos_core::domain::virtual_key::VirtualKeyRegistry::new());
+    let log_store = Arc::new(LogStore::new(None, 1, 100));
+    let model_catalog = Arc::new(ModelCatalog::in_memory().await.unwrap());
+    let budget_store = Arc::new(BudgetStore::in_memory().await.unwrap());
+    let rate_limit_store = Arc::new(RateLimitStore::in_memory().await.unwrap());
+    let vk_store = Arc::new(
+        pylos_application::VirtualKeyStore::in_memory()
+            .await
+            .unwrap(),
+    );
+
+    // Concurrency limit: 1, Max queue size: 1, Queue timeout: 100ms
+    let state = AppState {
+        orchestrator,
+        config_store,
+        metrics,
+        vk_registry,
+        log_store: LogStoreVariant::Sqlite(log_store),
+        model_catalog,
+        budget_store,
+        rate_limit_store,
+        vk_store,
+        admin_key: None,
+        inference_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+        max_concurrency: 1,
+        max_queue_size: 1,
+        queue_timeout_ms: 100,
+    };
+
+    let app = create_router(state);
+
+    // 1. Send first request (occupies the single permit)
+    let app1 = app.clone();
+    let handle1 = tokio::spawn(async move {
+        app1.oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "model": "gpt-4o",
+                        "messages": [{"role": "user", "content": "Req 1"}]
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+    });
+
+    // Let the first request start processing
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // 2. Send second request (will queue, queue size is 1)
+    let app2 = app.clone();
+    let handle2 = tokio::spawn(async move {
+        app2.oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "model": "gpt-4o",
+                        "messages": [{"role": "user", "content": "Req 2"}]
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+    });
+
+    // Let the second request queue
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    // 3. Send third request (should be immediately rejected because queue size is 1 and already full)
+    let response3 = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "model": "gpt-4o",
+                        "messages": [{"role": "user", "content": "Req 3"}]
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response3.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    // Wait for the first and second to finish
+    let resp1 = handle1.await.unwrap();
+    let resp2 = handle2.await.unwrap();
+
+    assert_eq!(resp1.status(), StatusCode::OK);
+    // The second request should timeout because 100ms queue timeout < 300ms execution time of req 1
+    assert_eq!(resp2.status(), StatusCode::GATEWAY_TIMEOUT);
+}
