@@ -58,11 +58,20 @@ impl LlmPlugin for RagPlugin {
             _ => return Ok(None),
         };
 
-        if chat_req.model != "graphon-rag" {
-            return Ok(None);
-        }
+        let (collection_name, is_email) = match chat_req.model.as_str() {
+            "graphon-rag" | "graphon-rag-emails" => (self.collection_name.clone(), true),
+            "graphon-rag-files" | "graphon-rag-docs" | "mnemosyne-search" => {
+                let col = std::env::var("QDRANT_FILES_COLLECTION")
+                    .unwrap_or_else(|_| "mnemosyne_docs".to_string());
+                (col, false)
+            }
+            _ => return Ok(None),
+        };
 
-        info!("RagPlugin: Intercepted graphon-rag request");
+        info!(
+            "RagPlugin: Intercepted {} request (targeting collection: {})",
+            chat_req.model, collection_name
+        );
 
         // 1. Extract the latest user query
         let user_query = chat_req
@@ -135,7 +144,7 @@ impl LlmPlugin for RagPlugin {
         let search_url = format!(
             "{}/collections/{}/points/search",
             self.qdrant_url.trim_end_matches('/'),
-            self.collection_name
+            collection_name
         );
         let search_body = serde_json::json!({
             "vector": query_vector,
@@ -167,28 +176,67 @@ impl LlmPlugin for RagPlugin {
 
             if let Ok(res) = search_resp.json::<QdrantResponse>().await {
                 if !res.result.is_empty() {
-                    context_text.push_str("Voici les emails pertinents trouvés dans les archives publiques pour vous aider à répondre:\n\n");
-                    for (i, point) in res.result.iter().enumerate() {
-                        if let Some(ref payload) = point.payload {
-                            let sender = payload
-                                .get("sender")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Inconnu");
-                            let subject = payload
-                                .get("subject")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Sans objet");
-                            let content = payload
-                                .get("content")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            context_text.push_str(&format!(
-                                "--- EMAIL #{i} ---\nDe: {sender}\nObjet: {subject}\nContenu:\n{content}\n\n",
-                                i = i + 1,
-                                sender = sender,
-                                subject = subject,
-                                content = content
-                            ));
+                    if is_email {
+                        context_text.push_str("Voici les emails pertinents trouvés dans les archives publiques pour vous aider à répondre:\n\n");
+                        for (i, point) in res.result.iter().enumerate() {
+                            if let Some(ref payload) = point.payload {
+                                let sender = payload
+                                    .get("sender")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("Inconnu");
+                                let subject = payload
+                                    .get("subject")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("Sans objet");
+                                let content = payload
+                                    .get("content")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                context_text.push_str(&format!(
+                                    "--- EMAIL #{i} ---\nDe: {sender}\nObjet: {subject}\nContenu:\n{content}\n\n",
+                                    i = i + 1,
+                                    sender = sender,
+                                    subject = subject,
+                                    content = content
+                                ));
+                            }
+                        }
+                    } else {
+                        context_text.push_str("Voici les documents pertinents trouvés dans les archives de fichiers pour vous aider à répondre:\n\n");
+                        for (i, point) in res.result.iter().enumerate() {
+                            if let Some(ref payload) = point.payload {
+                                let file_name = payload
+                                    .get("file_name")
+                                    .and_then(|v| v.as_str())
+                                    .or_else(|| {
+                                        payload
+                                            .get("metadata")
+                                            .and_then(|m| m.get("file_name"))
+                                            .and_then(|v| v.as_str())
+                                    })
+                                    .unwrap_or("Inconnu");
+                                let source_path = payload
+                                    .get("source_path")
+                                    .and_then(|v| v.as_str())
+                                    .or_else(|| {
+                                        payload
+                                            .get("metadata")
+                                            .and_then(|m| m.get("source_path"))
+                                            .and_then(|v| v.as_str())
+                                    })
+                                    .unwrap_or("Inconnu");
+                                let content = payload
+                                    .get("content")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                context_text.push_str(&format!(
+                                    "--- DOCUMENT #{i} ---\nFichier: {file_name}\nChemin: {source_path}\nContenu:\n{content}\n\n",
+                                    i = i + 1,
+                                    file_name = file_name,
+                                    source_path = source_path,
+                                    content = content
+                                ));
+                            }
                         }
                     }
                 }
@@ -203,12 +251,20 @@ impl LlmPlugin for RagPlugin {
         // 4. Augment message list and delegate back to Pylos /v1/chat/completions
         let mut outbound_messages = Vec::new();
         if !context_text.is_empty() {
-            outbound_messages.push(ChatCompletionMessage {
-                role: MessageRole::System,
-                content: Some(format!(
+            let system_prompt = if is_email {
+                format!(
                     "Tu es un assistant d'archivage d'emails. Utilise les emails pertinents suivants pour répondre à l'utilisateur de manière précise, concise et en français:\n\n{}",
                     context_text
-                )),
+                )
+            } else {
+                format!(
+                    "Tu es un assistant de recherche de documents. Utilise les documents pertinents suivants pour répondre à l'utilisateur de manière précise, concise et en français:\n\n{}",
+                    context_text
+                )
+            };
+            outbound_messages.push(ChatCompletionMessage {
+                role: MessageRole::System,
+                content: Some(system_prompt),
                 ..Default::default()
             });
         }
