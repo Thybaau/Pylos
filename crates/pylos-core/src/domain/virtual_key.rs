@@ -7,7 +7,9 @@ use tokio::sync::RwLock;
 /// Préfixe standard des Virtual Keys Pylos (inspiré de bifrost: sk-bf-*)
 pub const VIRTUAL_KEY_PREFIX: &str = "sk-pylos-";
 
-/// Une Virtual Key avec ses limites
+use std::collections::HashSet;
+
+/// Une Virtual Key avec ses limites et rôles (RBAC)
 #[derive(Debug, Clone)]
 pub struct VirtualKey {
     /// Valeur de la clé (sk-pylos-...)
@@ -20,6 +22,10 @@ pub struct VirtualKey {
     pub token_limit_tpm: u32,
     /// Provider autorisé (None = tous)
     pub allowed_provider: Option<String>,
+    /// Rôles associés à cette clé (RBAC)
+    pub roles: HashSet<String>,
+    /// Permissions spécifiques associées à cette clé (RBAC)
+    pub permissions: HashSet<String>,
 }
 
 impl VirtualKey {
@@ -34,12 +40,28 @@ impl VirtualKey {
             rate_limit_rpm: 0,
             token_limit_tpm: 0,
             allowed_provider: None,
+            roles: HashSet::new(),
+            permissions: HashSet::new(),
         }
     }
 
     pub fn with_rpm(mut self, rpm: u32) -> Self {
         self.rate_limit_rpm = rpm;
         self
+    }
+
+    pub fn with_role(mut self, role: impl Into<String>) -> Self {
+        self.roles.insert(role.into());
+        self
+    }
+
+    pub fn with_permission(mut self, perm: impl Into<String>) -> Self {
+        self.permissions.insert(perm.into());
+        self
+    }
+
+    pub fn has_permission(&self, perm: &str) -> bool {
+        self.permissions.contains(perm) || self.roles.contains("admin")
     }
 }
 

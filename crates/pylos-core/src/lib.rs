@@ -5,6 +5,7 @@ pub use error::PylosError;
 pub type Result<T> = std::result::Result<T, PylosError>;
 
 // Re-exports pratiques
+pub use domain::auth::{OidcAuthenticator, OidcClaims};
 pub use domain::config::{
     BedrockKeyConfig, BudgetConfig, ConcurrencyConfig, EnvVar, GovernanceConfig, NetworkConfig,
     PluginConfig, ProviderConfig, ProviderKeyConfig, PylosConfig, RateLimitConfig,

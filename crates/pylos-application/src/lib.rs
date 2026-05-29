@@ -9,12 +9,17 @@ pub mod pg_log_store;
 pub mod rag_plugin;
 pub mod rate_limit_store;
 pub mod semantic_cache;
+
+pub mod batching;
+pub mod prefix_cache;
+pub mod prompt_registry;
 pub mod structured_output;
 pub mod use_cases;
 pub mod virtual_key_store;
 
 pub use virtual_key_store::VirtualKeyStore;
 
+pub use batching::BatchingPlugin;
 pub use budget_store::{BudgetPlugin, BudgetStore};
 pub use config_store::ConfigStore;
 pub use guardrails::GuardrailsPlugin;
@@ -24,9 +29,12 @@ pub use log_store::{
 pub use model_catalog::{ModelCatalog, ModelInfo};
 pub use otel_plugin::{OtelConfig, OtelPlugin};
 pub use pg_log_store::PgLogStore;
+pub use prefix_cache::PrefixCachePlugin;
+pub use prompt_registry::PromptRegistryPlugin;
 pub use rag_plugin::RagPlugin;
 pub use rate_limit_store::{RateLimitPlugin, RateLimitStatus, RateLimitStore};
 pub use semantic_cache::SemanticCachePlugin;
+
 pub use structured_output::StructuredOutputPlugin;
 pub use use_cases::InferenceOrchestrator;
 
