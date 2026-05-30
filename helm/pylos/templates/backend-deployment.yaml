@@ -39,6 +39,16 @@ spec:
               value: {{ .Values.backend.dataDir }}
             - name: PYLOS_CONFIG
               value: "/app/pylos.json"
+            - name: OPENCODE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.existingSecret | default "pylos-secret" }}
+                  key: {{ .Values.backend.existingSecretKey | default "OPENCODE_API_KEY" }}
+            - name: LEMONADE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.existingSecret | default "pylos-secret" }}
+                  key: LEMONADE_API_KEY
             {{- if .Values.database.enabled }}
             - name: DATABASE_URL
               {{- if .Values.database.url }}

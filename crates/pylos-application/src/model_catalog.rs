@@ -849,6 +849,18 @@ fn builtin_models() -> Vec<ModelInfo> {
             false,
         ),
         m(
+            "opencode-zen",
+            "deepseek-v4-flash-free",
+            "DeepSeek V4 Flash Free",
+            1_000_000,
+            384_000,
+            0.0,
+            0.0,
+            false,
+            true,
+            false,
+        ),
+        m(
             "graphon-rag",
             "graphon-rag",
             "Graphon RAG",

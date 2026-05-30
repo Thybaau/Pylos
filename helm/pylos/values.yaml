@@ -28,6 +28,8 @@ database:
 backend:
   name: pylos
   replicaCount: 2
+  existingSecret: "pylos-secret"
+  existingSecretKey: "OPENCODE_API_KEY"
   image:
     repository: ghcr.io/jzacharie/pylos
     tag: latest
@@ -70,6 +72,8 @@ dev:
   enabled: false
   name: pylos-dev
   replicaCount: 1
+  existingSecret: "pylos-secret"
+  existingSecretKey: "OPENCODE_API_KEY"
   image:
     repository: ghcr.io/jzacharie/pylos
     tag: latest
@@ -86,4 +90,11 @@ dev:
     accessModes:
       - ReadWriteOnce
     size: 1Gi
+
+secretStore:
+  enabled: true
+  name: vault-backend
+  kind: ClusterSecretStore
+  secretPath: ai/pylos
+
 

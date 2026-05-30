@@ -209,7 +209,8 @@ impl AppState {
                 );
 
                 let config_db_path = data_dir.join("pylos-config.db");
-                let sqlite_config_db_url = format!("sqlite://{}", config_db_path.to_string_lossy());
+                let sqlite_config_db_url =
+                    format!("sqlite://{}?mode=rwc", config_db_path.to_string_lossy());
                 if let Err(e) = config_store.init_database(&sqlite_config_db_url).await {
                     tracing::warn!(error = %e, "Failed to initialize SQLite config store");
                 }
