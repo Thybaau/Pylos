@@ -59,6 +59,7 @@ impl LlmPlugin for OtelPlugin {
     ) -> Result<Option<PylosResponse>, PylosError> {
         let operation = operation_name(request);
         let model = request.model().to_string();
+        let system = guess_system(request.model());
         let service = self.service_name.clone();
 
         // Stocke le timestamp de début pour calculer la latence dans post_hook
@@ -69,22 +70,28 @@ impl LlmPlugin for OtelPlugin {
             .to_string();
         ctx.headers.insert(OTEL_START_KEY.to_string(), now_ns);
 
-        debug!(
-            service = %service,
-            operation = %operation,
-            model = %model,
-            "OTel: LLM call started"
+        // Crée un span tracing — sera exporté via OTLP par tracing-opentelemetry
+        let span = tracing::info_span!(
+            target: "pylos.otel",
+            "llm.{}", operation,
+            gen_ai_operation = operation,
+            gen_ai_request_model = model.as_str(),
+            gen_ai_system = system,
+            service_name = service.as_str(),
+            vk = ctx.virtual_key.as_deref().unwrap_or(""),
         );
 
-        tracing::info!(
-            target: "pylos.otel",
-            gen_ai_operation = operation,
-            gen_ai_request_model = model,
-            gen_ai_system = guess_system(request.model()),
-            service_name = service,
-            vk = ctx.virtual_key.as_deref().unwrap_or(""),
-            "llm.call.start"
-        );
+        // Enregistre l'événement de début dans le span
+        span.in_scope(|| {
+            debug!(
+                service = %service,
+                operation = %operation,
+                model = %model,
+                "OTel: LLM call started"
+            );
+        });
+
+        ctx.otel_span = Some(span);
 
         Ok(None)
     }
@@ -113,28 +120,29 @@ impl LlmPlugin for OtelPlugin {
 
         let (response_model, input_tokens, output_tokens) = extract_usage(response);
 
-        tracing::info!(
-            target: "pylos.otel",
-            gen_ai_operation = operation,
-            gen_ai_request_model = model,
-            gen_ai_response_model = response_model,
-            gen_ai_system = guess_system(model),
-            gen_ai_usage_input_tokens = input_tokens,
-            gen_ai_usage_output_tokens = output_tokens,
-            gen_ai_latency_ms = latency_ms,
-            service_name = self.service_name,
-            vk = ctx.virtual_key.as_deref().unwrap_or(""),
-            "llm.call.complete"
-        );
+        // Enregistre la complétion dans le span et le ferme
+        if let Some(span) = ctx.otel_span.take() {
+            span.in_scope(|| {
+                tracing::info!(
+                    target: "pylos.otel",
+                    gen_ai_response_model = %response_model,
+                    gen_ai_usage_input_tokens = input_tokens,
+                    gen_ai_usage_output_tokens = output_tokens,
+                    gen_ai_latency_ms = latency_ms,
+                    "llm.call.complete"
+                );
 
-        debug!(
-            operation = %operation,
-            model = %model,
-            latency_ms = %latency_ms,
-            input_tokens = %input_tokens,
-            output_tokens = %output_tokens,
-            "OTel: LLM call complete"
-        );
+                debug!(
+                    operation = %operation,
+                    model = %model,
+                    latency_ms = %latency_ms,
+                    input_tokens = %input_tokens,
+                    output_tokens = %output_tokens,
+                    "OTel: LLM call complete"
+                );
+            });
+            // span tombe ici → on_close → fin du span OTel
+        }
 
         Ok(())
     }

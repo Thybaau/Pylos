@@ -21,6 +21,10 @@ reqwest = { workspace = true }
 prometheus = { workspace = true }
 fastrand = { workspace = true }
 async-trait = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.10"

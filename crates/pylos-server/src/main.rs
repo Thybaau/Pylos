@@ -1,29 +1,45 @@
 use std::path::PathBuf;
 
+use opentelemetry::trace::TracerProvider as _;
+use pylos_server::infrastructure::otel;
 use pylos_server::routes::create_router;
 use pylos_server::state::AppState;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialisation du logging structuré (JSON ou texte)
+    // OpenTelemetry (OTLP via OTEL_ENDPOINT)
+    let _otel_provider = otel::setup_otel();
+    let otel_tracer = _otel_provider.as_ref().map(|p| p.tracer("pylos"));
+
+    // Initialisation du logging structuré (JSON ou texte) + OTel layer
     let env_filter = tracing_subscriber::EnvFilter::new(
         std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
     );
 
-    if std::env::var("LOG_FORMAT")
+    let is_json = std::env::var("LOG_FORMAT")
         .map(|s| s.to_lowercase())
         .unwrap_or_default()
-        == "json"
-    {
+        == "json";
+
+    // L'OTel layer doit être créé dans chaque branche car son type S dépend du subscriber
+    if is_json {
+        let otel_layer = otel_tracer
+            .as_ref()
+            .map(|tracer| tracing_opentelemetry::layer().with_tracer(tracer.clone()));
         tracing_subscriber::registry()
             .with(env_filter)
             .with(tracing_subscriber::fmt::layer().json())
+            .with(otel_layer)
             .init();
     } else {
+        let otel_layer = otel_tracer
+            .as_ref()
+            .map(|tracer| tracing_opentelemetry::layer().with_tracer(tracer.clone()));
         tracing_subscriber::registry()
             .with(env_filter)
             .with(tracing_subscriber::fmt::layer())
+            .with(otel_layer)
             .init();
     }
 

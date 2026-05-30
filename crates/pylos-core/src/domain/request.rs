@@ -106,4 +106,6 @@ pub struct RequestContext {
     pub team_id: Option<String>,
     pub trace_id: Option<String>,
     pub tried_providers: Vec<String>,
+    /// Span tracing pour le call LLM en cours (utilisé par OtelPlugin)
+    pub otel_span: Option<tracing::Span>,
 }
