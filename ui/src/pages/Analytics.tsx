@@ -319,7 +319,7 @@ export default function Analytics() {
                     <Tooltip
                       contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
                       labelStyle={{ color: '#e5e7eb' }}
-                      formatter={(v: number) => [formatCost(v), 'Coût']}
+                      formatter={(v) => [formatCost(Number(v ?? 0)), 'Coût']}
                     />
                     <Bar dataKey="totalCost" radius={[4, 4, 0, 0]}>
                       {providerStats.map((entry) => (
