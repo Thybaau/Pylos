@@ -8,6 +8,7 @@ import Logs from './pages/Logs'
 import Providers from './pages/Providers'
 import VirtualKeys from './pages/VirtualKeys'
 import ModelCatalog from './pages/ModelCatalog'
+import Analytics from './pages/Analytics'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -72,6 +73,7 @@ export default function App() {
                 <Route path="/providers"  element={<Providers />} />
                 <Route path="/keys"       element={<VirtualKeys />} />
                 <Route path="/models"     element={<ModelCatalog />} />
+                <Route path="/analytics"  element={<Analytics />} />
               </Routes>
             </ErrorBoundary>
           </main>

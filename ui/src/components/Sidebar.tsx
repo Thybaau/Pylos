@@ -10,6 +10,7 @@ import {
   FlaskConical,
   BookOpen,
   AlertCircle,
+  BarChart2,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -17,6 +18,7 @@ import { healthApi } from '../lib/api'
 
 const NAV = [
   { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/analytics',  icon: BarChart2,       label: 'RUM Analytics' },
   { to: '/playground', icon: FlaskConical,    label: 'Playground' },
   { to: '/logs',       icon: ScrollText,      label: 'Logs' },
   { to: '/providers',  icon: Server,          label: 'Providers' },
