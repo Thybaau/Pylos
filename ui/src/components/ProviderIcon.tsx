@@ -82,6 +82,7 @@ export function ProviderIcon({ name, size = 16, className = '' }: ProviderIconPr
         </svg>
       )
     case 'ollama':
+    case 'ollama-jo3':
       return (
         <svg
           viewBox="0 0 646 854"

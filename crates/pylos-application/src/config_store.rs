@@ -1034,7 +1034,7 @@ fn build_runtime_providers(
             "xai" | "x-ai" => ProviderKind::XAI,
             "nebius" => ProviderKind::Nebius,
             "deepseek" => ProviderKind::DeepSeek,
-            "ollama" => ProviderKind::Ollama,
+            "ollama-jo3" => ProviderKind::Ollama,
             "openrouter" => ProviderKind::OpenRouter,
             "lemonade" => ProviderKind::Lemonade,
             other => ProviderKind::Custom(other.to_string()),

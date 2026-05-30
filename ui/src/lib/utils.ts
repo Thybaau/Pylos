@@ -42,7 +42,7 @@ export const PROVIDER_COLORS: Record<string, string> = {
   mistral: '#ff6b6b',
   groq: '#f43f5e',
   deepseek: '#4b8bf4',
-  ollama: '#f9f9f9',
+  'ollama-jo3': '#f9f9f9',
   lemonade: '#e2b13c',
   'lemonade-jo3': '#e2b13c',
   'lemonade-optimus': '#d4941a',

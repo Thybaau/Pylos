@@ -195,8 +195,8 @@ export default function Playground() {
   // Auto-sélectionne llama3.1:8b si disponible
   useEffect(() => {
     if (models.length && !selectedModel) {
-      const ollama = models.find(m => m.provider === 'ollama' && m.id === 'llama3.1:8b')
-        ?? models.find(m => m.provider === 'ollama')
+      const ollama = models.find(m => m.provider === 'ollama-jo3' && m.id === 'llama3.1:8b')
+        ?? models.find(m => m.provider === 'ollama-jo3')
         ?? models[0]
       if (ollama) setSelectedModel(`${ollama.provider}::${ollama.id}`)
     }
@@ -485,7 +485,7 @@ export default function Playground() {
               </div>
               {models.length > 0 && (
                 <div className="text-xs text-gray-700 mt-2">
-                  {models.filter(m => m.provider === 'ollama').length} local Ollama models available
+                  {models.filter(m => m.provider === 'ollama-jo3').length} local Ollama models available
                 </div>
               )}
             </div>

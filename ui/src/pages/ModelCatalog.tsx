@@ -6,7 +6,7 @@ import {
   AlertTriangle, RotateCcw, AlertCircle, Search,
 } from 'lucide-react'
 
-const PROVIDERS = ['all', 'openai', 'anthropic', 'gemini', 'cohere', 'groq', 'mistral', 'xai', 'deepseek', 'bedrock', 'ollama', 'lemonade-jo3', 'lemonade-optimus']
+const PROVIDERS = ['all', 'openai', 'anthropic', 'gemini', 'cohere', 'groq', 'mistral', 'xai', 'deepseek', 'bedrock', 'ollama-jo3', 'lemonade-jo3', 'lemonade-optimus']
 
 function formatPrice(price: number): string {
   if (price === 0) return 'Free'

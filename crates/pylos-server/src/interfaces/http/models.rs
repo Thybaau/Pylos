@@ -41,7 +41,7 @@ pub async fn list_models(
 
     for (provider_name, provider_cfg) in &cfg.providers {
         // ── Ollama : interrogation en direct ─────────────────────────────────
-        if provider_name == "ollama" {
+        if provider_name == "ollama-jo3" {
             if let Some(base_url) = &provider_cfg.network.base_url {
                 let tags_url = base_url.trim_end_matches("/v1").to_string() + "/api/tags";
                 if let Ok(resp) = reqwest::get(&tags_url).await {
@@ -51,16 +51,16 @@ pub async fn list_models(
                                 let name = m["name"].as_str().unwrap_or("");
                                 let family = m["details"]["family"].as_str().unwrap_or("unknown");
                                 let size = m["details"]["parameter_size"].as_str().unwrap_or("");
-                                let info = state.model_catalog.get_model("ollama", name).await;
-                                let pylos_field = info
-                                    .as_ref()
-                                    .map(model_info_pylos_field)
-                                    .unwrap_or_else(|| make_minimal_pylos("ollama", name, None));
+                                let info = state.model_catalog.get_model("ollama-jo3", name).await;
+                                let pylos_field =
+                                    info.as_ref().map(model_info_pylos_field).unwrap_or_else(
+                                        || make_minimal_pylos("ollama-jo3", name, None),
+                                    );
                                 models.push(json!({
                                     "id": name,
-                                    "provider": "ollama",
+                                    "provider": "ollama-jo3",
                                     "object": "model",
-                                    "owned_by": "ollama",
+                                    "owned_by": "ollama-jo3",
                                     "details": { "family": family, "parameter_size": size },
                                     "pylos": pylos_field,
                                 }));
@@ -71,7 +71,10 @@ pub async fn list_models(
                 }
             }
             // Fallback catalog
-            let catalog_models = state.model_catalog.list_models(Some("ollama"), false).await;
+            let catalog_models = state
+                .model_catalog
+                .list_models(Some("ollama-jo3"), false)
+                .await;
             for info in catalog_models {
                 models.push(model_info_to_entry(&info));
             }
@@ -118,7 +121,7 @@ pub async fn list_models(
                         "deepseek",
                         "bedrock",
                         "azure",
-                        "ollama",
+                        "ollama-jo3",
                     ]
                     .contains(&provider_name.as_str());
 

@@ -779,7 +779,7 @@ pub(crate) fn estimate_cost_pub(provider: &str, model: &str, prompt: i32, comple
 
 fn estimate_cost(provider: &str, model: &str, prompt: i32, completion: i32) -> f64 {
     let (in_m, out_m): (f64, f64) = match provider {
-        "ollama" => (0.0, 0.0),
+        "ollama-jo3" => (0.0, 0.0),
         "openai" | "openrouter" => {
             if model.contains("gpt-4o-mini") {
                 (0.15, 0.60)

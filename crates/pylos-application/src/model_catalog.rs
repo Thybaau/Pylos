@@ -918,7 +918,7 @@ mod tests {
     async fn test_upsert_custom_model() {
         let catalog = ModelCatalog::in_memory().await.unwrap();
         let custom = m(
-            "ollama",
+            "ollama-jo3",
             "llama3.2:3b",
             "Llama 3.2 3B",
             128_000,
@@ -930,7 +930,7 @@ mod tests {
             false,
         );
         catalog.upsert_model(&custom).await.unwrap();
-        let found = catalog.get_model("ollama", "llama3.2:3b").await;
+        let found = catalog.get_model("ollama-jo3", "llama3.2:3b").await;
         assert!(found.is_some());
     }
 }
