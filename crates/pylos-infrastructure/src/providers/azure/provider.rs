@@ -229,6 +229,43 @@ impl Provider for AzureProvider {
             }),
         }
     }
+
+    async fn health_check(&self, config: &ProviderConfig) -> Result<(), PylosError> {
+        let api_key = self.select_key(config).ok_or_else(|| {
+            PylosError::InvalidRequest("No API key configured for Azure OpenAI".into())
+        })?;
+
+        let azure = config.azure.as_ref().ok_or_else(|| {
+            PylosError::InvalidRequest("Azure provider requires azure_config in pylos.json".into())
+        })?;
+
+        let url = format!(
+            "https://{}.openai.azure.com/openai/deployments?api-version={}",
+            azure.resource_name, azure.api_version
+        );
+
+        debug!(provider = "azure", url = %url, "Testing provider connectivity");
+
+        let response = self
+            .client
+            .get(&url)
+            .header("api-key", api_key)
+            .send()
+            .await
+            .map_err(|e| PylosError::ProviderError {
+                provider: "azure".into(),
+                message: e.to_string(),
+            })?;
+
+        let status = response.status().as_u16();
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            warn!(provider = "azure", status = status, body = %body, "Health check failed");
+            return Err(map_azure_error(status, &body));
+        }
+
+        Ok(())
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

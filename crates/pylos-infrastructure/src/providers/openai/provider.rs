@@ -418,4 +418,35 @@ impl Provider for OpenAIProvider {
 
         Ok(resp)
     }
+
+    async fn health_check(&self, config: &ProviderConfig) -> Result<(), PylosError> {
+        let api_key = self.select_key(config).ok_or_else(|| {
+            PylosError::InvalidRequest(format!("No API key configured for {}", self.name))
+        })?;
+
+        let base_url = self.base_url(config);
+        let url = format!("{}/models", base_url);
+
+        debug!(provider = %self.name, url = %url, "Testing provider connectivity");
+
+        let response = self
+            .client
+            .get(&url)
+            .bearer_auth(api_key)
+            .send()
+            .await
+            .map_err(|e| PylosError::ProviderError {
+                provider: self.name.clone(),
+                message: e.to_string(),
+            })?;
+
+        let status = response.status().as_u16();
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            warn!(provider = %self.name, status = status, body = %body, "Health check failed");
+            return Err(map_openai_error(status, &body));
+        }
+
+        Ok(())
+    }
 }

@@ -270,6 +270,37 @@ impl Provider for GeminiProvider {
 
         Ok(from_gemini_embed_response(gemini_resp, model))
     }
+
+    async fn health_check(&self, config: &ProviderConfig) -> Result<(), PylosError> {
+        let api_key = self
+            .select_key(config)
+            .ok_or_else(|| PylosError::InvalidRequest("No API key configured for Gemini".into()))?;
+
+        let base_url = self.base_url(config);
+        let url = format!("{}/models", base_url);
+
+        debug!(provider = "gemini", url = %url, "Testing provider connectivity");
+
+        let response = self
+            .client
+            .get(&url)
+            .header("x-goog-api-key", api_key)
+            .send()
+            .await
+            .map_err(|e| PylosError::ProviderError {
+                provider: "gemini".into(),
+                message: e.to_string(),
+            })?;
+
+        let status = response.status().as_u16();
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            warn!(provider = "gemini", status = status, body = %body, "Health check failed");
+            return Err(map_gemini_error(status, &body));
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -251,4 +251,36 @@ impl Provider for AnthropicProvider {
             )),
         }
     }
+
+    async fn health_check(&self, config: &ProviderConfig) -> Result<(), PylosError> {
+        let api_key = self.select_key(config).ok_or_else(|| {
+            PylosError::InvalidRequest("No API key configured for Anthropic".into())
+        })?;
+
+        let base_url = self.base_url(config);
+        let url = format!("{}/models", base_url);
+
+        debug!(provider = "anthropic", url = %url, "Testing provider connectivity");
+
+        let response = self
+            .client
+            .get(&url)
+            .header("x-api-key", api_key)
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .send()
+            .await
+            .map_err(|e| PylosError::ProviderError {
+                provider: "anthropic".into(),
+                message: e.to_string(),
+            })?;
+
+        let status = response.status().as_u16();
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            warn!(provider = "anthropic", status = status, body = %body, "Health check failed");
+            return Err(map_anthropic_error(status, &body));
+        }
+
+        Ok(())
+    }
 }

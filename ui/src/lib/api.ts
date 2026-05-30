@@ -213,6 +213,9 @@ export const providersApi = {
 
   remove: (name: string) =>
     api.delete(`/providers/${name}`).then(r => r.data),
+
+  test: (name: string) =>
+    api.post(`/providers/${name}/test`).then(r => r.data),
 }
 
 export const virtualKeysApi = {

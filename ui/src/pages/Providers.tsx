@@ -443,6 +443,25 @@ function ProviderCard({
   onDelete: () => void
 }) {
   const color = providerColor(provider.name)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<'success' | 'error' | null>(null)
+  const [testError, setTestError] = useState<string | null>(null)
+
+  const handleTest = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setTesting(true)
+    setTestResult(null)
+    setTestError(null)
+    try {
+      await providersApi.test(provider.name)
+      setTestResult('success')
+    } catch (err: any) {
+      setTestResult('error')
+      setTestError(err.response?.data?.error || err.message || 'Connection failed')
+    } finally {
+      setTesting(false)
+    }
+  }
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 hover:border-gray-700 transition-colors group">
@@ -461,7 +480,28 @@ function ProviderCard({
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-400" title="Active" />
+          {testResult === 'success' && (
+            <span className="text-green-400" title="Connection OK">
+              <Check size={14} />
+            </span>
+          )}
+          {testResult === 'error' && (
+            <span className="text-red-400" title={testError || 'Connection failed'}>
+              <AlertTriangle size={14} />
+            </span>
+          )}
+          <button
+            onClick={handleTest}
+            disabled={testing}
+            className={`p-1.5 rounded-lg transition-all ${
+              testing
+                ? 'text-blue-400 bg-blue-400/10'
+                : 'text-gray-500 hover:text-blue-400 hover:bg-blue-400/10'
+            }`}
+            title="Test Connection"
+          >
+            <RotateCcw size={13} className={testing ? 'animate-spin' : ''} />
+          </button>
           {/* Actions — visible on hover */}
           <button
             onClick={e => { e.stopPropagation(); onEdit() }}

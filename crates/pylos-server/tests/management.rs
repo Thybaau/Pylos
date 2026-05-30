@@ -90,4 +90,15 @@ async fn test_provider_management() {
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::CREATED);
+
+    // 3. Test de connectivité (devrait être appelé mais échouera / réussira selon le mock ou l'adresse)
+    let req = Request::builder()
+        .method("POST")
+        .uri("/providers/custom-test/test")
+        .header("X-Admin-Key", "test-admin-key")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    // On s'attend à une réponse car l'endpoint existe (probablement BAD_REQUEST ou autre en raison du réseau fictif)
+    assert!(resp.status() == StatusCode::BAD_REQUEST || resp.status() == StatusCode::OK);
 }

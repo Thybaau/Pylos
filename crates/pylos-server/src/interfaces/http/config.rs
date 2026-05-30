@@ -177,6 +177,27 @@ pub async fn delete_provider(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /providers/:name/test — teste la connectivité d'un provider
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn test_provider(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    match state.orchestrator.test_provider(&name).await {
+        Ok(()) => Json(
+            json!({ "status": "success", "message": format!("Provider '{}' is available", name) }),
+        )
+        .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "status": "error", "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /virtual-keys
 // ─────────────────────────────────────────────────────────────────────────────
 

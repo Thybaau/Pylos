@@ -52,6 +52,22 @@ impl InferenceOrchestrator {
         info!("Inference providers updated (hot-reload)");
     }
 
+    /// Teste la connectivité avec un provider donné par son nom
+    pub async fn test_provider(&self, name: &str) -> Result<(), PylosError> {
+        let providers = self.providers.read().await;
+        let found = providers
+            .iter()
+            .find(|(provider, _)| provider.name() == name);
+        if let Some((provider, config)) = found {
+            provider.health_check(config).await
+        } else {
+            Err(PylosError::NotFound(format!(
+                "Provider '{}' not found",
+                name
+            )))
+        }
+    }
+
     fn is_circuit_breaker_open(&self, name: &str) -> bool {
         let breakers = self.circuit_breakers.lock().unwrap();
         if let Some(state) = breakers.get(name) {

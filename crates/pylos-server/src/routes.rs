@@ -48,6 +48,7 @@ pub fn create_router(state: AppState) -> Router {
             "/providers/:name",
             put(config::upsert_provider).delete(config::delete_provider),
         )
+        .route("/providers/:name/test", post(config::test_provider))
         // Virtual Keys CRUD
         .route(
             "/virtual-keys",

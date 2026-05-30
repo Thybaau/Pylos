@@ -269,4 +269,35 @@ impl Provider for CohereProvider {
 
         Ok(from_cohere_embed_response(cohere_resp, &request.model))
     }
+
+    async fn health_check(&self, config: &ProviderConfig) -> Result<(), PylosError> {
+        let api_key = self
+            .select_key(config)
+            .ok_or_else(|| PylosError::InvalidRequest("No API key configured for Cohere".into()))?;
+
+        let base_url = self.base_url(config);
+        let url = format!("{}/v1/models", base_url);
+
+        debug!(provider = "cohere", url = %url, "Testing provider connectivity");
+
+        let response = self
+            .client
+            .get(&url)
+            .bearer_auth(api_key)
+            .send()
+            .await
+            .map_err(|e| PylosError::ProviderError {
+                provider: "cohere".into(),
+                message: e.to_string(),
+            })?;
+
+        let status = response.status().as_u16();
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            warn!(provider = "cohere", status = status, body = %body, "Health check failed");
+            return Err(map_cohere_error(status, &body));
+        }
+
+        Ok(())
+    }
 }
