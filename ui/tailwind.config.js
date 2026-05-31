@@ -7,13 +7,25 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: '#f0f7ff',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-        }
-      }
+        accent: {
+          DEFAULT: '#10b981',
+          light: '#34d399',
+          dark: '#059669',
+        },
+      },
+      fontFamily: {
+        sans: ['Geist', 'system-ui', 'sans-serif'],
+        mono: ['Geist Mono', 'JetBrains Mono', 'monospace'],
+      },
+      keyframes: {
+        'subtle-pulse': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.5' },
+        },
+      },
+      animation: {
+        'subtle-pulse': 'subtle-pulse 2s ease-in-out infinite',
+      },
     },
   },
   plugins: [],

@@ -61,9 +61,9 @@ function ModelSelect({
         value={value}
         onChange={e => onChange(e.target.value)}
         disabled={disabled}
-        className="w-full appearance-none bg-gray-800 border border-gray-700 rounded-lg
-          px-3 py-2 text-sm text-gray-100 pr-8
-          focus:outline-none focus:ring-2 focus:ring-blue-500
+        className="w-full appearance-none bg-zinc-900 border border-zinc-800 rounded-lg
+          px-3 py-2 text-sm text-zinc-100 pr-8
+          focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20
           disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <option value="">— Select a model —</option>
@@ -78,7 +78,7 @@ function ModelSelect({
           </optgroup>
         ))}
       </select>
-      <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+      <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
     </div>
   )
 }
@@ -89,8 +89,8 @@ function ChatMessage({ msg, isStreaming }: { msg: Message; isStreaming?: boolean
 
   if (isSystem) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-700 bg-gray-800/40 px-4 py-2 text-xs text-gray-400">
-        <span className="font-semibold text-gray-500 mr-2">SYSTEM</span>
+      <div className="rounded-lg border border-dashed border-zinc-700 bg-zinc-800/40 px-4 py-2 text-xs text-zinc-400">
+        <span className="font-semibold text-zinc-500 mr-2">SYSTEM</span>
         {msg.content}
       </div>
     )
@@ -99,17 +99,17 @@ function ChatMessage({ msg, isStreaming }: { msg: Message; isStreaming?: boolean
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold
-        ${isUser ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'}`}>
+        ${isUser ? 'bg-emerald-600 text-white' : 'bg-zinc-700 text-zinc-300'}`}>
         {isUser ? 'U' : 'AI'}
       </div>
       <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed
         ${isUser
-          ? 'bg-blue-600 text-white rounded-tr-sm'
-          : 'bg-gray-800 text-gray-100 rounded-tl-sm border border-gray-700'
+          ? 'bg-emerald-600 text-white rounded-tr-sm'
+          : 'bg-zinc-800/50 border border-zinc-700/50 text-zinc-100 rounded-tl-sm'
         }`}>
         <pre className="whitespace-pre-wrap font-sans break-words">
           {msg.content}
-          {isStreaming && <span className="inline-block w-1.5 h-4 bg-blue-400 ml-0.5 animate-pulse" />}
+          {isStreaming && <span className="inline-block w-1.5 h-4 bg-zinc-400 ml-0.5 animate-pulse" />}
         </pre>
       </div>
     </div>
@@ -122,17 +122,17 @@ function ResultBadge({ result }: { result: RunResult }) {
 
   return (
     <div className={`rounded-xl border p-4 space-y-3
-      ${hasError ? 'border-red-800/50 bg-red-900/10' : 'border-gray-800 bg-gray-900'}`}>
+      ${hasError ? 'border-red-800/50 bg-red-900/10' : 'border-zinc-800/50 bg-zinc-900/30'}`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full" style={{ background: color }} />
-          <span className="text-xs font-semibold text-gray-300">{result.provider}</span>
-          <span className="text-xs text-gray-500 font-mono">{result.model}</span>
+          <span className="text-xs font-semibold text-zinc-300">{result.provider}</span>
+          <span className="text-xs text-zinc-500 font-mono">{result.model}</span>
         </div>
         {hasError
           ? <XCircle size={14} className="text-red-400" />
-          : <CheckCircle size={14} className="text-green-400" />
+          : <CheckCircle size={14} className="text-emerald-400" />
         }
       </div>
 
@@ -158,12 +158,12 @@ function ResultBadge({ result }: { result: RunResult }) {
 
 function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="bg-gray-800/60 rounded-lg px-2 py-1.5 text-center">
-      <div className="flex items-center justify-center gap-1 text-gray-500 mb-0.5">
+    <div className="bg-zinc-800/50 rounded-lg px-2 py-1.5 text-center">
+      <div className="flex items-center justify-center gap-1 text-zinc-500 mb-0.5">
         {icon}
         <span>{label}</span>
       </div>
-      <div className="font-semibold text-gray-200">{value}</div>
+      <div className="font-semibold text-zinc-200">{value}</div>
     </div>
   )
 }
@@ -192,7 +192,6 @@ export default function Playground() {
 
   const models = modelsData ?? []
 
-  // Auto-sélectionne llama3.1:8b si disponible
   useEffect(() => {
     if (models.length && !selectedModel) {
       const ollama = models.find(m => m.provider === 'ollama-jo3' && m.id === 'llama3.1:8b')
@@ -239,7 +238,6 @@ export default function Playground() {
 
     try {
       if (streaming) {
-        // ── Mode streaming SSE ───────────────────────────────────────────────
         const resp = await fetch('/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -282,7 +280,6 @@ export default function Playground() {
         setMessages(prev => [...prev, assistantMsg])
         setStreamingContent('')
 
-        // Estimation des tokens côté client (~4 chars = 1 token, identique au serveur)
         const completionTokens = Math.max(1, Math.floor(fullContent.length / 4))
         const promptText = newMessages.map(m => m.content).join(' ')
         const promptTokens = Math.max(1, Math.floor(promptText.length / 4))
@@ -298,7 +295,6 @@ export default function Playground() {
           streaming: true,
         })
       } else {
-        // ── Mode non-streaming ───────────────────────────────────────────────
         const resp = await api.post('/v1/chat/completions', payload, {
           signal: abortRef.current.signal,
         })
@@ -328,7 +324,7 @@ export default function Playground() {
       const msg = err instanceof Error ? err.message : String(err)
       setMessages(prev => [
         ...prev,
-        { role: 'assistant', content: `❌ Error: ${msg}` },
+        { role: 'assistant', content: `Error: ${msg}` },
       ])
       setLastResult({
         model,
@@ -363,16 +359,16 @@ export default function Playground() {
   return (
     <div className="flex h-full overflow-hidden">
 
-      {/* ── Panneau gauche : config ─────────────────────────────────────── */}
-      <aside className="w-64 flex-shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col overflow-y-auto">
+      {/* ── Config sidebar ─────────────────────────────────────── */}
+      <aside className="w-64 flex-shrink-0 bg-zinc-900/50 border-r border-zinc-800/50 flex flex-col overflow-y-auto">
         <div className="p-4 space-y-4">
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Configuration</h2>
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Configuration</h2>
 
           {/* Model selector */}
           <div className="space-y-1.5">
-            <label className="text-xs text-gray-400">Model</label>
+            <label className="text-xs text-zinc-400">Model</label>
             {modelsLoading
-              ? <div className="h-9 bg-gray-800 rounded-lg animate-pulse" />
+              ? <div className="h-9 bg-zinc-800 rounded-lg animate-pulse" />
               : <ModelSelect
                   models={models}
                   value={selectedModel}
@@ -381,77 +377,83 @@ export default function Playground() {
                 />
             }
             {currentProvider && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <div className="flex items-center gap-1.5 text-xs text-zinc-500">
                 <div className="w-1.5 h-1.5 rounded-full" style={{ background: providerColor(currentProvider) }} />
                 {currentProvider}
               </div>
             )}
           </div>
 
+          <div className="border-t border-zinc-800/50" />
+
           {/* System prompt */}
           <div className="space-y-1.5">
-            <label className="text-xs text-gray-400">System Prompt</label>
+            <label className="text-xs text-zinc-400">System Prompt</label>
             <textarea
               value={systemPrompt}
               onChange={e => setSystemPrompt(e.target.value)}
               rows={3}
               disabled={isRunning}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
-                text-gray-200 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm
+                text-zinc-200 resize-none focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20
                 disabled:opacity-50"
             />
           </div>
 
+          <div className="border-t border-zinc-800/50" />
+
           {/* Temperature */}
           <div className="space-y-1.5">
             <div className="flex justify-between">
-              <label className="text-xs text-gray-400">Temperature</label>
-              <span className="text-xs text-gray-300 font-mono">{temperature.toFixed(1)}</span>
+              <label className="text-xs text-zinc-400">Temperature</label>
+              <span className="text-xs text-zinc-300 font-mono">{temperature.toFixed(1)}</span>
             </div>
             <input
               type="range" min="0" max="2" step="0.1"
               value={temperature}
               onChange={e => setTemperature(parseFloat(e.target.value))}
               disabled={isRunning}
-              className="w-full accent-blue-500"
+              className="w-full accent-emerald-500"
             />
           </div>
 
           {/* Max tokens */}
           <div className="space-y-1.5">
             <div className="flex justify-between">
-              <label className="text-xs text-gray-400">Max Tokens</label>
-              <span className="text-xs text-gray-300 font-mono">{maxTokens}</span>
+              <label className="text-xs text-zinc-400">Max Tokens</label>
+              <span className="text-xs text-zinc-300 font-mono">{maxTokens}</span>
             </div>
             <input
               type="range" min="64" max="4096" step="64"
               value={maxTokens}
               onChange={e => setMaxTokens(parseInt(e.target.value))}
               disabled={isRunning}
-              className="w-full accent-blue-500"
+              className="w-full accent-emerald-500"
             />
           </div>
 
           {/* Streaming toggle */}
           <div className="flex items-center justify-between">
-            <label className="text-xs text-gray-400">Streaming</label>
+            <label className="text-xs text-zinc-400">Streaming</label>
             <button
               onClick={() => setStreaming(!streaming)}
               disabled={isRunning}
               className={`relative w-10 h-5 rounded-full transition-colors
-                ${streaming ? 'bg-blue-600' : 'bg-gray-700'}`}
+                ${streaming ? 'bg-emerald-600' : 'bg-zinc-700'}`}
             >
               <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform
                 ${streaming ? 'translate-x-5' : 'translate-x-0.5'}`} />
             </button>
           </div>
 
+          <div className="border-t border-zinc-800/50" />
+
           {/* Clear button */}
           <button
             onClick={clear}
             disabled={isRunning || messages.length === 0}
             className="w-full flex items-center justify-center gap-2 py-2 rounded-lg
-              border border-gray-700 text-gray-400 text-sm hover:border-red-700 hover:text-red-400
+              border border-zinc-800 text-zinc-400 text-sm hover:border-red-700 hover:text-red-400
               transition-colors disabled:opacity-40"
           >
             <Trash2 size={13} />
@@ -461,30 +463,30 @@ export default function Playground() {
 
         {/* Result badge */}
         {lastResult && (
-          <div className="mt-auto p-4 border-t border-gray-800">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Last run</h3>
+          <div className="mt-auto p-4 border-t border-zinc-800/50">
+            <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Last run</h3>
             <ResultBadge result={lastResult} />
           </div>
         )}
       </aside>
 
-      {/* ── Panneau droit : conversation ────────────────────────────────── */}
+      {/* ── Conversation panel ────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-h-0">
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {messages.length === 0 && !isRunning && (
-            <div className="h-full flex flex-col items-center justify-center text-gray-600 gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-gray-800 flex items-center justify-center">
-                <Zap size={20} className="text-blue-500" />
+            <div className="h-full flex flex-col items-center justify-center text-zinc-600 gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800/50 flex items-center justify-center">
+                <Zap size={20} className="text-emerald-500" />
               </div>
                 <div className="text-center">
-                <div className="font-medium text-gray-400">Pylos Playground</div>
+                <div className="font-medium text-zinc-400">Pylos Playground</div>
                 <div className="text-sm mt-1">
                   Select a model and send a message
                 </div>
               </div>
               {models.length > 0 && (
-                <div className="text-xs text-gray-700 mt-2">
+                <div className="text-xs text-zinc-700 mt-2">
                   {models.filter(m => m.provider === 'ollama-jo3').length} local Ollama models available
                 </div>
               )}
@@ -510,14 +512,14 @@ export default function Playground() {
           {/* Thinking indicator */}
           {isRunning && !streamingContent && (
             <div className="flex gap-3">
-              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-300">
+              <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-bold text-zinc-300">
                 AI
               </div>
-              <div className="bg-gray-800 border border-gray-700 rounded-2xl rounded-tl-sm px-4 py-3">
+              <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-2xl rounded-tl-sm px-4 py-3">
                 <div className="flex gap-1.5">
                   {[0, 1, 2].map(i => (
                     <div key={i}
-                      className="w-2 h-2 rounded-full bg-gray-500 animate-bounce"
+                      className="w-2 h-2 rounded-full bg-zinc-500 animate-bounce"
                       style={{ animationDelay: `${i * 0.15}s` }}
                     />
                   ))}
@@ -530,7 +532,7 @@ export default function Playground() {
         </div>
 
         {/* Input */}
-        <div className="border-t border-gray-800 p-4">
+        <div className="border-t border-zinc-800/50 p-4">
           <div className="flex gap-3 items-end">
             <textarea
               value={input}
@@ -544,15 +546,15 @@ export default function Playground() {
               placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
               rows={2}
               disabled={isRunning || !selectedModel}
-              className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm
-                text-gray-100 placeholder-gray-600 resize-none
-                focus:outline-none focus:ring-2 focus:ring-blue-500
+              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm
+                text-zinc-100 placeholder-zinc-600 resize-none
+                focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20
                 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             {isRunning ? (
               <button
                 onClick={stop}
-                className="p-3 rounded-xl bg-red-600 hover:bg-red-500 text-white transition-colors flex-shrink-0"
+                className="p-3 rounded-xl bg-red-600 hover:bg-red-500 text-white transition-colors flex-shrink-0 active:scale-[0.98]"
               >
                 <StopCircle size={18} />
               </button>
@@ -560,15 +562,15 @@ export default function Playground() {
               <button
                 onClick={run}
                 disabled={!input.trim() || !selectedModel}
-                className="p-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors flex-shrink-0
-                  disabled:opacity-40 disabled:cursor-not-allowed"
+                className="p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-colors flex-shrink-0
+                  disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
               >
                 <Send size={18} />
               </button>
             )}
           </div>
           {selectedModel && (
-            <div className="text-xs text-gray-600 mt-2 ml-1">
+            <div className="text-xs text-zinc-600 mt-2 ml-1">
               {parseSelected().model} via {parseSelected().provider}
               {streaming ? ' · streaming' : ' · blocking'}
               · temp {temperature} · max {maxTokens} tokens

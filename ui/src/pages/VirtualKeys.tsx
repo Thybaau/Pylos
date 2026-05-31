@@ -9,19 +9,23 @@ import {
 } from 'lucide-react'
 import { ProviderIcon } from '../components/ProviderIcon'
 
-// ─── Budget / Rate panel (unchanged) ─────────────────────────────────────────
+// ─── Budget / Rate panel ──────────────────────────────────────────────────────
 
 function BudgetBar({ used, max }: { used: number; max: number }) {
   const pct = max > 0 ? Math.min((used / max) * 100, 100) : 0
-  const color = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-yellow-500' : 'bg-green-500'
+  const color = pct > 90
+    ? '#f43f5e'
+    : pct > 70
+      ? '#f59e0b'
+      : '#10b981'
   return (
     <div className="w-full">
-      <div className="flex justify-between text-xs text-gray-400 mb-1">
+      <div className="flex justify-between text-xs text-zinc-400 mb-1">
         <span>${used.toFixed(4)}</span>
         <span>${max.toFixed(2)}</span>
       </div>
-      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+      <div className="h-1.5 bg-zinc-800/50 rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
       </div>
     </div>
   )
@@ -34,19 +38,19 @@ function VkBudgetPanel({ vkId }: { vkId: string }) {
     refetchInterval: 30_000,
   })
 
-  if (isLoading) return <div className="text-xs text-gray-500">Loading…</div>
+  if (isLoading) return <div className="text-xs text-zinc-500">Loading…</div>
   if (!data || (data.budget.length === 0 && data.rate_limits.length === 0)) {
-    return <div className="text-xs text-gray-500">No governance configured</div>
+    return <div className="text-xs text-zinc-500">No governance configured</div>
   }
 
   return (
     <div className="grid grid-cols-2 gap-4 text-xs">
       {data.budget.length > 0 && (
         <div>
-          <div className="text-gray-400 font-medium mb-2">Budget</div>
+          <div className="text-zinc-400 font-medium mb-2">Budget</div>
           {data.budget.map(b => (
             <div key={b.period} className="mb-3">
-              <div className="text-gray-500 mb-1 capitalize">{b.period}</div>
+              <div className="text-zinc-500 mb-1 capitalize">{b.period}</div>
               <BudgetBar used={b.current_usd} max={b.max_usd} />
             </div>
           ))}
@@ -54,24 +58,23 @@ function VkBudgetPanel({ vkId }: { vkId: string }) {
       )}
       {data.rate_limits.length > 0 && (
         <div>
-          <div className="text-gray-400 font-medium mb-2">Rate Limits</div>
+          <div className="text-zinc-400 font-medium mb-2">Rate Limits</div>
           {data.rate_limits.map(rl => (
             <div key={rl.window_type} className="mb-3">
-              <div className="text-gray-500 mb-1 capitalize">{rl.window_type}</div>
-              <div className="flex justify-between text-gray-300">
+              <div className="text-zinc-500 mb-1 capitalize">{rl.window_type}</div>
+              <div className="flex justify-between text-zinc-300">
                 <span>{rl.current_value}</span>
                 <span>/ {rl.max_value}</span>
               </div>
-              <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden mt-1">
+              <div className="h-1.5 bg-zinc-800/50 rounded-full overflow-hidden mt-1">
                 <div
-                  className={`h-full rounded-full transition-all ${
-                    rl.max_value > 0 && rl.current_value / rl.max_value > 0.9
-                      ? 'bg-red-500' : 'bg-blue-500'
-                  }`}
+                  className="h-full rounded-full transition-all"
                   style={{
                     width: rl.max_value > 0
                       ? `${Math.min((rl.current_value / rl.max_value) * 100, 100)}%`
                       : '0%',
+                    background: rl.max_value > 0 && rl.current_value / rl.max_value > 0.9
+                      ? '#f43f5e' : '#3b82f6',
                   }}
                 />
               </div>
@@ -167,7 +170,7 @@ function ProviderSelector({ value, onChange }: { value: string[]; onChange: (v: 
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5 p-2 bg-gray-900 border border-gray-700 rounded-lg min-h-[42px]">
+    <div className="flex flex-wrap gap-1.5 p-2 bg-zinc-950 border border-zinc-800 rounded-lg min-h-[42px]">
       {providers.map(p => {
         const isSelected = value.includes(p.name)
         return (
@@ -177,8 +180,8 @@ function ProviderSelector({ value, onChange }: { value: string[]; onChange: (v: 
             onClick={() => toggleProvider(p.name)}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-all ${
               isSelected
-                ? 'bg-blue-600/20 text-blue-300 border-blue-500/40 shadow-sm shadow-blue-500/10'
-                : 'bg-gray-800/40 text-gray-400 border-gray-800 hover:text-gray-200 hover:bg-gray-800'
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 shadow-sm shadow-emerald-500/5'
+                : 'bg-zinc-900/40 text-zinc-400 border-zinc-800 hover:text-zinc-200 hover:bg-zinc-800'
             }`}
           >
             <ProviderIcon name={p.name} size={12} />
@@ -187,7 +190,7 @@ function ProviderSelector({ value, onChange }: { value: string[]; onChange: (v: 
         )
       })}
       {providers.length === 0 && (
-        <span className="text-xs text-gray-500 p-1">Loading providers…</span>
+        <span className="text-xs text-zinc-500 p-1">Loading providers…</span>
       )}
     </div>
   )
@@ -221,22 +224,22 @@ function ModelSelector({ providers, value, onChange }: { providers: string[]; va
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5 p-2 bg-gray-900 border border-gray-700 rounded-lg min-h-[42px]">
+      <div className="flex flex-wrap gap-1.5 p-2 bg-zinc-950 border border-zinc-800 rounded-lg min-h-[42px]">
         {selectedModels.map(m => (
-          <span key={m} className="flex items-center gap-1 px-2 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/20 rounded text-[10px] font-medium">
+          <span key={m} className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 rounded text-[10px] font-medium">
             {m}
             <button onClick={() => toggleModel(m)} className="hover:text-white"><X size={10} /></button>
           </span>
         ))}
-        {selectedModels.length === 0 && <span className="text-xs text-gray-600 px-1 py-0.5">Pick models…</span>}
+        {selectedModels.length === 0 && <span className="text-xs text-zinc-600 px-1 py-0.5">Pick models…</span>}
       </div>
 
       {providers.length > 0 && (
-        <div className="max-h-32 overflow-y-auto p-1 bg-gray-900/50 border border-gray-800 rounded-lg grid grid-cols-2 gap-1 custom-scrollbar">
+        <div className="max-h-32 overflow-y-auto p-1 bg-zinc-950/50 border border-zinc-800/50 rounded-lg grid grid-cols-2 gap-1 custom-scrollbar">
           <button
             onClick={() => toggleModel('*')}
             className={`text-left px-2 py-1.5 rounded text-[10px] transition-colors ${
-              selectedModels.includes('*') ? 'bg-blue-600/20 text-blue-400' : 'text-gray-500 hover:bg-gray-800'
+              selectedModels.includes('*') ? 'bg-emerald-500/10 text-emerald-400' : 'text-zinc-500 hover:bg-zinc-800'
             }`}
           >
             All Models (*)
@@ -246,7 +249,7 @@ function ModelSelector({ providers, value, onChange }: { providers: string[]; va
               key={m.id}
               onClick={() => toggleModel(m.pylos.model_id)}
               className={`text-left px-2 py-1.5 rounded text-[10px] truncate transition-colors ${
-                selectedModels.includes(m.pylos.model_id) ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:bg-gray-800'
+                selectedModels.includes(m.pylos.model_id) ? 'bg-emerald-500/10 text-emerald-400' : 'text-zinc-400 hover:bg-zinc-800'
               }`}
               title={m.pylos.model_id}
             >
@@ -273,17 +276,17 @@ function ProviderConfigItem({
   const color = providerColor(pc.providers[0] || 'default')
 
   return (
-    <div className="bg-gray-900/40 border border-gray-800 rounded-xl overflow-hidden transition-all hover:border-gray-700/50">
-      <div className="px-4 py-2 bg-gray-800/30 border-b border-gray-800 flex items-center justify-between">
+    <div className="bg-zinc-950/40 border border-zinc-800 rounded-xl overflow-hidden transition-all hover:border-zinc-700/50">
+      <div className="px-4 py-2 bg-zinc-900/30 border-b border-zinc-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
-          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
             Rule #{index + 1}
           </span>
         </div>
         <button
           onClick={() => onRemove(index)}
-          className="p-1 text-gray-600 hover:text-red-400 transition-colors"
+          className="p-1 text-zinc-600 hover:text-red-400 transition-colors"
         >
           <Trash2 size={12} />
         </button>
@@ -293,11 +296,11 @@ function ProviderConfigItem({
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-7 space-y-3">
             <div>
-              <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1.5 ml-1">Providers</label>
+              <label className="block text-[10px] font-medium text-zinc-500 uppercase mb-1.5 ml-1">Providers</label>
               <ProviderSelector value={pc.providers} onChange={v => onUpdate(index, 'providers', v)} />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1.5 ml-1">Allowed Models</label>
+              <label className="block text-[10px] font-medium text-zinc-500 uppercase mb-1.5 ml-1">Allowed Models</label>
               <ModelSelector
                 providers={pc.providers}
                 value={pc.models}
@@ -307,8 +310,8 @@ function ProviderConfigItem({
           </div>
 
           <div className="col-span-5">
-            <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1.5 ml-1">Routing Weight</label>
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 space-y-3">
+            <label className="block text-[10px] font-medium text-zinc-500 uppercase mb-1.5 ml-1">Routing Weight</label>
+            <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 space-y-3">
               <input
                 type="range"
                 min="0"
@@ -316,16 +319,16 @@ function ProviderConfigItem({
                 step="0.1"
                 value={pc.weight}
                 onChange={e => onUpdate(index, 'weight', parseFloat(e.target.value))}
-                className="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-gray-500">Low</span>
-                <div className="bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded text-xs font-mono font-bold">
+                <span className="text-[10px] text-zinc-500">Low</span>
+                <div className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded text-xs font-mono font-bold">
                   {pc.weight.toFixed(1)}
                 </div>
-                <span className="text-[10px] text-gray-500">High</span>
+                <span className="text-[10px] text-zinc-500">High</span>
               </div>
-              <p className="text-[9px] text-gray-600 leading-tight">
+              <p className="text-[9px] text-zinc-600 leading-tight">
                 Higher weight increases the probability of choosing this provider when multiple match.
               </p>
             </div>
@@ -388,26 +391,26 @@ function VkModal({
   // If key was just created — show it first
   if (createdKey) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-        <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-9 h-9 rounded-full bg-green-500/15 flex items-center justify-center">
-              <Check size={16} className="text-green-400" />
+            <div className="w-9 h-9 rounded-full bg-emerald-500/15 flex items-center justify-center">
+              <Check size={16} className="text-emerald-400" />
             </div>
             <div>
               <div className="font-semibold text-white">Virtual key created</div>
-              <div className="text-xs text-gray-500">Copy it now — it won't be shown again</div>
+              <div className="text-xs text-zinc-500">Copy it now — it won't be shown again</div>
             </div>
           </div>
-          <div className="bg-gray-800 rounded-lg p-3 flex items-center gap-2 mb-5">
-            <span className="font-mono text-sm text-green-300 flex-1 break-all">{createdKey}</span>
-            <button onClick={copyKey} className="shrink-0 text-gray-400 hover:text-white transition-colors">
-              {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+          <div className="bg-zinc-950/50 border border-zinc-800/50 rounded-lg p-3 flex items-center gap-2 mb-5">
+            <span className="font-mono text-sm text-emerald-300 flex-1 break-all">{createdKey}</span>
+            <button onClick={copyKey} className="shrink-0 text-zinc-400 hover:text-white transition-colors">
+              {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
             </button>
           </div>
           <button
             onClick={onClose}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
+            className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-sm rounded-lg transition-colors"
           >
             Done
           </button>
@@ -417,14 +420,14 @@ function VkModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-gray-800">
+        <div className="flex items-center justify-between p-5 border-b border-zinc-800/50">
           <h2 className="text-lg font-semibold text-white">
             {isEdit ? 'Edit virtual key' : 'Create virtual key'}
           </h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -432,27 +435,27 @@ function VkModal({
         <div className="p-5 space-y-5">
           {/* Name */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1.5">Name *</label>
+            <label className="block text-xs text-zinc-400 mb-1.5">Name *</label>
             <input
               type="text"
               value={form.name}
               onChange={e => setField('name', e.target.value)}
               placeholder="My Project"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200
-                focus:outline-none focus:border-blue-500"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
             />
           </div>
 
           {/* Description */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1.5">Description (optional)</label>
+            <label className="block text-xs text-zinc-400 mb-1.5">Description (optional)</label>
             <input
               type="text"
               value={form.description}
               onChange={e => setField('description', e.target.value)}
               placeholder="Production key for service X"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200
-                focus:outline-none focus:border-blue-500"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
             />
           </div>
 
@@ -460,32 +463,32 @@ function VkModal({
           <div className="flex items-center gap-3">
             <button
               onClick={() => setField('is_active', !form.is_active)}
-              className={`relative w-10 h-5 rounded-full transition-colors ${form.is_active ? 'bg-blue-600' : 'bg-gray-700'}`}
+              className={`relative w-10 h-5 rounded-full transition-colors ${form.is_active ? 'bg-emerald-600' : 'bg-zinc-700'}`}
             >
               <span
                 className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all
                   ${form.is_active ? 'left-5' : 'left-0.5'}`}
               />
             </button>
-            <span className="text-sm text-gray-300">Active</span>
+            <span className="text-sm text-zinc-300">Active</span>
           </div>
 
           {/* Provider configs */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Governance Settings</label>
+              <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Governance Settings</label>
               <button
                 onClick={addPc}
-                className="text-xs bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2 py-1 rounded flex items-center gap-1 transition-all"
+                className="text-xs bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded flex items-center gap-1 transition-all"
               >
                 <Plus size={12} /> Add Rule
               </button>
             </div>
             {form.provider_configs.length === 0 ? (
-              <div className="bg-gray-800/40 border border-dashed border-gray-700 rounded-xl p-8 text-center">
-                <Shield size={24} className="text-gray-700 mx-auto mb-2" />
-                <p className="text-xs text-gray-500">No restrictions — all configured providers allowed</p>
-                <button onClick={addPc} className="mt-4 text-xs text-blue-400 hover:underline">Add your first governance rule</button>
+              <div className="bg-zinc-900/40 border border-dashed border-zinc-800 rounded-xl p-8 text-center">
+                <Shield size={24} className="text-zinc-700 mx-auto mb-2" />
+                <p className="text-xs text-zinc-500">No restrictions — all configured providers allowed</p>
+                <button onClick={addPc} className="mt-4 text-xs text-emerald-400 hover:underline">Add your first governance rule</button>
               </div>
             ) : (
               <div className="space-y-4">
@@ -512,14 +515,14 @@ function VkModal({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 px-5 py-4 border-t border-gray-800">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">
+        <div className="flex justify-end gap-3 px-5 py-4 border-t border-zinc-800/50">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-zinc-400 hover:text-white transition-colors">
             Cancel
           </button>
           <button
             onClick={() => onSave(form)}
             disabled={isSaving || !form.name.trim()}
-            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50
+            className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50
               disabled:cursor-not-allowed text-white rounded-lg flex items-center gap-2 transition-colors"
           >
             {isSaving ? <RotateCcw size={14} className="animate-spin" /> : <Check size={14} />}
@@ -545,28 +548,28 @@ function DeleteConfirmModal({
   isDeleting: boolean
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-9 h-9 rounded-full bg-red-500/15 flex items-center justify-center">
             <AlertTriangle size={16} className="text-red-400" />
           </div>
           <div>
             <div className="font-semibold text-white">Delete virtual key</div>
-            <div className="text-xs text-gray-500">This action cannot be undone</div>
+            <div className="text-xs text-zinc-500">This action cannot be undone</div>
           </div>
         </div>
-        <p className="text-sm text-gray-400 mb-5">
+        <p className="text-sm text-zinc-400 mb-5">
           Delete <span className="text-white font-medium">{name}</span>?
           All requests using this key will be rejected immediately.
         </p>
         <div className="flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-zinc-400 hover:text-white">Cancel</button>
           <button
             onClick={onConfirm}
             disabled={isDeleting}
             className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-lg
-              flex items-center gap-2 transition-colors"
+              flex items-center gap-2 transition-colors active:scale-[0.98]"
           >
             {isDeleting ? <RotateCcw size={13} className="animate-spin" /> : <Trash2 size={13} />}
             Delete
@@ -625,7 +628,7 @@ export default function VirtualKeys() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Virtual Keys</h1>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-zinc-400 mt-1">
             {data?.total ?? '—'} configured
           </p>
         </div>
@@ -633,14 +636,14 @@ export default function VirtualKeys() {
           <button
             onClick={() => refetch()}
             disabled={isFetching}
-            className="flex items-center justify-center p-2 text-gray-400 hover:text-white bg-gray-900 hover:bg-gray-800 border border-gray-800 disabled:opacity-50 rounded-lg transition-colors"
+            className="flex items-center justify-center p-2 text-zinc-400 hover:text-white bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 disabled:opacity-50 rounded-lg transition-colors"
             title="Refresh keys"
           >
             <RotateCw size={15} className={isFetching ? 'animate-spin' : ''} />
           </button>
           <button
             onClick={() => { setMutationError(null); setShowCreate(true) }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-sm
               rounded-lg transition-colors"
           >
             <Plus size={15} />
@@ -650,12 +653,12 @@ export default function VirtualKeys() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
+      <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/30 overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="border-b border-gray-800">
+          <thead className="border-b border-zinc-800/50">
             <tr>
               {['Name', 'Value', 'Status', 'Providers', 'Models', ''].map(h => (
-                <th key={h} className="text-left px-5 py-3.5 text-xs text-gray-500 uppercase tracking-wide font-medium">
+                <th key={h} className="text-left px-5 py-3.5 text-xs text-zinc-500 uppercase tracking-wide font-medium">
                   {h}
                 </th>
               ))}
@@ -664,10 +667,10 @@ export default function VirtualKeys() {
           <tbody>
             {isLoading
               ? Array.from({ length: 3 }).map((_, i) => (
-                  <tr key={i} className="border-b border-gray-800/50">
+                  <tr key={i} className="border-b border-zinc-800/30">
                     {Array.from({ length: 6 }).map((_, j) => (
                       <td key={j} className="px-5 py-3.5">
-                        <div className="h-3 bg-gray-800 rounded animate-pulse w-24" />
+                        <div className="h-3 bg-zinc-800 rounded animate-pulse w-24" />
                       </td>
                     ))}
                   </tr>
@@ -676,31 +679,31 @@ export default function VirtualKeys() {
                   <>
                     <tr
                       key={vk.id}
-                      className={`border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors cursor-pointer group
-                        ${expandedId === vk.id ? 'bg-gray-800/20' : ''}`}
+                      className={`border-b border-zinc-800/30 transition-colors cursor-pointer group
+                        ${expandedId === vk.id ? 'bg-emerald-500/5 border-l-2 border-l-emerald-500' : 'hover:bg-zinc-800/30'}`}
                       onClick={() => setExpandedId(expandedId === vk.id ? null : vk.id)}
                     >
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
-                          <KeyRound size={14} className="text-blue-400 shrink-0" />
+                          <KeyRound size={14} className="text-emerald-400 shrink-0" />
                           <div>
                             <div className="font-medium text-white">{vk.name}</div>
                             {vk.description && (
-                              <div className="text-xs text-gray-500">{vk.description}</div>
+                              <div className="text-xs text-zinc-500">{vk.description}</div>
                             )}
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 font-mono text-xs text-gray-400">
+                      <td className="px-5 py-3.5 font-mono text-xs text-zinc-400">
                         {vk.value}
                       </td>
                       <td className="px-5 py-3.5">
                         {vk.is_active ? (
-                          <span className="flex items-center gap-1.5 text-green-400 text-xs">
+                          <span className="flex items-center gap-1.5 text-emerald-400 text-xs">
                             <CheckCircle size={12} /> Active
                           </span>
                         ) : (
-                          <span className="flex items-center gap-1.5 text-gray-500 text-xs">
+                          <span className="flex items-center gap-1.5 text-zinc-500 text-xs">
                             <XCircle size={12} /> Inactive
                           </span>
                         )}
@@ -709,18 +712,18 @@ export default function VirtualKeys() {
                         <div className="flex flex-wrap gap-1">
                           {vk.provider_configs.map(pc => (
                             <span key={pc.provider}
-                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs bg-gray-800 text-gray-300 border border-gray-700">
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs bg-zinc-800 text-zinc-300 border border-zinc-700/50">
                               <ProviderIcon name={pc.provider} size={10} />
                               <span className="capitalize">{pc.provider}</span>
                             </span>
                           ))}
                           {vk.provider_configs.length === 0 && (
-                            <span className="text-xs text-gray-600 italic">all</span>
+                            <span className="text-xs text-zinc-600 italic">all</span>
                           )}
                         </div>
                       </td>
                       <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-1.5 text-gray-400 text-xs">
+                        <div className="flex items-center gap-1.5 text-zinc-400 text-xs">
                           <Shield size={11} />
                           {vk.provider_configs.length === 0
                             ? 'All models'
@@ -734,30 +737,30 @@ export default function VirtualKeys() {
                         <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                           <button
                             onClick={() => { setMutationError(null); setEditingVk(vk) }}
-                            className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-blue-400
-                              hover:bg-blue-400/10 rounded-lg transition-all"
+                            className="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-500 hover:text-emerald-400
+                              hover:bg-emerald-400/10 rounded-lg transition-all"
                             title="Edit"
                           >
                             <Pencil size={13} />
                           </button>
                           <button
                             onClick={() => setDeletingVk(vk)}
-                            className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-red-400
+                            className="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-500 hover:text-red-400
                               hover:bg-red-400/10 rounded-lg transition-all"
                             title="Delete"
                           >
                             <Trash2 size={13} />
                           </button>
-                          <span className="text-gray-600 ml-1">
+                          <span className="text-zinc-600 ml-1">
                             {expandedId === vk.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                           </span>
                         </div>
                       </td>
                     </tr>
                     {expandedId === vk.id && (
-                      <tr key={`${vk.id}-budget`} className="bg-gray-800/10">
+                      <tr key={`${vk.id}-budget`} className="bg-zinc-800/20">
                         <td colSpan={6} className="px-8 py-4">
-                          <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
+                          <div className="flex items-center gap-2 text-xs text-zinc-400 mb-3">
                             <TrendingUp size={12} />
                             <span>Governance</span>
                           </div>
@@ -772,7 +775,7 @@ export default function VirtualKeys() {
         </table>
 
         {!isLoading && !data?.virtual_keys.length && (
-          <div className="text-center py-16 text-gray-600">
+          <div className="text-center py-16 text-zinc-600">
             No virtual keys configured — create one to enable governance
           </div>
         )}

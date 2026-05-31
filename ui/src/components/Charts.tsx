@@ -5,6 +5,12 @@ import {
 import { format } from 'date-fns'
 import type { HistogramBucket, TokenBucket } from '../lib/api'
 
+const tooltipStyle = {
+  background: '#18181b',
+  border: '1px solid rgba(63, 63, 70, 0.5)',
+  borderRadius: 8,
+}
+
 interface RequestChartProps {
   buckets: HistogramBucket[]
   bucketSecs: number
@@ -20,16 +26,16 @@ export function RequestChart({ buckets, bucketSecs }: RequestChartProps) {
   return (
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={data} barSize={6} barGap={2}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-        <XAxis dataKey="time" tick={{ fill: '#6b7280', fontSize: 11 }} />
-        <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} />
+        <CartesianGrid stroke="rgba(63, 63, 70, 0.5)" />
+        <XAxis dataKey="time" tick={{ fill: '#71717a', fontSize: 11 }} />
+        <YAxis tick={{ fill: '#71717a', fontSize: 11 }} />
         <Tooltip
-          contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-          labelStyle={{ color: '#9ca3af' }}
+          contentStyle={tooltipStyle}
+          labelStyle={{ color: '#a1a1aa' }}
         />
-        <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
-        <Bar dataKey="success" fill="#22c55e" name="Success" radius={[2, 2, 0, 0]} />
-        <Bar dataKey="error"   fill="#ef4444" name="Error"   radius={[2, 2, 0, 0]} />
+        <Legend wrapperStyle={{ fontSize: 12, color: '#a1a1aa' }} />
+        <Bar dataKey="success" fill="#10b981" name="Success" radius={[2, 2, 0, 0]} />
+        <Bar dataKey="error"   fill="#f43f5e" name="Error"   radius={[2, 2, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   )
@@ -50,16 +56,28 @@ export function TokenChart({ buckets, bucketSecs }: TokenChartProps) {
   return (
     <ResponsiveContainer width="100%" height={220}>
       <LineChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-        <XAxis dataKey="time" tick={{ fill: '#6b7280', fontSize: 11 }} />
-        <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} />
+        <CartesianGrid stroke="rgba(63, 63, 70, 0.5)" />
+        <XAxis dataKey="time" tick={{ fill: '#71717a', fontSize: 11 }} />
+        <YAxis tick={{ fill: '#71717a', fontSize: 11 }} />
         <Tooltip
-          contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-          labelStyle={{ color: '#9ca3af' }}
+          contentStyle={tooltipStyle}
+          labelStyle={{ color: '#a1a1aa' }}
         />
-        <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
-        <Line dataKey="prompt"     stroke="#3b82f6" name="Prompt"     dot={false} strokeWidth={2} />
-        <Line dataKey="completion" stroke="#8b5cf6" name="Completion" dot={false} strokeWidth={2} />
+        <Legend wrapperStyle={{ fontSize: 12, color: '#a1a1aa' }} />
+        <Line
+          dataKey="prompt"
+          stroke="#3b82f6"
+          name="Prompt"
+          dot={false}
+          strokeWidth={2}
+        />
+        <Line
+          dataKey="completion"
+          stroke="#10b981"
+          name="Completion"
+          dot={false}
+          strokeWidth={2}
+        />
       </LineChart>
     </ResponsiveContainer>
   )
