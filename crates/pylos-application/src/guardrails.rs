@@ -53,16 +53,15 @@ impl GuardrailsPlugin {
             let phone_regex =
                 regex::Regex::new(r"\+?\d{1,4}[-.\s]?\(?\d{1,3}?\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}")
                     .unwrap();
-            let mut phone_idx = pii_map.len() + 1;
+            let start_phone_idx = pii_map.len() + 1;
             let mut next_masked = masked.clone();
-            for mat in phone_regex.find_iter(&masked) {
+            for (phone_idx, mat) in (start_phone_idx..).zip(phone_regex.find_iter(&masked)) {
                 let original = mat.as_str().to_string();
                 // Avoid matching short integers as phone numbers
                 if original.chars().filter(|c| c.is_ascii_digit()).count() >= 7 {
                     let placeholder = format!("[PHONE_{}]", phone_idx);
                     pii_map.insert(placeholder.clone(), original);
                     next_masked = next_masked.replace(mat.as_str(), &placeholder);
-                    phone_idx += 1;
                 }
             }
             masked = next_masked;
@@ -84,14 +83,13 @@ impl GuardrailsPlugin {
         if mask_secrets {
             // OpenAI keys
             if let Ok(openai_regex) = regex::Regex::new(r"\bsk-[a-zA-Z0-9]{20,}\b") {
-                let mut secret_idx = pii_map.len() + 1;
                 let mut next_masked = masked.clone();
-                for mat in openai_regex.find_iter(&masked) {
+                for (secret_idx, mat) in (pii_map.len() + 1..).zip(openai_regex.find_iter(&masked))
+                {
                     let original = mat.as_str().to_string();
                     let placeholder = format!("[API_KEY_{}]", secret_idx);
                     pii_map.insert(placeholder.clone(), original);
                     next_masked = next_masked.replace(mat.as_str(), &placeholder);
-                    secret_idx += 1;
                 }
                 masked = next_masked;
             }
@@ -118,14 +116,12 @@ impl GuardrailsPlugin {
             if let Ok(pkey_regex) = regex::Regex::new(
                 r"(?s)-----BEGIN [A-Z ]+ PRIVATE KEY-----.*?-----END [A-Z ]+ PRIVATE KEY-----",
             ) {
-                let mut pkey_idx = pii_map.len() + 1;
                 let mut next_masked = masked.clone();
-                for mat in pkey_regex.find_iter(&masked) {
+                for (pkey_idx, mat) in (pii_map.len() + 1..).zip(pkey_regex.find_iter(&masked)) {
                     let original = mat.as_str().to_string();
                     let placeholder = format!("[PRIVATE_KEY_{}]", pkey_idx);
                     pii_map.insert(placeholder.clone(), original);
                     next_masked = next_masked.replace(mat.as_str(), &placeholder);
-                    pkey_idx += 1;
                 }
                 masked = next_masked;
             }

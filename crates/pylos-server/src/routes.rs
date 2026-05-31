@@ -1,6 +1,5 @@
 use crate::interfaces::http::{
     completions, config, embeddings, health, images, inference, logs, metrics, models,
-    system_prompts,
 };
 use crate::middleware::{management_auth_middleware, queuing_middleware, virtual_key_middleware};
 use crate::state::AppState;
@@ -36,8 +35,14 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/logs/histogram/tokens", get(logs::get_token_histogram))
         .route("/api/logs/filterdata", get(logs::get_filter_data));
 
-            post(models::pull_provider_models),
-        )
+    let management_routes = Router::new()
+        .route("/v1/models/pull", post(models::pull_provider_models))
+        // Provider management routes (protected)
+        .route("/providers", get(config::list_providers))
+        .route("/providers", post(config::create_provider))
+        .route("/providers/:name", put(config::upsert_provider))
+        .route("/providers/:name", delete(config::delete_provider))
+        .route("/providers/:name/test", post(config::test_provider))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             management_auth_middleware,
@@ -53,7 +58,6 @@ pub fn create_router(state: AppState) -> Router {
         .merge(inference_routes)
         // Logs API
         .merge(logs_routes)
-        // Management API (protégée)
         .merge(management_routes)
         // Middleware global
         .layer(TraceLayer::new_for_http())
