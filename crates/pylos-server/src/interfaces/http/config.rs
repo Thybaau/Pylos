@@ -575,3 +575,52 @@ pub async fn promote_to_production() -> Result<serde_json::Value, String> {
         "message": "Promotion workflow (promote.yml) triggered successfully on branch main."
     }))
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /config/guardrails
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateGuardrailsRequest {
+    pub enabled: bool,
+    pub mask_pii: bool,
+    pub mask_secrets: bool,
+    pub prevent_prompt_injection: bool,
+    pub blocked_keywords: Vec<String>,
+}
+
+pub async fn update_guardrails(
+    State(state): State<AppState>,
+    Json(req): Json<UpdateGuardrailsRequest>,
+) -> impl IntoResponse {
+    match state
+        .config_store
+        .upsert_guardrails_config(
+            req.enabled,
+            req.mask_pii,
+            req.mask_secrets,
+            req.prevent_prompt_injection,
+            req.blocked_keywords,
+        )
+        .await
+    {
+        Ok(()) => {
+            // Recharger la configuration pour propager les changements.
+            let _ = state.config_store.reload().await;
+            (
+                StatusCode::OK,
+                Json(json!({ "message": "Guardrails configuration updated successfully" })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+
+
+

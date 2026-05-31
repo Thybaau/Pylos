@@ -533,6 +533,43 @@ impl ConfigStore {
         }
         Ok(removed)
     }
+
+    /// Met à jour ou ajoute la configuration du plugin Guardrails et persiste
+    pub async fn upsert_guardrails_config(
+        &self,
+        enabled: bool,
+        mask_pii: bool,
+        mask_secrets: bool,
+        prevent_prompt_injection: bool,
+        blocked_keywords: Vec<String>,
+    ) -> Result<(), PylosError> {
+        let mut state = self.state.write().await;
+
+        let new_plugin = pylos_core::domain::config::PluginConfig {
+            name: "guardrails".to_string(),
+            enabled,
+            config: serde_json::json!({
+                "mask_pii": mask_pii,
+                "mask_secrets": mask_secrets,
+                "prevent_prompt_injection": prevent_prompt_injection,
+                "blocked_keywords": blocked_keywords,
+            }),
+        };
+
+        if let Some(pos) = state
+            .config
+            .plugins
+            .iter()
+            .position(|p| p.name == "guardrails")
+        {
+            state.config.plugins[pos] = new_plugin;
+        } else {
+            state.config.plugins.push(new_plugin);
+        }
+
+        persist_config_locked(&state).await;
+        Ok(())
+    }
 }
 
 /// Résultat d'un hot reload

@@ -369,24 +369,9 @@ impl AppState {
                     plugins.push(Arc::new(plugin));
                     tracing::info!(name = "semantic_cache", "Semantic Cache plugin enabled");
                 }
-                "guardrails" => {
-                    let mask_pii = plugin_cfg
-                        .config
-                        .get("mask_pii")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(true);
-                    let blocked_keywords = plugin_cfg
-                        .config
-                        .get("blocked_keywords")
-                        .and_then(|v| v.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|val| val.as_str().map(|s| s.to_string()))
-                                .collect()
-                        })
-                        .unwrap_or_default();
 
-                    let plugin = GuardrailsPlugin::new(mask_pii, blocked_keywords);
+                "guardrails" => {
+                    let plugin = GuardrailsPlugin::new(Arc::clone(&config_store));
                     plugins.push(Arc::new(plugin));
                     tracing::info!(name = "guardrails", "Guardrails plugin enabled");
                 }

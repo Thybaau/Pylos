@@ -36,50 +36,6 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/logs/histogram/tokens", get(logs::get_token_histogram))
         .route("/api/logs/filterdata", get(logs::get_filter_data));
 
-    // Routes de gestion — protégées par le middleware Management Auth
-    let management_routes = Router::new()
-        .route("/config", get(config::get_config))
-        .route("/config/reload", post(config::reload_config))
-        .route("/api/github/promote", post(config::promote_to_prod_handler))
-        // Providers CRUD
-        .route(
-            "/providers",
-            get(config::list_providers).post(config::create_provider),
-        )
-        .route(
-            "/providers/:name",
-            put(config::upsert_provider).delete(config::delete_provider),
-        )
-        .route("/providers/:name/test", post(config::test_provider))
-        .route(
-            "/system-prompts",
-            get(system_prompts::list_system_prompts).post(system_prompts::create_system_prompt),
-        )
-        .route(
-            "/system-prompts/:id",
-            delete(system_prompts::delete_system_prompt),
-        )
-        // Virtual Keys CRUD
-        .route(
-            "/virtual-keys",
-            get(config::list_virtual_keys).post(config::create_virtual_key),
-        )
-        .route(
-            "/virtual-keys/:id",
-            put(config::update_virtual_key).delete(config::delete_virtual_key),
-        )
-        .route(
-            "/virtual-keys/:id/budget",
-            get(config::get_virtual_key_budget),
-        )
-        // Model catalog CRUD
-        .route("/v1/models/catalog", post(models::upsert_catalog_model))
-        .route(
-            "/v1/models/catalog/:provider/:model_id",
-            delete(models::delete_catalog_model),
-        )
-        .route(
-            "/v1/models/pull/:provider",
             post(models::pull_provider_models),
         )
         .layer(middleware::from_fn_with_state(
