@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react'
+import { useState, Fragment, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { modelsApi, type ModelInfo } from '../lib/api'
@@ -80,6 +80,25 @@ function formToPayload(f: ModelFormState) {
     supports_embeddings: f.supports_embeddings,
     is_deprecated: f.is_deprecated,
     enabled: f.enabled,
+  }
+}
+
+// Convert API ModelInfo to form state
+function pylosToForm(p: ModelInfo): ModelFormState {
+  return {
+    provider: p.provider,
+    model_id: p.model_id,
+    display_name: p.display_name ?? '',
+    context_window: String(p.context_window),
+    max_output_tokens: String(p.max_output_tokens),
+    input_price_per_1m_usd: String(p.input_price_per_1m_usd),
+    output_price_per_1m_usd: String(p.output_price_per_1m_usd),
+    supports_vision: p.supports_vision,
+    supports_tools: p.supports_tools,
+    supports_streaming: p.supports_streaming,
+    supports_embeddings: p.supports_embeddings,
+    is_deprecated: p.is_deprecated,
+    enabled: p.enabled,
   }
 }
 
@@ -455,7 +474,7 @@ export default function ModelCatalog() {
                       <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-right">Input /1M</th>
                       <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-right">Output /1M</th>
                       <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Capabilities</th>
-                      <th className="px-6 py-4 w-20"></th>
+                      <th className="px-6 py-4 w-20">Test</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/40">
@@ -467,7 +486,8 @@ export default function ModelCatalog() {
                             ${pylos?.enabled === false ? 'opacity-50 grayscale' : ''}`}
                           onClick={() => setExpandedId(expandedId === id ? null : id)}
                         >
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 flex items-center justify-between">
+            <Link to={`/playground?model=${pylos?.provider}::${pylos?.model_id}`}>Test</Link>
                             <div className="flex flex-col">
                               <span className="font-semibold text-zinc-100 group-hover:text-white transition-colors">
                                 {pylos?.display_name || pylos?.model_id || id}
@@ -599,6 +619,19 @@ export default function ModelCatalog() {
           error={mutationError}
         />
       )}
+
+      {/* Add Test link column header */}
+      {editingModel && (
+        <ModelModal
+          initial={pylosToForm(editingModel)}
+          isEdit={true}
+          onClose={() => { setEditingModel(null); setMutationError(null) }}
+          onSave={form => upsertMutation.mutate(form)}
+          isSaving={upsertMutation.isPending}
+          error={mutationError}
+        />
+      )}
+
 
       {editingModel && (
         <ModelModal
