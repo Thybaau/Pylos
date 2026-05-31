@@ -1,0 +1,12 @@
+{
+  "name": "pylos-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Root package proxy for Pylos UI and other tools",
+  "scripts": {
+    "build": "npm --prefix ui run build",
+    "dev": "npm --prefix ui run dev",
+    "start": "npm --prefix ui start",
+    "test": "npm --prefix ui test"
+  }
+}

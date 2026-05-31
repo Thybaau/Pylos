@@ -13,6 +13,7 @@ interface Model {
   id: string
   provider: string
   details?: { family?: string; parameter_size?: string }
+  supports_streaming?: boolean
 }
 
 interface Message {
@@ -183,6 +184,14 @@ export default function Playground() {
   const [streamingContent, setStreamingContent] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const { data: modelsData, isLoading: modelsLoading } = useQuery({
+    queryKey: ['models'],
+    queryFn: fetchModels,
+    staleTime: 60_000,
+  })
+
+  const models = modelsData ?? []
+
   // Sync streaming flag with selected model capabilities
   useEffect(() => {
     if (!models || !selectedModel) return
@@ -195,14 +204,6 @@ export default function Playground() {
       }
     }
   }, [selectedModel, models])
-
-  const { data: modelsData, isLoading: modelsLoading } = useQuery({
-    queryKey: ['models'],
-    queryFn: fetchModels,
-    staleTime: 60_000,
-  })
-
-  const models = modelsData ?? []
 
   useEffect(() => {
     if (models.length && !selectedModel) {
