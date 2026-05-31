@@ -1,18 +1,39 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { logsApi } from '../lib/api'
+import { logsApi, configApi } from '../lib/api'
 import { StatCard } from '../components/StatCard'
 import { RequestChart, TokenChart } from '../components/Charts'
 import {
   formatLatency, formatCost, formatNumber, formatPercent,
 } from '../lib/utils'
-import { Activity, TrendingUp, Coins, Zap, Clock, Hash } from 'lucide-react'
+import { Activity, TrendingUp, Coins, Zap, Clock, Hash, Rocket } from 'lucide-react'
 
 const PERIODS = ['1h', '6h', '24h', '7d', '30d'] as const
 type Period = typeof PERIODS[number]
 
 export default function Dashboard() {
   const [period, setPeriod] = useState<Period>('24h')
+  const [isPromoting, setIsPromoting] = useState(false)
+  const [promoteMessage, setPromoteMessage] = useState<string | null>(null)
+
+  const handlePromote = async () => {
+    if (!window.confirm("Are you sure you want to promote the current DEV version to PRODUCTION?")) {
+      return
+    }
+    setIsPromoting(true)
+    setPromoteMessage("Triggering promotion...")
+    try {
+      const res = await configApi.promote()
+      setPromoteMessage(res.message || "Promotion started successfully!")
+      setTimeout(() => setPromoteMessage(null), 5000)
+    } catch (err: any) {
+      const errMsg = err.response?.data?.error || err.message || "Failed to trigger promotion."
+      setPromoteMessage(`Error: ${errMsg}`)
+      setTimeout(() => setPromoteMessage(null), 7000)
+    } finally {
+      setIsPromoting(false)
+    }
+  }
 
   const statsQ = useQuery({
     queryKey: ['logs-stats', period],
@@ -59,12 +80,34 @@ export default function Dashboard() {
               </button>
             ))}
           </div>
+          <button
+            onClick={handlePromote}
+            disabled={isPromoting}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-200
+              ${isPromoting
+                ? 'bg-zinc-800 border-zinc-700 text-zinc-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-purple-600 to-indigo-600 border-indigo-500 hover:border-indigo-400 text-white shadow-lg hover:shadow-indigo-500/20 active:scale-95'
+              }`}
+          >
+            <Rocket size={14} className={isPromoting ? 'animate-bounce' : ''} />
+            {isPromoting ? 'Promoting...' : 'Promote to Prod'}
+          </button>
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             Live
           </div>
         </div>
       </div>
+
+      {promoteMessage && (
+        <div className={`p-3 rounded-lg border text-xs font-medium ${
+          promoteMessage.startsWith('Error')
+            ? 'bg-red-500/10 border-red-500/20 text-red-400'
+            : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+        }`}>
+          {promoteMessage}
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">

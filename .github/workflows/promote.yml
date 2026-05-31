@@ -1,0 +1,59 @@
+name: Pylos Promotion
+
+on:
+  workflow_dispatch:
+
+jobs:
+  promote:
+    name: 🚀 Promote Dev to Production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull, Tag and Push Backend
+        run: |
+          docker pull ghcr.io/jzacharie/pylos:dev
+          docker tag ghcr.io/jzacharie/pylos:dev ghcr.io/jzacharie/pylos:latest
+          docker push ghcr.io/jzacharie/pylos:latest
+
+      - name: Pull, Tag and Push Frontend
+        run: |
+          docker pull ghcr.io/jzacharie/pylos-ui:dev
+          docker tag ghcr.io/jzacharie/pylos-ui:dev ghcr.io/jzacharie/pylos-ui:latest
+          docker push ghcr.io/jzacharie/pylos-ui:latest
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_JO3 }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Restart Production Deployment
+        run: |
+          kubectl rollout restart deployment pylos-server -n pylos
+          kubectl rollout restart deployment pylos-ui -n pylos
+          kubectl rollout status deployment pylos-server -n pylos
+          kubectl rollout status deployment pylos-ui -n pylos
+
+      - name: Notify Slack
+        if: success()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          jq -n \
+            '{text: "🚀 *Pylos Promoted to Production*\n\n✅ Version `:dev` is now `:latest` in namespace `pylos`.\n🌐 URL: https://pylos.p.zacharie.org"}' \
+            | curl -X POST -H 'Content-type: application/json' -d @- $SLACK_WEBHOOK

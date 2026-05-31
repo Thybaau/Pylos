@@ -261,4 +261,5 @@ export const healthApi = {
 export const configApi = {
   get: () => api.get('/config').then(r => r.data),
   reload: () => api.post('/config/reload').then(r => r.data),
+  promote: () => api.post<{ success: boolean; message: string }>('/api/github/promote').then(r => r.data),
 }

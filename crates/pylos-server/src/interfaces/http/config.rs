@@ -520,3 +520,58 @@ fn redact_config(cfg: &pylos_core::domain::config::PylosConfig) -> serde_json::V
 
     v
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/github/promote
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn promote_to_prod_handler() -> impl IntoResponse {
+    match promote_to_production().await {
+        Ok(res) => Json(res).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn promote_to_production() -> Result<serde_json::Value, String> {
+    let pat = std::env::var("GH_PAT").map_err(|_| "GH_PAT not set".to_string())?;
+    let client = reqwest::Client::builder()
+        .user_agent("Pylos-Dashboard/0.1.0")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let repo = "JZacharie/Pylos";
+    let workflow_id = "promote.yml";
+
+    let url = format!(
+        "https://api.github.com/repos/{}/actions/workflows/{}/dispatches",
+        repo, workflow_id
+    );
+
+    let payload = json!({
+        "ref": "main"
+    });
+
+    let resp = client
+        .post(&url)
+        .bearer_auth(&pat)
+        .header("Accept", "application/vnd.github.v3+json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to trigger promotion workflow: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let error_body = resp.text().await.unwrap_or_default();
+        return Err(format!("GitHub API error ({}): {}", status, error_body));
+    }
+
+    Ok(json!({
+        "success": true,
+        "message": "Promotion workflow (promote.yml) triggered successfully on branch main."
+    }))
+}

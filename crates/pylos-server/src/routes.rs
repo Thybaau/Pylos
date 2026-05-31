@@ -39,6 +39,7 @@ pub fn create_router(state: AppState) -> Router {
     let management_routes = Router::new()
         .route("/config", get(config::get_config))
         .route("/config/reload", post(config::reload_config))
+        .route("/api/github/promote", post(config::promote_to_prod_handler))
         // Providers CRUD
         .route(
             "/providers",
