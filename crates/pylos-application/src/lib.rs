@@ -9,6 +9,7 @@ pub mod pg_log_store;
 pub mod rag_plugin;
 pub mod rate_limit_store;
 pub mod semantic_cache;
+pub mod system_prompt_store;
 
 pub mod batching;
 pub mod prefix_cache;
@@ -17,6 +18,7 @@ pub mod structured_output;
 pub mod use_cases;
 pub mod virtual_key_store;
 
+pub use system_prompt_store::SystemPromptStore;
 pub use virtual_key_store::VirtualKeyStore;
 
 pub use batching::BatchingPlugin;

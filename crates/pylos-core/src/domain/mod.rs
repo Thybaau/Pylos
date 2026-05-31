@@ -5,5 +5,6 @@ pub mod image;
 pub mod openai;
 pub mod provider;
 pub mod request;
+pub mod system_prompt;
 pub mod traits;
 pub mod virtual_key;

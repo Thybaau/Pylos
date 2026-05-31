@@ -7,3 +7,4 @@ pub mod inference;
 pub mod logs;
 pub mod metrics;
 pub mod models;
+pub mod system_prompts;

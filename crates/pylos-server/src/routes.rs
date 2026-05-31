@@ -1,5 +1,6 @@
 use crate::interfaces::http::{
     completions, config, embeddings, health, images, inference, logs, metrics, models,
+    system_prompts,
 };
 use crate::middleware::{management_auth_middleware, queuing_middleware, virtual_key_middleware};
 use crate::state::AppState;
@@ -50,6 +51,14 @@ pub fn create_router(state: AppState) -> Router {
             put(config::upsert_provider).delete(config::delete_provider),
         )
         .route("/providers/:name/test", post(config::test_provider))
+        .route(
+            "/system-prompts",
+            get(system_prompts::list_system_prompts).post(system_prompts::create_system_prompt),
+        )
+        .route(
+            "/system-prompts/:id",
+            delete(system_prompts::delete_system_prompt),
+        )
         // Virtual Keys CRUD
         .route(
             "/virtual-keys",

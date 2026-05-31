@@ -8,6 +8,7 @@ use tower::ServiceExt; // for oneshot
 
 use pylos_application::{
     BudgetStore, ConfigStore, InferenceOrchestrator, LogStore, ModelCatalog, RateLimitStore,
+    SystemPromptStore,
 };
 use pylos_core::domain::openai::{
     ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole, Usage,
@@ -152,6 +153,7 @@ async fn test_chat_completions_unary() {
             .unwrap(),
     );
 
+    let system_prompt_store = Arc::new(SystemPromptStore::in_memory().await.unwrap());
     let state = AppState {
         orchestrator,
         config_store,
@@ -162,6 +164,7 @@ async fn test_chat_completions_unary() {
         budget_store,
         rate_limit_store,
         vk_store,
+        system_prompt_store,
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(100)),
         max_concurrency: 100,
@@ -224,6 +227,7 @@ async fn test_chat_completions_stream() {
             .unwrap(),
     );
 
+    let system_prompt_store = Arc::new(SystemPromptStore::in_memory().await.unwrap());
     let state = AppState {
         orchestrator,
         config_store,
@@ -234,6 +238,7 @@ async fn test_chat_completions_stream() {
         budget_store,
         rate_limit_store,
         vk_store,
+        system_prompt_store,
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(100)),
         max_concurrency: 100,
@@ -304,6 +309,7 @@ async fn test_image_generations() {
             .unwrap(),
     );
 
+    let system_prompt_store = Arc::new(SystemPromptStore::in_memory().await.unwrap());
     let state = AppState {
         orchestrator,
         config_store,
@@ -314,6 +320,7 @@ async fn test_image_generations() {
         budget_store,
         rate_limit_store,
         vk_store,
+        system_prompt_store,
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(100)),
         max_concurrency: 100,
@@ -450,6 +457,7 @@ async fn test_a2a_allowed_models_routing() {
             .unwrap(),
     );
 
+    let system_prompt_store = Arc::new(SystemPromptStore::in_memory().await.unwrap());
     let state = AppState {
         orchestrator,
         config_store,
@@ -460,6 +468,7 @@ async fn test_a2a_allowed_models_routing() {
         budget_store,
         rate_limit_store,
         vk_store,
+        system_prompt_store,
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(100)),
         max_concurrency: 100,
@@ -634,6 +643,7 @@ async fn test_semantic_caching_flow() {
             .unwrap(),
     );
 
+    let system_prompt_store = Arc::new(SystemPromptStore::in_memory().await.unwrap());
     let state = AppState {
         orchestrator,
         config_store,
@@ -644,6 +654,7 @@ async fn test_semantic_caching_flow() {
         budget_store,
         rate_limit_store,
         vk_store,
+        system_prompt_store,
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(100)),
         max_concurrency: 100,
@@ -774,6 +785,7 @@ async fn test_structured_outputs_validation() {
             .unwrap(),
     );
 
+    let system_prompt_store = Arc::new(SystemPromptStore::in_memory().await.unwrap());
     let state = AppState {
         orchestrator,
         config_store,
@@ -784,6 +796,7 @@ async fn test_structured_outputs_validation() {
         budget_store,
         rate_limit_store,
         vk_store,
+        system_prompt_store,
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(10)),
         max_concurrency: 10,
@@ -890,6 +903,7 @@ async fn test_inference_queuing_and_timeout() {
     );
 
     // Concurrency limit: 1, Max queue size: 1, Queue timeout: 100ms
+    let system_prompt_store = Arc::new(SystemPromptStore::in_memory().await.unwrap());
     let state = AppState {
         orchestrator,
         config_store,
@@ -900,6 +914,7 @@ async fn test_inference_queuing_and_timeout() {
         budget_store,
         rate_limit_store,
         vk_store,
+        system_prompt_store,
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
         max_concurrency: 1,
