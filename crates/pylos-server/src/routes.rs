@@ -36,13 +36,35 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/logs/filterdata", get(logs::get_filter_data));
 
     let management_routes = Router::new()
-        .route("/v1/models/pull", post(models::pull_provider_models))
+        // Model management routes
+        .route(
+            "/v1/models/pull/:provider",
+            post(models::pull_provider_models),
+        )
+        .route("/v1/models/catalog", post(models::upsert_catalog_model))
+        .route(
+            "/v1/models/catalog/:provider/:model_id",
+            delete(models::delete_catalog_model),
+        )
         // Provider management routes (protected)
         .route("/providers", get(config::list_providers))
         .route("/providers", post(config::create_provider))
         .route("/providers/:name", put(config::upsert_provider))
         .route("/providers/:name", delete(config::delete_provider))
         .route("/providers/:name/test", post(config::test_provider))
+        // Virtual Key management routes
+        .route("/virtual-keys", get(config::list_virtual_keys))
+        .route("/virtual-keys", post(config::create_virtual_key))
+        .route("/virtual-keys/:id", put(config::update_virtual_key))
+        .route("/virtual-keys/:id", delete(config::delete_virtual_key))
+        .route(
+            "/virtual-keys/:id/budget",
+            get(config::get_virtual_key_budget),
+        )
+        // Config management routes
+        .route("/config", get(config::get_config))
+        .route("/config/reload", post(config::reload_config))
+        .route("/api/github/promote", post(config::promote_to_prod_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             management_auth_middleware,
