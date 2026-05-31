@@ -183,6 +183,18 @@ export default function Playground() {
   const [streamingContent, setStreamingContent] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  // Sync streaming flag with selected model capabilities
+  useEffect(() => {
+    if (!models || !selectedModel) return
+    const [provider, ...rest] = selectedModel.split('::')
+    const modelId = rest.join('::')
+    const mdl = models.find(m => m.provider === provider && m.id === modelId)
+    if (mdl && typeof mdl.supports_streaming === 'boolean') {
+      if (streaming !== mdl.supports_streaming) {
+        setStreaming(mdl.supports_streaming)
+      }
+    }
+  }, [selectedModel, models])
 
   const { data: modelsData, isLoading: modelsLoading } = useQuery({
     queryKey: ['models'],
@@ -275,6 +287,11 @@ export default function Playground() {
           }
         }
 
+        // Validate that we received some content
+        if (!fullContent.trim()) {
+          throw new Error('Empty response from model')
+        }
+
         const latency = performance.now() - start
         const assistantMsg: Message = { role: 'assistant', content: fullContent }
         setMessages(prev => [...prev, assistantMsg])
@@ -302,6 +319,11 @@ export default function Playground() {
         const choice = resp.data.choices?.[0]
         const usage = resp.data.usage ?? {}
         const content = choice?.message?.content ?? ''
+
+        // Validate that we received some content
+        if (!content.trim()) {
+          throw new Error('Empty response from model')
+        }
 
         const assistantMsg: Message = { role: 'assistant', content }
         setMessages(prev => [...prev, assistantMsg])

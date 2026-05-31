@@ -171,6 +171,7 @@ export interface ModelInfo {
   supports_streaming: boolean
   supports_embeddings: boolean
   is_deprecated: boolean
+  enabled: boolean
 }
 
 export interface ModelListResponse {

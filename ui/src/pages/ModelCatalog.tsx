@@ -1,4 +1,5 @@
 import { useState, Fragment } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { modelsApi, type ModelInfo } from '../lib/api'
 import {
@@ -43,6 +44,7 @@ interface ModelFormState {
   supports_streaming: boolean
   supports_embeddings: boolean
   is_deprecated: boolean
+  enabled: boolean
 }
 
 const DEFAULT_FORM: ModelFormState = {
@@ -58,24 +60,10 @@ const DEFAULT_FORM: ModelFormState = {
   supports_streaming: true,
   supports_embeddings: false,
   is_deprecated: false,
+  enabled: true,
 }
 
-function pylosToForm(m: ModelInfo): ModelFormState {
-  return {
-    provider: m.provider,
-    model_id: m.model_id,
-    display_name: m.display_name ?? '',
-    context_window: String(m.context_window),
-    max_output_tokens: String(m.max_output_tokens),
-    input_price_per_1m_usd: String(m.input_price_per_1m_usd),
-    output_price_per_1m_usd: String(m.output_price_per_1m_usd),
-    supports_vision: m.supports_vision,
-    supports_tools: m.supports_tools,
-    supports_streaming: m.supports_streaming,
-    supports_embeddings: m.supports_embeddings,
-    is_deprecated: m.is_deprecated,
-  }
-}
+
 
 function formToPayload(f: ModelFormState) {
   return {
@@ -91,6 +79,7 @@ function formToPayload(f: ModelFormState) {
     supports_streaming: f.supports_streaming,
     supports_embeddings: f.supports_embeddings,
     is_deprecated: f.is_deprecated,
+    enabled: f.enabled,
   }
 }
 
@@ -236,6 +225,10 @@ function ModelModal({
                 <Toggle k={k} />
               </div>
             ))}
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-sm text-zinc-300">Enabled</span>
+              <Toggle k="enabled" />
+            </div>
           </div>
 
           {error && (
@@ -470,7 +463,8 @@ export default function ModelCatalog() {
                       <Fragment key={id}>
                         <tr
                           className={`transition-colors cursor-pointer group
-                            ${expandedId === id ? 'bg-zinc-800/20' : 'hover:bg-zinc-800/30'}`}
+                            ${expandedId === id ? 'bg-zinc-800/20' : 'hover:bg-zinc-800/30'}
+                            ${pylos?.enabled === false ? 'opacity-50 grayscale' : ''}`}
                           onClick={() => setExpandedId(expandedId === id ? null : id)}
                         >
                           <td className="px-6 py-4">
