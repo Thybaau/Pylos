@@ -236,6 +236,7 @@ fn model_info_pylos_field(info: &pylos_application::ModelInfo) -> serde_json::Va
         "supports_streaming": info.supports_streaming,
         "supports_embeddings": info.supports_embeddings,
         "is_deprecated": info.is_deprecated,
+        "enabled": info.enabled,
     })
 }
 
@@ -259,6 +260,7 @@ fn make_minimal_pylos(
         "supports_streaming": true,
         "supports_embeddings": false,
         "is_deprecated": false,
+        "enabled": true,
     })
 }
 
@@ -300,6 +302,8 @@ pub struct UpsertModelRequest {
     pub supports_embeddings: bool,
     #[serde(default)]
     pub is_deprecated: bool,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -324,6 +328,7 @@ pub async fn upsert_catalog_model(
         supports_streaming: req.supports_streaming,
         supports_embeddings: req.supports_embeddings,
         is_deprecated: req.is_deprecated,
+        enabled: req.enabled,
     };
 
     match state.model_catalog.upsert_model(&info).await {
@@ -367,4 +372,154 @@ pub async fn delete_catalog_model(
         )
             .into_response(),
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /v1/models/pull/:provider — synchronise la liste des modèles du provider
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn pull_provider_models(
+    State(state): State<AppState>,
+    Path(provider_name): Path<String>,
+) -> impl IntoResponse {
+    let cfg = state.config_store.get().await;
+    let provider_cfg = match cfg.providers.get(&provider_name) {
+        Some(c) => c,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(
+                    json!({ "error": format!("Provider '{}' not found in config", provider_name) }),
+                ),
+            )
+                .into_response();
+        }
+    };
+
+    let mut model_ids = Vec::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+
+    if provider_name == "ollama-jo3" || provider_name.contains("ollama") {
+        if let Some(base_url) = &provider_cfg.network.base_url {
+            let tags_url = base_url.trim_end_matches("/v1").to_string() + "/api/tags";
+            if let Ok(resp) = client.get(&tags_url).send().await {
+                if let Ok(body) = resp.json::<serde_json::Value>().await {
+                    if let Some(arr) = body["models"].as_array() {
+                        for m in arr {
+                            if let Some(name) = m["name"].as_str() {
+                                model_ids.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else if provider_name == "gemini" || provider_name == "google" {
+        if let Some(api_key) = provider_cfg.keys.first().and_then(|k| k.value.resolve()) {
+            let url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/models?key={}",
+                api_key
+            );
+            if let Ok(resp) = client.get(&url).send().await {
+                if let Ok(body) = resp.json::<serde_json::Value>().await {
+                    if let Some(arr) = body["models"].as_array() {
+                        for m in arr {
+                            if let Some(name) = m["name"].as_str() {
+                                let id = name.strip_prefix("models/").unwrap_or(name);
+                                model_ids.push(id.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        let base_url = provider_cfg
+            .network
+            .base_url
+            .clone()
+            .unwrap_or_else(|| match provider_name.as_str() {
+                "openai" => "https://api.openai.com/v1".to_string(),
+                "groq" => "https://api.groq.com/openai/v1".to_string(),
+                "mistral" => "https://api.mistral.ai/v1".to_string(),
+                "cohere" => "https://api.cohere.com/v1".to_string(),
+                "deepseek" => "https://api.deepseek.com/v1".to_string(),
+                _ => "https://api.openai.com/v1".to_string(),
+            });
+        let url = format!("{}/models", base_url.trim_end_matches('/'));
+        let mut req = client.get(&url);
+        if let Some(api_key) = provider_cfg.keys.first().and_then(|k| k.value.resolve()) {
+            if !api_key.is_empty() {
+                req = req.bearer_auth(api_key);
+            }
+        }
+        if let Ok(resp) = req.send().await {
+            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                if let Some(arr) = body["data"].as_array() {
+                    for m in arr {
+                        if let Some(id) = m["id"].as_str() {
+                            model_ids.push(id.to_string());
+                        }
+                    }
+                } else if let Some(arr) = body["models"].as_array() {
+                    for m in arr {
+                        if let Some(id) = m["name"].as_str().or_else(|| m["id"].as_str()) {
+                            model_ids.push(id.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if model_ids.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "No models could be retrieved from the provider. Check configuration/API keys." })),
+        )
+            .into_response();
+    }
+
+    let mut upserted_count = 0;
+    for model_id in &model_ids {
+        let exists = state
+            .model_catalog
+            .get_model(&provider_name, model_id)
+            .await;
+        if exists.is_none() {
+            let is_embed = model_id.to_lowercase().contains("embed");
+            let is_vision = model_id.to_lowercase().contains("vision")
+                || model_id.to_lowercase().contains("vl");
+            let info = ModelInfo {
+                id: format!("{}/{}", provider_name, model_id),
+                provider: provider_name.clone(),
+                model_id: model_id.clone(),
+                display_name: Some(model_id.clone()),
+                context_window: if is_embed { 8192 } else { 128_000 },
+                max_output_tokens: if is_embed { 0 } else { 4096 },
+                input_price_per_1m_usd: 0.0,
+                output_price_per_1m_usd: 0.0,
+                supports_vision: is_vision,
+                supports_tools: !is_embed,
+                supports_streaming: !is_embed,
+                supports_embeddings: is_embed,
+                is_deprecated: false,
+                enabled: true,
+            };
+            if state.model_catalog.upsert_model(&info).await.is_ok() {
+                upserted_count += 1;
+            }
+        }
+    }
+
+    Json(json!({
+        "success": true,
+        "message": format!("Successfully pulled {} models, added {} new ones to the catalog.", model_ids.len(), upserted_count),
+        "total_fetched": model_ids.len(),
+        "new_added": upserted_count,
+    }))
+    .into_response()
 }

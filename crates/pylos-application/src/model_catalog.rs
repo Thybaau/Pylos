@@ -42,6 +42,7 @@ pub struct ModelInfo {
     pub supports_streaming: bool,
     pub supports_embeddings: bool,
     pub is_deprecated: bool,
+    pub enabled: bool,
 }
 
 #[derive(Clone)]
@@ -110,6 +111,7 @@ impl ModelCatalog {
                 supports_streaming      INTEGER NOT NULL DEFAULT 1,
                 supports_embeddings     INTEGER NOT NULL DEFAULT 0,
                 is_deprecated           INTEGER NOT NULL DEFAULT 0,
+                enabled                 INTEGER NOT NULL DEFAULT 1,
                 updated_at_ms           INTEGER NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_uniq ON model_catalog(provider, model_id);
@@ -138,7 +140,7 @@ impl ModelCatalog {
             params.push(p.to_string());
         }
         if !include_deprecated {
-            sql.push_str(" AND is_deprecated = 0");
+            sql.push_str(" AND is_deprecated = 0 AND enabled = 1");
         }
         sql.push_str(" ORDER BY provider, model_id");
 
@@ -214,8 +216,8 @@ impl ModelCatalog {
                         (id, provider, model_id, display_name, context_window, max_output_tokens,
                          input_price_per_1m_usd, output_price_per_1m_usd,
                          supports_vision, supports_tools, supports_streaming, supports_embeddings,
-                         is_deprecated, updated_at_ms)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                         is_deprecated, enabled, updated_at_ms)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                     ON CONFLICT(id) DO UPDATE SET
                         display_name = excluded.display_name,
                         context_window = excluded.context_window,
@@ -227,6 +229,7 @@ impl ModelCatalog {
                         supports_streaming = excluded.supports_streaming,
                         supports_embeddings = excluded.supports_embeddings,
                         is_deprecated = excluded.is_deprecated,
+                        enabled = excluded.enabled,
                         updated_at_ms = excluded.updated_at_ms
                     "#,
                 )
@@ -243,6 +246,7 @@ impl ModelCatalog {
                 .bind(model.supports_streaming as i32)
                 .bind(model.supports_embeddings as i32)
                 .bind(model.is_deprecated as i32)
+                .bind(model.enabled as i32)
                 .bind(now)
                 .execute(pool)
                 .await?;
@@ -254,8 +258,8 @@ impl ModelCatalog {
                         (id, provider, model_id, display_name, context_window, max_output_tokens,
                          input_price_per_1m_usd, output_price_per_1m_usd,
                          supports_vision, supports_tools, supports_streaming, supports_embeddings,
-                         is_deprecated, updated_at_ms)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                         is_deprecated, enabled, updated_at_ms)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                     ON CONFLICT(id) DO UPDATE SET
                         display_name = excluded.display_name,
                         context_window = excluded.context_window,
@@ -267,6 +271,7 @@ impl ModelCatalog {
                         supports_streaming = excluded.supports_streaming,
                         supports_embeddings = excluded.supports_embeddings,
                         is_deprecated = excluded.is_deprecated,
+                        enabled = excluded.enabled,
                         updated_at_ms = excluded.updated_at_ms
                     "#,
                 )
@@ -283,6 +288,7 @@ impl ModelCatalog {
                 .bind(model.supports_streaming as i32)
                 .bind(model.supports_embeddings as i32)
                 .bind(model.is_deprecated as i32)
+                .bind(model.enabled as i32)
                 .bind(now)
                 .execute(pool)
                 .await?;
@@ -339,6 +345,7 @@ fn row_to_model_info_sqlite(row: &sqlx::sqlite::SqliteRow) -> ModelInfo {
         supports_streaming: row.try_get::<i64, _>("supports_streaming").unwrap_or(1) != 0,
         supports_embeddings: row.try_get::<i64, _>("supports_embeddings").unwrap_or(0) != 0,
         is_deprecated: row.try_get::<i64, _>("is_deprecated").unwrap_or(0) != 0,
+        enabled: row.try_get::<i64, _>("enabled").unwrap_or(1) != 0,
     }
 }
 
@@ -359,6 +366,7 @@ fn row_to_model_info_pg(row: &sqlx::postgres::PgRow) -> ModelInfo {
             .try_get::<bool, _>("supports_embeddings")
             .unwrap_or(false),
         is_deprecated: row.try_get::<bool, _>("is_deprecated").unwrap_or(false),
+        enabled: row.try_get::<bool, _>("enabled").unwrap_or(true),
     }
 }
 
@@ -396,6 +404,7 @@ fn m(
         supports_streaming: true,
         supports_embeddings: embeddings,
         is_deprecated: false,
+        enabled: true,
     }
 }
 

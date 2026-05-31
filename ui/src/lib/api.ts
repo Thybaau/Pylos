@@ -252,6 +252,9 @@ export const modelsApi = {
 
   remove: (provider: string, model_id: string) =>
     api.delete(`/v1/models/catalog/${provider}/${model_id}`).then(r => r.data),
+
+  pull: (provider: string) =>
+    api.post(`/v1/models/pull/${provider}`).then(r => r.data),
 }
 
 export const healthApi = {

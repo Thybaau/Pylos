@@ -366,6 +366,18 @@ export default function ModelCatalog() {
     onSuccess: () => { invalidate(); setDeletingModel(null) },
   })
 
+  const pullMutation = useMutation({
+    mutationFn: (p: string) => modelsApi.pull(p),
+    onSuccess: (res) => {
+      invalidate()
+      alert(res.message || "Successfully pulled models from provider")
+    },
+    onError: (e: any) => {
+      const msg = e.response?.data?.error || e.message
+      alert(`Failed to pull models: ${msg}`)
+    }
+  })
+
   const models = (data?.data ?? []).filter(Boolean)
   const filtered = models.filter(m => {
     if (!search) return true
@@ -458,6 +470,23 @@ export default function ModelCatalog() {
                     <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 border border-zinc-700/50">
                       {pModels.length} models
                     </span>
+                    {prov !== 'unknown' && (
+                      <button
+                        disabled={pullMutation.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          pullMutation.mutate(prov);
+                        }}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white border border-zinc-700/50 transition-colors disabled:opacity-50"
+                      >
+                        {pullMutation.isPending && pullMutation.variables === prov ? (
+                          <RotateCcw size={10} className="animate-spin text-emerald-400" />
+                        ) : (
+                          <RotateCcw size={10} />
+                        )}
+                        Sync Provider
+                      </button>
+                    )}
                   </div>
                   <div className={`text-zinc-500 group-hover:text-zinc-300 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}>
                     <ChevronDown size={16} />

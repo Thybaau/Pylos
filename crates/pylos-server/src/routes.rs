@@ -78,6 +78,10 @@ pub fn create_router(state: AppState) -> Router {
             "/v1/models/catalog/:provider/:model_id",
             delete(models::delete_catalog_model),
         )
+        .route(
+            "/v1/models/pull/:provider",
+            post(models::pull_provider_models),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             management_auth_middleware,
