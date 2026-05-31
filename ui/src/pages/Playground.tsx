@@ -291,15 +291,25 @@ export default function Playground() {
           for (const line of chunk.split('\n')) {
             const data = line.replace(/^data: /, '').trim()
             if (!data || data === '[DONE]') continue
+            let streamError: string | null = null
             try {
               const parsed = JSON.parse(data)
-              const delta = parsed.choices?.[0]?.delta?.content ?? ''
-              finishReason = parsed.choices?.[0]?.finish_reason ?? finishReason
-              if (delta) {
-                fullContent += delta
-                setStreamingContent(fullContent)
+              if (parsed.error) {
+                streamError = typeof parsed.error === 'object'
+                  ? (parsed.error.message ?? JSON.stringify(parsed.error))
+                  : parsed.error
+              } else {
+                const delta = parsed.choices?.[0]?.delta?.content ?? ''
+                finishReason = parsed.choices?.[0]?.finish_reason ?? finishReason
+                if (delta) {
+                  fullContent += delta
+                  setStreamingContent(fullContent)
+                }
               }
             } catch { /* ignore parse errors */ }
+            if (streamError) {
+              throw new Error(streamError)
+            }
           }
         }
 
