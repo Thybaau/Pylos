@@ -6,6 +6,7 @@ import { formatLatency, formatCost, providerColor } from '../lib/utils'
 import {
   Send, StopCircle, Trash2, ChevronDown,
   Zap, Clock, Hash, Coins, CheckCircle, XCircle,
+  SlidersHorizontal, X,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -104,12 +105,12 @@ function ChatMessage({ msg, isStreaming }: { msg: Message; isStreaming?: boolean
         ${isUser ? 'bg-emerald-600 text-white' : 'bg-zinc-700 text-zinc-300'}`}>
         {isUser ? 'U' : 'AI'}
       </div>
-      <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed
+      <div className={`max-w-[85%] sm:max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed
         ${isUser
           ? 'bg-emerald-600 text-white rounded-tr-sm'
           : 'bg-zinc-800/50 border border-zinc-700/50 text-zinc-100 rounded-tl-sm'
         }`}>
-        <pre className="whitespace-pre-wrap font-sans break-words">
+        <pre className="whitespace-pre-wrap font-sans break-words text-xs sm:text-sm">
           {msg.content}
           {isStreaming && <span className="inline-block w-1.5 h-4 bg-zinc-400 ml-0.5 animate-pulse" />}
         </pre>
@@ -185,6 +186,7 @@ export default function Playground() {
   const [isRunning, setIsRunning] = useState(false)
   const [lastResult, setLastResult] = useState<RunResult | null>(null)
   const [streamingContent, setStreamingContent] = useState('')
+  const [showConfig, setShowConfig] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const { data: modelsData, isLoading: modelsLoading } = useQuery({
@@ -405,12 +407,33 @@ export default function Playground() {
   const { provider: currentProvider } = selectedModel ? parseSelected() : { provider: '' }
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden relative">
+
+      {/* Backdrop overlay for config drawer on mobile */}
+      {showConfig && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm md:hidden"
+          onClick={() => setShowConfig(false)}
+        />
+      )}
 
       {/* ── Config sidebar ─────────────────────────────────────── */}
-      <aside className="w-64 flex-shrink-0 bg-zinc-900/50 border-r border-zinc-800/50 flex flex-col overflow-y-auto">
+      <aside
+        className={`fixed inset-y-0 right-0 z-45 w-64 bg-zinc-950 border-l border-zinc-800/80 flex flex-col overflow-y-auto transition-transform duration-300 md:duration-200
+          md:static md:translate-x-0
+          ${showConfig ? 'translate-x-0' : 'translate-x-full'}
+        `}
+      >
         <div className="p-4 space-y-4">
-          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Configuration</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Configuration</h2>
+            <button
+              onClick={() => setShowConfig(false)}
+              className="md:hidden text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800/50"
+            >
+              <X size={16} />
+            </button>
+          </div>
 
           {/* Model selector */}
           <div className="space-y-1.5">
@@ -519,9 +542,31 @@ export default function Playground() {
       </aside>
 
       {/* ── Conversation panel ────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 bg-zinc-950">
+        {/* Mobile Header Toolbar */}
+        <div className="flex md:hidden items-center justify-between border-b border-zinc-800/50 px-4 py-2 bg-zinc-900/50">
+          <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Playground</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowConfig(true)}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              title="Configuration"
+            >
+              <SlidersHorizontal size={18} />
+            </button>
+            <button
+              onClick={clear}
+              disabled={isRunning || messages.length === 0}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition-colors disabled:opacity-40"
+              title="Clear conversation"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+        </div>
+
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
           {messages.length === 0 && !isRunning && (
             <div className="h-full flex flex-col items-center justify-center text-zinc-600 gap-3">
               <div className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800/50 flex items-center justify-center">
@@ -580,7 +625,7 @@ export default function Playground() {
         </div>
 
         {/* Input */}
-        <div className="border-t border-zinc-800/50 p-4">
+        <div className="border-t border-zinc-800/50 p-4 bg-zinc-950">
           <div className="flex gap-3 items-end">
             <textarea
               value={input}
