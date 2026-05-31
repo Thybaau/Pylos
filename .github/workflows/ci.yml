@@ -120,7 +120,7 @@ jobs:
 
   deploy-dev:
     name: Deploy Dev (restart pods)
-    needs: [build-and-push]
+    needs: [merge-manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: read
