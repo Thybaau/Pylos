@@ -443,6 +443,10 @@ impl Provider for OpenAIProvider {
         let status = response.status().as_u16();
         if !response.status().is_success() {
             let body = response.text().await.unwrap_or_default();
+            if (status == 404 || status == 405) && self.name != "openai" {
+                debug!(provider = %self.name, status = status, "Health check returned 404/405 for custom provider, assuming OK");
+                return Ok(());
+            }
             warn!(provider = %self.name, status = status, body = %body, "Health check failed");
             return Err(map_openai_error(status, &body));
         }
