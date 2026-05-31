@@ -82,6 +82,37 @@ jobs:
           cache-from: type=registry,ref=ghcr.io/jzacharie/pylos-cache:frontend-${{ matrix.arch }}
           cache-to: type=registry,ref=ghcr.io/jzacharie/pylos-cache:frontend-${{ matrix.arch }},mode=max
 
+  deploy-dev:
+    name: Deploy Dev (restart pods)
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+          path: jo3
+
+      - name: Set up kubeconfig
+        env:
+          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+        run: |
+          mkdir -p $HOME/.kube
+          echo "$KUBECONFIG_CONTENT" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Restart pylos-dev deployment
+        run: |
+          kubectl rollout restart deployment/pylos-dev -n pylos-dev
+          kubectl rollout status deployment/pylos-dev -n pylos-dev --timeout=5m
+
+      - name: Cleanup kubeconfig
+        if: always()
+        run: rm -f $HOME/.kube/config
+
   merge-manifest:
     name: Merge Multi-Arch Manifests
     needs: [check, build-and-push]
