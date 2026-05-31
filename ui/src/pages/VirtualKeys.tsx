@@ -85,7 +85,7 @@ function VkBudgetPanel({ vkId }: { vkId: string }) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ProviderCfgEntry { provider: string; models: string; weight: number }
+interface ProviderCfgEntry { providers: string[]; models: string; weight: number }
 
 interface VkFormState {
   name: string
@@ -102,68 +102,106 @@ const DEFAULT_FORM: VkFormState = {
 }
 
 function vkToForm(vk: VirtualKey): VkFormState {
+  const groups: { [key: string]: { providers: string[]; allowed_models: string[]; weight: number } } = {}
+
+  for (const pc of vk.provider_configs) {
+    const sortedModels = [...pc.allowed_models].sort()
+    const groupKey = `${sortedModels.join(',')}|${pc.weight}`
+
+    if (!groups[groupKey]) {
+      groups[groupKey] = {
+        providers: [],
+        allowed_models: pc.allowed_models,
+        weight: pc.weight,
+      }
+    }
+    groups[groupKey].providers.push(pc.provider)
+  }
+
   return {
     name: vk.name,
     description: vk.description ?? '',
     is_active: vk.is_active,
-    provider_configs: vk.provider_configs.map(pc => ({
-      provider: pc.provider,
-      models: pc.allowed_models.join(', '),
-      weight: pc.weight,
+    provider_configs: Object.values(groups).map(g => ({
+      providers: g.providers,
+      models: g.allowed_models.join(', '),
+      weight: g.weight,
     })),
   }
 }
 
 function formToPayload(form: VkFormState) {
+  const provider_configs: Array<{ provider: string; allowed_models: string[]; weight: number }> = []
+
+  for (const pc of form.provider_configs) {
+    const allowed_models = pc.models.split(',').map(s => s.trim()).filter(Boolean)
+    for (const p of pc.providers) {
+      provider_configs.push({
+        provider: p,
+        allowed_models,
+        weight: pc.weight,
+      })
+    }
+  }
+
   return {
     name: form.name,
     description: form.description || null,
     is_active: form.is_active,
-    provider_configs: form.provider_configs.map(pc => ({
-      provider: pc.provider,
-      allowed_models: pc.models.split(',').map(s => s.trim()).filter(Boolean),
-      weight: pc.weight,
-    })),
+    provider_configs,
   }
 }
 
 // ─── Governance Sub-components ──────────────────────────────────────────────
 
-function ProviderSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function ProviderSelector({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const { data } = useQuery({ queryKey: ['providers'], queryFn: providersApi.getAll })
   const providers = data?.providers ?? []
 
+  const toggleProvider = (pName: string) => {
+    if (value.includes(pName)) {
+      onChange(value.filter(x => x !== pName))
+    } else {
+      onChange([...value, pName])
+    }
+  }
+
   return (
-    <div className="relative group">
-      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-blue-400 flex items-center">
-        <ProviderIcon name={value} size={14} />
-      </div>
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-200
-          appearance-none focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
-      >
-        <option value="" disabled>Select provider…</option>
-        {providers.map(p => (
-          <option key={p.name} value={p.name}>{p.name.charAt(0).toUpperCase() + p.name.slice(1)}</option>
-        ))}
-      </select>
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-600">
-        <ChevronDown size={14} />
-      </div>
+    <div className="flex flex-wrap gap-1.5 p-2 bg-gray-900 border border-gray-700 rounded-lg min-h-[42px]">
+      {providers.map(p => {
+        const isSelected = value.includes(p.name)
+        return (
+          <button
+            key={p.name}
+            type="button"
+            onClick={() => toggleProvider(p.name)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-all ${
+              isSelected
+                ? 'bg-blue-600/20 text-blue-300 border-blue-500/40 shadow-sm shadow-blue-500/10'
+                : 'bg-gray-800/40 text-gray-400 border-gray-800 hover:text-gray-200 hover:bg-gray-800'
+            }`}
+          >
+            <ProviderIcon name={p.name} size={12} />
+            <span className="capitalize">{p.name}</span>
+          </button>
+        )
+      })}
+      {providers.length === 0 && (
+        <span className="text-xs text-gray-500 p-1">Loading providers…</span>
+      )}
     </div>
   )
 }
 
-function ModelSelector({ provider, value, onChange }: { provider: string; value: string; onChange: (v: string) => void }) {
+function ModelSelector({ providers, value, onChange }: { providers: string[]; value: string; onChange: (v: string) => void }) {
   const { data: modelsData } = useQuery({
-    queryKey: ['models', provider],
-    queryFn: () => modelsApi.getAll(provider),
-    enabled: !!provider && provider !== '*',
+    queryKey: ['models', 'all'],
+    queryFn: () => modelsApi.getAll(),
+    enabled: providers.length > 0,
   })
 
-  const models = modelsData?.data ?? []
+  const allModels = modelsData?.data ?? []
+  const models = allModels.filter(m => providers.includes(m.provider))
   const selectedModels = value.split(',').map(s => s.trim()).filter(Boolean)
 
   const toggleModel = (m: string) => {
@@ -193,7 +231,7 @@ function ModelSelector({ provider, value, onChange }: { provider: string; value:
         {selectedModels.length === 0 && <span className="text-xs text-gray-600 px-1 py-0.5">Pick models…</span>}
       </div>
 
-      {provider && (
+      {providers.length > 0 && (
         <div className="max-h-32 overflow-y-auto p-1 bg-gray-900/50 border border-gray-800 rounded-lg grid grid-cols-2 gap-1 custom-scrollbar">
           <button
             onClick={() => toggleModel('*')}
@@ -229,10 +267,10 @@ function ProviderConfigItem({
 }: {
   pc: ProviderCfgEntry
   index: number
-  onUpdate: (i: number, field: keyof ProviderCfgEntry, value: string | number) => void
+  onUpdate: (i: number, field: keyof ProviderCfgEntry, value: string | number | string[]) => void
   onRemove: (i: number) => void
 }) {
-  const color = providerColor(pc.provider)
+  const color = providerColor(pc.providers[0] || 'default')
 
   return (
     <div className="bg-gray-900/40 border border-gray-800 rounded-xl overflow-hidden transition-all hover:border-gray-700/50">
@@ -255,13 +293,13 @@ function ProviderConfigItem({
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-7 space-y-3">
             <div>
-              <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1.5 ml-1">Provider</label>
-              <ProviderSelector value={pc.provider} onChange={v => onUpdate(index, 'provider', v)} />
+              <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1.5 ml-1">Providers</label>
+              <ProviderSelector value={pc.providers} onChange={v => onUpdate(index, 'providers', v)} />
             </div>
             <div>
               <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1.5 ml-1">Allowed Models</label>
               <ModelSelector
-                provider={pc.provider}
+                providers={pc.providers}
                 value={pc.models}
                 onChange={v => onUpdate(index, 'models', v)}
               />
@@ -323,17 +361,17 @@ function VkModal({
   const setField = <K extends keyof VkFormState>(k: K, v: VkFormState[K]) =>
     setForm(f => ({ ...f, [k]: v }))
 
-  const setPc = (i: number, field: keyof ProviderCfgEntry, value: string | number) =>
+  const setPc = (i: number, field: keyof ProviderCfgEntry, value: string | number | string[]) =>
     setForm(f => {
       const pcs = [...f.provider_configs]
-      pcs[i] = { ...pcs[i], [field]: value }
+      pcs[i] = { ...pcs[i], [field]: value } as ProviderCfgEntry
       return { ...f, provider_configs: pcs }
     })
 
   const addPc = () =>
     setForm(f => ({
       ...f,
-      provider_configs: [...f.provider_configs, { provider: '', models: '*', weight: 1.0 }],
+      provider_configs: [...f.provider_configs, { providers: [], models: '*', weight: 1.0 }],
     }))
 
   const removePc = (i: number) =>
