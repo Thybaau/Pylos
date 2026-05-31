@@ -21,6 +21,15 @@ impl PylosRequest {
         }
     }
 
+    pub fn set_model(&mut self, new_model: String) {
+        match self {
+            PylosRequest::ChatCompletion(req) => req.model = new_model,
+            PylosRequest::TextCompletion(req) => req.model = new_model,
+            PylosRequest::Embedding(req) => req.model = new_model,
+            PylosRequest::Image(req) => req.model = new_model,
+        }
+    }
+
     pub fn is_stream(&self) -> bool {
         match self {
             PylosRequest::ChatCompletion(req) => req.stream.unwrap_or(false),

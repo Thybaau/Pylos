@@ -335,8 +335,22 @@ impl InferenceOrchestrator {
             );
             ctx.tried_providers.push(provider.name().to_string());
 
+            let mut req_to_send = request.clone();
+            let is_supported = model_supported_by(&config, &model);
+            if !is_supported {
+                let mapped_model =
+                    map_model_for_provider(provider.name(), &model, &config.allowed_models);
+                debug!(
+                    provider = provider.name(),
+                    original_model = %model,
+                    mapped_model = %mapped_model,
+                    "Model not supported natively, mapped for fallback"
+                );
+                req_to_send.set_model(mapped_model);
+            }
+
             match self
-                .try_complete_with_retry(provider.as_ref(), &config, &request)
+                .try_complete_with_retry(provider.as_ref(), &config, &req_to_send)
                 .await
             {
                 Ok(mut response) => {
@@ -449,7 +463,21 @@ impl InferenceOrchestrator {
             }
             ctx.tried_providers.push(provider.name().to_string());
 
-            match provider.stream(&request, &config).await {
+            let mut req_to_send = request.clone();
+            let is_supported = model_supported_by(&config, &stream_model);
+            if !is_supported {
+                let mapped_model =
+                    map_model_for_provider(provider.name(), &stream_model, &config.allowed_models);
+                debug!(
+                    provider = provider.name(),
+                    original_model = %stream_model,
+                    mapped_model = %mapped_model,
+                    "Model not supported natively, mapped for fallback"
+                );
+                req_to_send.set_model(mapped_model);
+            }
+
+            match provider.stream(&req_to_send, &config).await {
                 Ok(stream) => {
                     self.record_success(provider.name());
                     info!(
@@ -544,6 +572,98 @@ fn model_supported_by(config: &ProviderConfig, model: &str) -> bool {
     config.kind.supports_model(model)
 }
 
+/// Mappe/traduit un modèle pour un provider de destination en cas de fallback.
+fn map_model_for_provider(provider_name: &str, model: &str, allowed_models: &[String]) -> String {
+    // 1. Si le provider a des allowed_models configurés (et que ce n'est pas un wildcard), et que le modèle demandé n'y est pas :
+    if !allowed_models.is_empty() && !allowed_models.iter().any(|m| m == "*" || m == model) {
+        if let Some(first_allowed) = allowed_models.iter().find(|m| !m.contains('*')) {
+            return first_allowed.clone();
+        }
+    }
+
+    let is_pro = model.contains("pro")
+        || model.contains("opus")
+        || model.contains("large")
+        || model.contains("sonnet")
+        || model.contains("70b")
+        || model.contains("gpt-4")
+        || model.contains("o1")
+        || model.contains("o3");
+
+    // 2. Sinon, on associe les familles de modèles standards aux modèles équivalents supportés par le provider
+    match provider_name {
+        "openai" => {
+            if model.contains("flash")
+                || model.contains("mini")
+                || model.contains("haiku")
+                || model.contains("8b")
+                || model.contains("lite")
+            {
+                "gpt-4o-mini".to_string()
+            } else {
+                "gpt-4o".to_string()
+            }
+        }
+        "anthropic" => {
+            if model.contains("flash")
+                || model.contains("mini")
+                || model.contains("haiku")
+                || model.contains("8b")
+                || model.contains("lite")
+            {
+                "claude-haiku-3-5".to_string()
+            } else {
+                "claude-3-5-sonnet-20241022".to_string()
+            }
+        }
+        "gemini" => {
+            if is_pro {
+                "gemini-2.5-pro".to_string()
+            } else {
+                "gemini-2.5-flash".to_string()
+            }
+        }
+        "groq" => {
+            if is_pro {
+                "llama-3.3-70b-versatile".to_string()
+            } else {
+                "llama-3.1-8b-instant".to_string()
+            }
+        }
+        "deepseek" => {
+            if is_pro {
+                "deepseek-v4-pro".to_string()
+            } else {
+                "deepseek-v4-flash".to_string()
+            }
+        }
+        "bedrock" => {
+            if model.contains("claude") {
+                "anthropic.claude-3-5-sonnet-20241022-v2:0".to_string()
+            } else if is_pro {
+                "amazon.nova-pro-v1:0".to_string()
+            } else {
+                "amazon.nova-lite-v1:0".to_string()
+            }
+        }
+        "mistral" => {
+            if is_pro {
+                "mistral-large-latest".to_string()
+            } else {
+                "mistral-small-latest".to_string()
+            }
+        }
+        "xai" => {
+            if is_pro {
+                "grok-3".to_string()
+            } else {
+                "grok-3-mini".to_string()
+            }
+        }
+        _ => model.to_string(),
+    }
+}
+
 /// Crée un chunk de streaming terminal (finish_reason = "stop") à partir d'un contenu texte.
 /// Utilisé pour convertir une réponse short-circuit (plugin pre-hook) en stream.
 pub(crate) fn make_terminal_chunk(
@@ -597,5 +717,36 @@ mod tests {
             let b = exponential_backoff(1, 100, 5_000);
             assert!(b <= 120, "First backoff too high: {}", b);
         }
+    }
+
+    #[test]
+    fn test_map_model_for_provider_cases() {
+        // Test exact model whitelist override
+        assert_eq!(
+            map_model_for_provider(
+                "deepseek",
+                "gemini-3.5-flash",
+                &["deepseek-v4-pro".to_string()]
+            ),
+            "deepseek-v4-pro"
+        );
+
+        // Test fallback to deepseek-v4-flash for a flash model
+        assert_eq!(
+            map_model_for_provider("deepseek", "gemini-3.5-flash", &[]),
+            "deepseek-v4-flash"
+        );
+
+        // Test fallback to deepseek-v4-pro for a pro model
+        assert_eq!(
+            map_model_for_provider("deepseek", "gemini-2.5-pro", &[]),
+            "deepseek-v4-pro"
+        );
+
+        // Test fallback to amazon.nova-pro-v1:0 on bedrock for a pro/large model
+        assert_eq!(
+            map_model_for_provider("bedrock", "gpt-4o", &[]),
+            "amazon.nova-pro-v1:0"
+        );
     }
 }
