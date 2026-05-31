@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { formatLatency, formatCost, providerColor } from '../lib/utils'
 import {
@@ -172,6 +173,8 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 export default function Playground() {
+  const [searchParams] = useSearchParams()
+  const modelParam = searchParams.get('model')
   const [selectedModel, setSelectedModel] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('You are a helpful assistant.')
   const [input, setInput] = useState('')
@@ -206,13 +209,25 @@ export default function Playground() {
   }, [selectedModel, models])
 
   useEffect(() => {
-    if (models.length && !selectedModel) {
+    if (!models.length) return
+
+    if (modelParam) {
+      const matched = models.find(
+        m => `${m.provider}::${m.id}` === modelParam || `${m.provider}/${m.id}` === modelParam || m.id === modelParam
+      )
+      if (matched) {
+        setSelectedModel(`${matched.provider}::${matched.id}`)
+        return
+      }
+    }
+
+    if (!selectedModel) {
       const ollama = models.find(m => m.provider === 'ollama-jo3' && m.id === 'llama3.1:8b')
         ?? models.find(m => m.provider === 'ollama-jo3')
         ?? models[0]
       if (ollama) setSelectedModel(`${ollama.provider}::${ollama.id}`)
     }
-  }, [models, selectedModel])
+  }, [models, modelParam])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
