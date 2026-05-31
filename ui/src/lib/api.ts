@@ -1,5 +1,10 @@
 import axios from 'axios'
 
+// Seed admin key from runtime config injected by nginx (config.js)
+if (typeof window !== 'undefined' && (window as any).__PYLOS_ADMIN_KEY__) {
+  localStorage.setItem('pylos_admin_key', (window as any).__PYLOS_ADMIN_KEY__)
+}
+
 const getBaseUrl = (): string => {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) {
