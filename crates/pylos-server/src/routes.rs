@@ -64,6 +64,7 @@ pub fn create_router(state: AppState) -> Router {
         // Config management routes
         .route("/config", get(config::get_config))
         .route("/config/reload", post(config::reload_config))
+        .route("/config/guardrails", put(config::update_guardrails))
         .route("/api/github/promote", post(config::promote_to_prod_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
