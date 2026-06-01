@@ -1,6 +1,6 @@
 use crate::error::PylosError;
 use crate::Result;
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -20,6 +20,7 @@ pub struct OidcClaims {
 pub struct OidcAuthenticator {
     expected_issuer: String,
     expected_audience: String,
+    algorithm: Algorithm,
     // Statique pour le moment afin d'éviter les requêtes réseau non fiables
     decoding_key: Option<DecodingKey>,
 }
@@ -29,6 +30,7 @@ impl OidcAuthenticator {
         Self {
             expected_issuer: issuer.into(),
             expected_audience: audience.into(),
+            algorithm: Algorithm::RS256,
             decoding_key: None,
         }
     }
@@ -38,12 +40,13 @@ impl OidcAuthenticator {
         self
     }
 
-    pub fn validate_token(&self, token: &str) -> Result<OidcClaims> {
-        let header = decode_header(token).map_err(|e| {
-            PylosError::InvalidRequest(format!("Failed to parse JWT header: {}", e))
-        })?;
+    pub fn with_algorithm(mut self, alg: Algorithm) -> Self {
+        self.algorithm = alg;
+        self
+    }
 
-        let mut validation = Validation::new(header.alg);
+    pub fn validate_token(&self, token: &str) -> Result<OidcClaims> {
+        let mut validation = Validation::new(self.algorithm);
 
         validation.set_issuer(&[&self.expected_issuer]);
         validation.set_audience(&[&self.expected_audience]);
@@ -81,6 +84,7 @@ mod tests {
         let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(key)).unwrap();
 
         let authenticator = OidcAuthenticator::new("https://auth.example.com", "pylos-client")
+            .with_algorithm(Algorithm::HS256)
             .with_decoding_key(DecodingKey::from_secret(key));
         let result = authenticator.validate_token(&token);
         assert!(result.is_ok());

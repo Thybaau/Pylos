@@ -77,10 +77,8 @@ pub async fn get_logs(
     Query(query): Query<LogsQuery>,
 ) -> impl IntoResponse {
     let filter = query.to_filter();
-    let (logs, total) = state
-        .log_store
-        .list(query.limit, query.offset, &filter)
-        .await;
+    let limit = query.limit.min(1000);
+    let (logs, total) = state.log_store.list(limit, query.offset, &filter).await;
 
     let stats = state.log_store.stats(&filter).await;
 
