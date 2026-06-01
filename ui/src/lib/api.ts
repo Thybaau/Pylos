@@ -27,7 +27,7 @@ export const api = axios.create({
   timeout: 30000,
 })
 
-// Request interceptor to attach the Admin Key from localStorage and dynamically set baseURL
+// Request interceptor to attach the Admin Key from sessionStorage and dynamically set baseURL
 api.interceptors.request.use((config) => {
   config.baseURL = getBaseUrl();
   const adminKey = typeof window !== 'undefined' ? sessionStorage.getItem('pylos_admin_key') : null;
