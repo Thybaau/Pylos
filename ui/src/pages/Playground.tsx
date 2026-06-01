@@ -419,7 +419,7 @@ export default function Playground() {
 
       {/* ── Config sidebar ─────────────────────────────────────── */}
       <aside
-        className={`fixed inset-y-0 right-0 z-45 w-64 bg-zinc-950 border-l border-zinc-800/80 flex flex-col overflow-y-auto transition-transform duration-300 md:duration-200
+        className={`fixed inset-y-0 right-0 z-40 w-64 bg-zinc-950 border-l border-zinc-800/80 flex flex-col overflow-y-auto transition-transform duration-300 md:duration-200
           md:static md:translate-x-0
           ${showConfig ? 'translate-x-0' : 'translate-x-full'}
         `}
