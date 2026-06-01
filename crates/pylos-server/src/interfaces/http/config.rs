@@ -204,44 +204,48 @@ pub async fn test_provider(
 pub async fn list_virtual_keys(State(state): State<AppState>) -> impl IntoResponse {
     let mut all_vks = vec![];
 
-    // 1. Clés statiques de la config pylos.json
-    let cfg = state.config_store.get().await;
-    for vk in &cfg.governance.virtual_keys {
-        all_vks.push(json!({
+    let redact = |v: &Option<EnvVar>| v.as_ref().map(|v| v.redacted()).unwrap_or_default();
+
+    let make_entry = |vk: &VirtualKeyConfig| {
+        json!({
             "id": vk.id,
             "name": vk.name,
             "description": vk.description,
             "is_active": vk.is_active,
-            "value": vk.value.as_ref().map(|v| v.redacted()).unwrap_or_default(),
+            "value": redact(&vk.value),
             "rate_limit_id": vk.rate_limit_id,
+            "team_alias": vk.team_alias,
+            "team_id": vk.team_id,
+            "organization_id": vk.organization_id,
+            "user_email": vk.user_email,
+            "user_id": vk.user_id,
+            "created_at": vk.created_at,
+            "created_by": vk.created_by,
+            "updated_at": vk.updated_at,
+            "last_active": vk.last_active,
+            "expires_at": vk.expires_at,
             "provider_configs": vk.provider_configs.iter().map(|p| json!({
                 "provider": p.provider,
                 "allowed_models": p.allowed_models,
                 "weight": p.weight
             })).collect::<Vec<_>>()
-        }));
+        })
+    };
+
+    // 1. Clés statiques de la config pylos.json
+    let cfg = state.config_store.get().await;
+    for vk in &cfg.governance.virtual_keys {
+        all_vks.push(make_entry(vk));
     }
 
     // 2. Clés dynamiques de la base de données
     if let Ok(db_vks) = state.vk_store.list_keys().await {
-        for vk in db_vks {
+        for vk in &db_vks {
             if !all_vks
                 .iter()
                 .any(|v| v.get("id").and_then(|i| i.as_str()) == Some(&vk.id))
             {
-                all_vks.push(json!({
-                    "id": vk.id,
-                    "name": vk.name,
-                    "description": vk.description,
-                    "is_active": vk.is_active,
-                    "value": vk.value.as_ref().map(|v| v.redacted()).unwrap_or_default(),
-                    "rate_limit_id": vk.rate_limit_id,
-                    "provider_configs": vk.provider_configs.iter().map(|p| json!({
-                        "provider": p.provider,
-                        "allowed_models": p.allowed_models,
-                        "weight": p.weight
-                    })).collect::<Vec<_>>()
-                }));
+                all_vks.push(make_entry(vk));
             }
         }
     }
@@ -264,6 +268,20 @@ pub struct CreateVirtualKeyRequest {
     #[serde(default)]
     pub provider_configs: Vec<VkProviderConfig>,
     pub rate_limit_id: Option<String>,
+    #[serde(default)]
+    pub team_alias: Option<String>,
+    #[serde(default)]
+    pub team_id: Option<String>,
+    #[serde(default)]
+    pub organization_id: Option<String>,
+    #[serde(default)]
+    pub user_email: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
+    #[serde(default)]
+    pub created_by: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<i64>,
 }
 
 fn default_true() -> bool {
@@ -289,6 +307,16 @@ pub async fn create_virtual_key(
         is_active: req.is_active,
         rate_limit_id: req.rate_limit_id.clone(),
         provider_configs: req.provider_configs,
+        team_alias: req.team_alias,
+        team_id: req.team_id,
+        organization_id: req.organization_id,
+        user_email: req.user_email,
+        user_id: req.user_id,
+        created_at: None,
+        created_by: req.created_by,
+        updated_at: None,
+        last_active: None,
+        expires_at: req.expires_at,
     };
 
     match state.vk_store.upsert_key(&vk_cfg).await {
@@ -345,6 +373,20 @@ pub struct UpdateVirtualKeyRequest {
     pub is_active: Option<bool>,
     pub provider_configs: Option<Vec<VkProviderConfig>>,
     pub rate_limit_id: Option<String>,
+    #[serde(default)]
+    pub team_alias: Option<String>,
+    #[serde(default)]
+    pub team_id: Option<String>,
+    #[serde(default)]
+    pub organization_id: Option<String>,
+    #[serde(default)]
+    pub user_email: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
+    #[serde(default)]
+    pub created_by: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<i64>,
 }
 
 pub async fn update_virtual_key(
@@ -384,6 +426,27 @@ pub async fn update_virtual_key(
     }
     if req.rate_limit_id.is_some() {
         vk.rate_limit_id = req.rate_limit_id.clone();
+    }
+    if req.team_alias.is_some() {
+        vk.team_alias = req.team_alias;
+    }
+    if req.team_id.is_some() {
+        vk.team_id = req.team_id;
+    }
+    if req.organization_id.is_some() {
+        vk.organization_id = req.organization_id;
+    }
+    if req.user_email.is_some() {
+        vk.user_email = req.user_email;
+    }
+    if req.user_id.is_some() {
+        vk.user_id = req.user_id;
+    }
+    if req.created_by.is_some() {
+        vk.created_by = req.created_by;
+    }
+    if req.expires_at.is_some() {
+        vk.expires_at = req.expires_at;
     }
 
     match state.vk_store.upsert_key(&vk).await {

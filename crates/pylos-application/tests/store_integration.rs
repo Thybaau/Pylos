@@ -71,6 +71,16 @@ async fn test_cross_store_workflow() {
             key_names: vec!["*".into()],
             weight: 1.0,
         }],
+        team_alias: None,
+        team_id: None,
+        organization_id: None,
+        user_email: None,
+        user_id: None,
+        created_at: None,
+        created_by: None,
+        updated_at: None,
+        last_active: None,
+        expires_at: None,
     };
     vk.upsert_key(&vk_config).await.expect("upsert vk");
 
@@ -134,6 +144,16 @@ async fn test_vk_without_rate_limit_still_works() {
         is_active: true,
         rate_limit_id: None,
         provider_configs: vec![],
+        team_alias: None,
+        team_id: None,
+        organization_id: None,
+        user_email: None,
+        user_id: None,
+        created_at: None,
+        created_by: None,
+        updated_at: None,
+        last_active: None,
+        expires_at: None,
     };
     vk.upsert_key(&vk_cfg).await.expect("upsert vk");
 
@@ -160,6 +180,16 @@ async fn test_budget_reset_after_period() {
         is_active: true,
         rate_limit_id: None,
         provider_configs: vec![],
+        team_alias: None,
+        team_id: None,
+        organization_id: None,
+        user_email: None,
+        user_id: None,
+        created_at: None,
+        created_by: None,
+        updated_at: None,
+        last_active: None,
+        expires_at: None,
     };
     vk.upsert_key(&vk_cfg).await.expect("upsert vk");
 

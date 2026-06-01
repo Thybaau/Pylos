@@ -42,7 +42,17 @@ impl VirtualKeyStore {
                     value             TEXT NOT NULL UNIQUE,
                     is_active         INTEGER NOT NULL DEFAULT 1,
                     rate_limit_id     TEXT,
-                    provider_configs  TEXT
+                    provider_configs  TEXT,
+                    team_alias        TEXT,
+                    team_id           TEXT,
+                    organization_id   TEXT,
+                    user_email        TEXT,
+                    user_id           TEXT,
+                    created_at        INTEGER,
+                    created_by        TEXT,
+                    updated_at        INTEGER,
+                    last_active       INTEGER,
+                    expires_at        INTEGER
                 )
                 "#,
             )
@@ -145,20 +155,35 @@ impl VirtualKeyStore {
         let provider_configs_json =
             serde_json::to_string(&vk.provider_configs).unwrap_or_else(|_| "[]".to_string());
 
+        let now_ms = crate::log_store::now_ms();
+
         match &self.pool {
             DbPool::Sqlite(pool) => {
                 sqlx::query(
                     r#"
                     INSERT INTO virtual_keys
-                        (id, name, description, value, is_active, rate_limit_id, provider_configs)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        (id, name, description, value, is_active, rate_limit_id, provider_configs,
+                         team_alias, team_id, organization_id, user_email, user_id,
+                         created_at, created_by, updated_at, last_active, expires_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7,
+                            $8, $9, $10, $11, $12,
+                            COALESCE($13, ?), $14, COALESCE($15, ?), $16, $17)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         description = excluded.description,
                         value = excluded.value,
                         is_active = excluded.is_active,
                         rate_limit_id = excluded.rate_limit_id,
-                        provider_configs = excluded.provider_configs
+                        provider_configs = excluded.provider_configs,
+                        team_alias = excluded.team_alias,
+                        team_id = excluded.team_id,
+                        organization_id = excluded.organization_id,
+                        user_email = excluded.user_email,
+                        user_id = excluded.user_id,
+                        created_by = excluded.created_by,
+                        updated_at = excluded.updated_at,
+                        last_active = excluded.last_active,
+                        expires_at = excluded.expires_at
                     "#,
                 )
                 .bind(&vk.id)
@@ -168,6 +193,18 @@ impl VirtualKeyStore {
                 .bind(if vk.is_active { 1 } else { 0 })
                 .bind(&vk.rate_limit_id)
                 .bind(&provider_configs_json)
+                .bind(&vk.team_alias)
+                .bind(&vk.team_id)
+                .bind(&vk.organization_id)
+                .bind(&vk.user_email)
+                .bind(&vk.user_id)
+                .bind(vk.created_at)
+                .bind(&vk.created_by)
+                .bind(vk.updated_at)
+                .bind(vk.last_active)
+                .bind(vk.expires_at)
+                .bind(now_ms)
+                .bind(now_ms)
                 .execute(pool)
                 .await
                 .map_err(|e| {
@@ -182,15 +219,28 @@ impl VirtualKeyStore {
                 sqlx::query::<sqlx::Postgres>(
                     r#"
                     INSERT INTO virtual_keys
-                        (id, name, description, value, is_active, rate_limit_id, provider_configs)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        (id, name, description, value, is_active, rate_limit_id, provider_configs,
+                         team_alias, team_id, organization_id, user_email, user_id,
+                         created_at, created_by, updated_at, last_active, expires_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7,
+                            $8, $9, $10, $11, $12,
+                            COALESCE($13, $18), $14, COALESCE($15, $19), $16, $17)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         description = excluded.description,
                         value = excluded.value,
                         is_active = excluded.is_active,
                         rate_limit_id = excluded.rate_limit_id,
-                        provider_configs = excluded.provider_configs
+                        provider_configs = excluded.provider_configs,
+                        team_alias = excluded.team_alias,
+                        team_id = excluded.team_id,
+                        organization_id = excluded.organization_id,
+                        user_email = excluded.user_email,
+                        user_id = excluded.user_id,
+                        created_by = excluded.created_by,
+                        updated_at = excluded.updated_at,
+                        last_active = excluded.last_active,
+                        expires_at = excluded.expires_at
                     "#,
                 )
                 .bind(&vk.id)
@@ -200,6 +250,18 @@ impl VirtualKeyStore {
                 .bind(vk.is_active)
                 .bind(&vk.rate_limit_id)
                 .bind(&provider_configs_val)
+                .bind(&vk.team_alias)
+                .bind(&vk.team_id)
+                .bind(&vk.organization_id)
+                .bind(&vk.user_email)
+                .bind(&vk.user_id)
+                .bind(vk.created_at)
+                .bind(&vk.created_by)
+                .bind(vk.updated_at)
+                .bind(vk.last_active)
+                .bind(vk.expires_at)
+                .bind(now_ms)
+                .bind(now_ms)
                 .execute(pool)
                 .await
                 .map_err(|e| {
@@ -249,6 +311,16 @@ fn row_to_vk_config_sqlite(row: &sqlx::sqlite::SqliteRow) -> VirtualKeyConfig {
         is_active: row.try_get::<i64, _>("is_active").unwrap_or(1) != 0,
         rate_limit_id: row.try_get("rate_limit_id").ok(),
         provider_configs,
+        team_alias: row.try_get("team_alias").ok(),
+        team_id: row.try_get("team_id").ok(),
+        organization_id: row.try_get("organization_id").ok(),
+        user_email: row.try_get("user_email").ok(),
+        user_id: row.try_get("user_id").ok(),
+        created_at: row.try_get("created_at").ok(),
+        created_by: row.try_get("created_by").ok(),
+        updated_at: row.try_get("updated_at").ok(),
+        last_active: row.try_get("last_active").ok(),
+        expires_at: row.try_get("expires_at").ok(),
     }
 }
 
@@ -268,6 +340,16 @@ fn row_to_vk_config_pg(row: &sqlx::postgres::PgRow) -> VirtualKeyConfig {
         is_active: row.try_get::<bool, _>("is_active").unwrap_or(true),
         rate_limit_id: row.try_get("rate_limit_id").ok(),
         provider_configs,
+        team_alias: row.try_get("team_alias").ok(),
+        team_id: row.try_get("team_id").ok(),
+        organization_id: row.try_get("organization_id").ok(),
+        user_email: row.try_get("user_email").ok(),
+        user_id: row.try_get("user_id").ok(),
+        created_at: row.try_get("created_at").ok(),
+        created_by: row.try_get("created_by").ok(),
+        updated_at: row.try_get("updated_at").ok(),
+        last_active: row.try_get("last_active").ok(),
+        expires_at: row.try_get("expires_at").ok(),
     }
 }
 
@@ -291,6 +373,16 @@ mod tests {
                 key_names: vec!["*".into()],
                 weight: 1.0,
             }],
+            team_alias: None,
+            team_id: None,
+            organization_id: None,
+            user_email: None,
+            user_id: None,
+            created_at: None,
+            created_by: None,
+            updated_at: None,
+            last_active: None,
+            expires_at: None,
         };
 
         store.upsert_key(&vk).await.unwrap();

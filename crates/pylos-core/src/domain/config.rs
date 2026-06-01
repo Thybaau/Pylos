@@ -538,6 +538,46 @@ pub struct VirtualKeyConfig {
     /// Providers autorisés pour cette VK
     #[serde(default)]
     pub provider_configs: Vec<VkProviderConfig>,
+
+    /// Alias de l'équipe propriétaire
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_alias: Option<String>,
+
+    /// ID de l'équipe propriétaire
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<String>,
+
+    /// ID de l'organisation propriétaire
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organization_id: Option<String>,
+
+    /// Email de l'utilisateur propriétaire
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_email: Option<String>,
+
+    /// ID de l'utilisateur propriétaire
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+
+    /// Timestamp de création (ms)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<i64>,
+
+    /// Nom de l'entité ayant créé la clé
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<String>,
+
+    /// Timestamp de dernière mise à jour (ms)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
+
+    /// Timestamp de dernière utilisation (ms)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_active: Option<i64>,
+
+    /// Timestamp d'expiration (ms)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

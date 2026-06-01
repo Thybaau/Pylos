@@ -134,6 +134,16 @@ export interface VirtualKey {
   is_active: boolean
   value: string
   rate_limit_id: string | null
+  team_alias: string | null
+  team_id: string | null
+  organization_id: string | null
+  user_email: string | null
+  user_id: string | null
+  created_at: number | null
+  created_by: string | null
+  updated_at: number | null
+  last_active: number | null
+  expires_at: number | null
   provider_configs: Array<{ provider: string; allowed_models: string[]; weight: number }>
 }
 
