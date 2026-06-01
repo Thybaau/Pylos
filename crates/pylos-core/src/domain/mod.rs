@@ -3,6 +3,7 @@ pub mod config;
 pub mod embedding;
 pub mod image;
 pub mod openai;
+pub mod organization;
 pub mod provider;
 pub mod request;
 pub mod system_prompt;

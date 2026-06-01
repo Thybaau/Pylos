@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use pylos_application::{
     BudgetPlugin, BudgetStore, ConfigStore, GuardrailsPlugin, InferenceOrchestrator, LogStore,
-    ModelCatalog, OtelConfig, PgLogStore, RateLimitPlugin, RateLimitStore, SemanticCachePlugin,
-    StructuredOutputPlugin, VirtualKeyStore,
+    ModelCatalog, OrganizationStore, OtelConfig, PgLogStore, RateLimitPlugin, RateLimitStore,
+    SemanticCachePlugin, StructuredOutputPlugin, VirtualKeyStore,
 };
 use pylos_core::domain::traits::LlmPlugin;
 
@@ -81,6 +81,7 @@ pub struct AppState {
     pub rate_limit_store: Arc<RateLimitStore>,
     pub vk_store: Arc<VirtualKeyStore>,
     pub system_prompt_store: Arc<pylos_application::SystemPromptStore>,
+    pub org_store: Arc<OrganizationStore>,
     pub admin_key: Option<String>,
     pub inference_semaphore: Arc<tokio::sync::Semaphore>,
     pub max_concurrency: usize,
@@ -122,130 +123,147 @@ impl AppState {
             rate_limit_store,
             vk_store,
             system_prompt_store,
-        ) = if let Some(ref db_url) = database_url {
-            let db_display = if db_url.len() > 30 {
-                format!("{}...", &db_url[..30])
+            org_store,
+        ) =
+            if let Some(ref db_url) = database_url {
+                let db_display = if db_url.len() > 30 {
+                    format!("{}...", &db_url[..30])
+                } else {
+                    db_url.clone()
+                };
+                tracing::info!(database_url = %db_display, "Using PostgreSQL for all stores");
+
+                // PostgreSQL
+                let pg_log = Arc::new(
+                    PgLogStore::new(db_url, cfg.server.log_retention_days)
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to connect PostgreSQL log store: {}", e)
+                        })?,
+                );
+
+                let pg_catalog =
+                    Arc::new(ModelCatalog::open_postgres(db_url).await.map_err(|e| {
+                        anyhow::anyhow!("Failed to open PostgreSQL model catalog: {}", e)
+                    })?);
+
+                let pg_budget =
+                    Arc::new(BudgetStore::open_postgres(db_url).await.map_err(|e| {
+                        anyhow::anyhow!("Failed to open PostgreSQL budget store: {}", e)
+                    })?);
+
+                let pg_rl = Arc::new(RateLimitStore::open_postgres(db_url).await.map_err(|e| {
+                    anyhow::anyhow!("Failed to open PostgreSQL rate limit store: {}", e)
+                })?);
+
+                let pg_vk =
+                    Arc::new(VirtualKeyStore::open_postgres(db_url).await.map_err(|e| {
+                        anyhow::anyhow!("Failed to open PostgreSQL virtual key store: {}", e)
+                    })?);
+
+                let pg_prompts = Arc::new(
+                    pylos_application::SystemPromptStore::open_postgres(db_url)
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to open PostgreSQL system prompt store: {}", e)
+                        })?,
+                );
+
+                let pg_org = Arc::new(OrganizationStore::open_postgres(db_url).await.map_err(
+                    |e| anyhow::anyhow!("Failed to open PostgreSQL organization store: {}", e),
+                )?);
+
+                if let Err(e) = config_store.init_database(db_url).await {
+                    tracing::warn!(error = %e, "Failed to initialize PostgreSQL config store");
+                }
+
+                (
+                    LogStoreVariant::Postgres(pg_log),
+                    pg_catalog,
+                    pg_budget,
+                    pg_rl,
+                    pg_vk,
+                    pg_prompts,
+                    pg_org,
+                )
             } else {
-                db_url.clone()
+                // SQLite
+                let data_dir = data_dir.unwrap_or_else(|| {
+                    std::env::var("PYLOS_DATA_DIR")
+                        .ok()
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("."))
+                });
+                std::fs::create_dir_all(&data_dir).ok();
+
+                let log_db_path = data_dir.join("pylos-logs.db");
+                tracing::info!(path = %log_db_path.display(), "Log store path (SQLite)");
+                let sqlite_log = Arc::new(LogStore::new(
+                    Some(log_db_path),
+                    cfg.server.log_retention_days,
+                    10_000,
+                ));
+
+                let catalog_db_path = data_dir.join("pylos-catalog.db");
+                let sqlite_catalog = Arc::new(
+                    ModelCatalog::open(&catalog_db_path)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to open model catalog: {}", e))?,
+                );
+
+                let budget_db_path = data_dir.join("pylos-budget.db");
+                let sqlite_budget = Arc::new(
+                    BudgetStore::open(&budget_db_path)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to open budget store: {}", e))?,
+                );
+
+                let rl_db_path = data_dir.join("pylos-ratelimit.db");
+                let sqlite_rl = Arc::new(
+                    RateLimitStore::open(&rl_db_path)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to open rate limit store: {}", e))?,
+                );
+
+                let vk_db_path = data_dir.join("pylos-virtualkeys.db");
+                let sqlite_vk = Arc::new(
+                    VirtualKeyStore::open(&vk_db_path)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to open virtual key store: {}", e))?,
+                );
+
+                let org_db_path = data_dir.join("pylos-org.db");
+                let sqlite_org =
+                    Arc::new(OrganizationStore::open(&org_db_path).await.map_err(|e| {
+                        anyhow::anyhow!("Failed to open organization store: {}", e)
+                    })?);
+
+                let prompts_db_path = data_dir.join("pylos-prompts.db");
+                let sqlite_prompts = Arc::new(
+                    pylos_application::SystemPromptStore::open(&prompts_db_path)
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to open system prompt store: {}", e)
+                        })?,
+                );
+
+                let config_db_path = data_dir.join("pylos-config.db");
+                let sqlite_config_db_url =
+                    format!("sqlite://{}?mode=rwc", config_db_path.to_string_lossy());
+                if let Err(e) = config_store.init_database(&sqlite_config_db_url).await {
+                    tracing::warn!(error = %e, "Failed to initialize SQLite config store");
+                }
+
+                (
+                    LogStoreVariant::Sqlite(sqlite_log),
+                    sqlite_catalog,
+                    sqlite_budget,
+                    sqlite_rl,
+                    sqlite_vk,
+                    sqlite_prompts,
+                    sqlite_org,
+                )
             };
-            tracing::info!(database_url = %db_display, "Using PostgreSQL for all stores");
-
-            // PostgreSQL
-            let pg_log = Arc::new(
-                PgLogStore::new(db_url, cfg.server.log_retention_days)
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to connect PostgreSQL log store: {}", e)
-                    })?,
-            );
-
-            let pg_catalog =
-                Arc::new(ModelCatalog::open_postgres(db_url).await.map_err(|e| {
-                    anyhow::anyhow!("Failed to open PostgreSQL model catalog: {}", e)
-                })?);
-
-            let pg_budget =
-                Arc::new(BudgetStore::open_postgres(db_url).await.map_err(|e| {
-                    anyhow::anyhow!("Failed to open PostgreSQL budget store: {}", e)
-                })?);
-
-            let pg_rl = Arc::new(RateLimitStore::open_postgres(db_url).await.map_err(|e| {
-                anyhow::anyhow!("Failed to open PostgreSQL rate limit store: {}", e)
-            })?);
-
-            let pg_vk = Arc::new(VirtualKeyStore::open_postgres(db_url).await.map_err(|e| {
-                anyhow::anyhow!("Failed to open PostgreSQL virtual key store: {}", e)
-            })?);
-
-            let pg_prompts = Arc::new(
-                pylos_application::SystemPromptStore::open_postgres(db_url)
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to open PostgreSQL system prompt store: {}", e)
-                    })?,
-            );
-
-            if let Err(e) = config_store.init_database(db_url).await {
-                tracing::warn!(error = %e, "Failed to initialize PostgreSQL config store");
-            }
-
-            (
-                LogStoreVariant::Postgres(pg_log),
-                pg_catalog,
-                pg_budget,
-                pg_rl,
-                pg_vk,
-                pg_prompts,
-            )
-        } else {
-            // SQLite
-            let data_dir = data_dir.unwrap_or_else(|| {
-                std::env::var("PYLOS_DATA_DIR")
-                    .ok()
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from("."))
-            });
-            std::fs::create_dir_all(&data_dir).ok();
-
-            let log_db_path = data_dir.join("pylos-logs.db");
-            tracing::info!(path = %log_db_path.display(), "Log store path (SQLite)");
-            let sqlite_log = Arc::new(LogStore::new(
-                Some(log_db_path),
-                cfg.server.log_retention_days,
-                10_000,
-            ));
-
-            let catalog_db_path = data_dir.join("pylos-catalog.db");
-            let sqlite_catalog = Arc::new(
-                ModelCatalog::open(&catalog_db_path)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to open model catalog: {}", e))?,
-            );
-
-            let budget_db_path = data_dir.join("pylos-budget.db");
-            let sqlite_budget = Arc::new(
-                BudgetStore::open(&budget_db_path)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to open budget store: {}", e))?,
-            );
-
-            let rl_db_path = data_dir.join("pylos-ratelimit.db");
-            let sqlite_rl = Arc::new(
-                RateLimitStore::open(&rl_db_path)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to open rate limit store: {}", e))?,
-            );
-
-            let vk_db_path = data_dir.join("pylos-virtualkeys.db");
-            let sqlite_vk = Arc::new(
-                VirtualKeyStore::open(&vk_db_path)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to open virtual key store: {}", e))?,
-            );
-
-            let prompts_db_path = data_dir.join("pylos-prompts.db");
-            let sqlite_prompts = Arc::new(
-                pylos_application::SystemPromptStore::open(&prompts_db_path)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to open system prompt store: {}", e))?,
-            );
-
-            let config_db_path = data_dir.join("pylos-config.db");
-            let sqlite_config_db_url =
-                format!("sqlite://{}?mode=rwc", config_db_path.to_string_lossy());
-            if let Err(e) = config_store.init_database(&sqlite_config_db_url).await {
-                tracing::warn!(error = %e, "Failed to initialize SQLite config store");
-            }
-
-            (
-                LogStoreVariant::Sqlite(sqlite_log),
-                sqlite_catalog,
-                sqlite_budget,
-                sqlite_rl,
-                sqlite_vk,
-                sqlite_prompts,
-            )
-        };
 
         for budget_cfg in &cfg.governance.budgets {
             if let Some(vk_id) = &budget_cfg.virtual_key_id {
@@ -451,6 +469,7 @@ impl AppState {
             rate_limit_store,
             vk_store,
             system_prompt_store,
+            org_store,
             admin_key: std::env::var("PYLOS_ADMIN_KEY").ok(),
             inference_semaphore,
             max_concurrency,

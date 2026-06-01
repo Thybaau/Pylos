@@ -1,3 +1,4 @@
+pub mod access_control;
 pub mod completions;
 pub mod config;
 pub mod embeddings;

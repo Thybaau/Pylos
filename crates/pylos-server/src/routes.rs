@@ -1,5 +1,6 @@
 use crate::interfaces::http::{
-    completions, config, embeddings, health, images, inference, logs, metrics, models,
+    access_control, completions, config, embeddings, health, images, inference, logs, metrics,
+    models,
 };
 use crate::middleware::{management_auth_middleware, queuing_middleware, virtual_key_middleware};
 use crate::state::AppState;
@@ -66,6 +67,77 @@ pub fn create_router(state: AppState) -> Router {
         .route("/config/reload", post(config::reload_config))
         .route("/config/guardrails", put(config::update_guardrails))
         .route("/api/github/promote", post(config::promote_to_prod_handler))
+        // Access Control routes
+        .route(
+            "/api/organizations",
+            get(access_control::list_organizations),
+        )
+        .route(
+            "/api/organizations",
+            post(access_control::create_organization),
+        )
+        .route(
+            "/api/organizations/:id",
+            get(access_control::get_organization),
+        )
+        .route(
+            "/api/organizations/:id",
+            put(access_control::update_organization),
+        )
+        .route(
+            "/api/organizations/:id",
+            delete(access_control::delete_organization),
+        )
+        .route("/api/teams", get(access_control::list_teams))
+        .route("/api/teams", post(access_control::create_team))
+        .route("/api/teams/:id", get(access_control::get_team))
+        .route("/api/teams/:id", put(access_control::update_team))
+        .route("/api/teams/:id", delete(access_control::delete_team))
+        .route("/api/users", get(access_control::list_users))
+        .route("/api/users", post(access_control::create_user))
+        .route("/api/users/:id", get(access_control::get_user))
+        .route("/api/users/:id", put(access_control::update_user))
+        .route("/api/users/:id", delete(access_control::delete_user))
+        .route(
+            "/api/access-groups",
+            get(access_control::list_access_groups),
+        )
+        .route(
+            "/api/access-groups",
+            post(access_control::create_access_group),
+        )
+        .route(
+            "/api/access-groups/:id",
+            get(access_control::get_access_group),
+        )
+        .route(
+            "/api/access-groups/:id",
+            put(access_control::update_access_group),
+        )
+        .route(
+            "/api/access-groups/:id",
+            delete(access_control::delete_access_group),
+        )
+        .route("/api/policies", get(access_control::list_policies))
+        .route("/api/policies", post(access_control::create_policy))
+        .route("/api/policies/:id", put(access_control::update_policy))
+        .route("/api/policies/:id", delete(access_control::delete_policy))
+        .route(
+            "/api/tool-policies",
+            get(access_control::list_tool_policies),
+        )
+        .route(
+            "/api/tool-policies",
+            post(access_control::create_tool_policy),
+        )
+        .route(
+            "/api/tool-policies/:id",
+            put(access_control::update_tool_policy),
+        )
+        .route(
+            "/api/tool-policies/:id",
+            delete(access_control::delete_tool_policy),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             management_auth_middleware,

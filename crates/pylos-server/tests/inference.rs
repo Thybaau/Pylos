@@ -7,8 +7,8 @@ use std::sync::Arc;
 use tower::ServiceExt; // for oneshot
 
 use pylos_application::{
-    BudgetStore, ConfigStore, InferenceOrchestrator, LogStore, ModelCatalog, RateLimitStore,
-    SystemPromptStore,
+    BudgetStore, ConfigStore, InferenceOrchestrator, LogStore, ModelCatalog, OrganizationStore,
+    RateLimitStore, SystemPromptStore,
 };
 use pylos_core::domain::openai::{
     ChatCompletionChoice, ChatCompletionMessage, ChatCompletionResponse, MessageRole, Usage,
@@ -165,6 +165,7 @@ async fn test_chat_completions_unary() {
         rate_limit_store,
         vk_store,
         system_prompt_store,
+        org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(100)),
         max_concurrency: 100,
@@ -239,6 +240,7 @@ async fn test_chat_completions_stream() {
         rate_limit_store,
         vk_store,
         system_prompt_store,
+        org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(100)),
         max_concurrency: 100,
@@ -321,6 +323,7 @@ async fn test_image_generations() {
         rate_limit_store,
         vk_store,
         system_prompt_store,
+        org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(100)),
         max_concurrency: 100,
@@ -469,6 +472,7 @@ async fn test_a2a_allowed_models_routing() {
         rate_limit_store,
         vk_store,
         system_prompt_store,
+        org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(100)),
         max_concurrency: 100,
@@ -655,6 +659,7 @@ async fn test_semantic_caching_flow() {
         rate_limit_store,
         vk_store,
         system_prompt_store,
+        org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(100)),
         max_concurrency: 100,
@@ -797,6 +802,7 @@ async fn test_structured_outputs_validation() {
         rate_limit_store,
         vk_store,
         system_prompt_store,
+        org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(10)),
         max_concurrency: 10,
@@ -915,6 +921,7 @@ async fn test_inference_queuing_and_timeout() {
         rate_limit_store,
         vk_store,
         system_prompt_store,
+        org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         admin_key: None,
         inference_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
         max_concurrency: 1,

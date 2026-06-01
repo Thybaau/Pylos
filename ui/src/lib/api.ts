@@ -157,6 +157,78 @@ export interface VkBudgetResponse {
   rate_limits: RateLimitStatus[]
 }
 
+// ─── Access Control Types ─────────────────────────────────────────────────────
+
+export interface Organization {
+  id: string
+  name: string
+  description: string | null
+  is_active: boolean
+  created_at: number
+  updated_at: number
+}
+
+export interface Team {
+  id: string
+  organization_id: string
+  name: string
+  description: string | null
+  is_active: boolean
+  created_at: number
+  updated_at: number
+}
+
+export interface InternalUser {
+  id: string
+  email: string
+  name: string
+  role: string
+  organization_id: string | null
+  team_ids: string[]
+  is_active: boolean
+  created_at: number
+  updated_at: number
+}
+
+export interface AccessGroup {
+  id: string
+  name: string
+  description: string | null
+  organization_id: string | null
+  team_ids: string[]
+  user_ids: string[]
+  model_ids: string[]
+  provider_ids: string[]
+  is_active: boolean
+  created_at: number
+  updated_at: number
+}
+
+export interface Policy {
+  id: string
+  name: string
+  description: string | null
+  policy_type: string
+  config: Record<string, unknown>
+  is_active: boolean
+  created_at: number
+  updated_at: number
+}
+
+export interface ToolPolicy {
+  id: string
+  name: string
+  description: string | null
+  tool_type: string
+  allowed_models: string[]
+  allowed_providers: string[]
+  max_tokens_per_call: number | null
+  max_calls_per_minute: number | null
+  is_active: boolean
+  created_at: number
+  updated_at: number
+}
+
 export interface ModelInfo {
   id: string
   provider: string
@@ -260,6 +332,80 @@ export const modelsApi = {
 export const healthApi = {
   check: () => api.get('/health').then(r => r.data),
   getRoot: () => api.get('/').then(r => r.data),
+}
+
+export const organizationsApi = {
+  getAll: () =>
+    api.get<{ organizations: Organization[]; total: number }>('/api/organizations').then(r => r.data),
+  get: (id: string) =>
+    api.get<Organization>(`/api/organizations/${id}`).then(r => r.data),
+  create: (data: { name: string; description?: string | null; is_active?: boolean }) =>
+    api.post<Organization>('/api/organizations', data).then(r => r.data),
+  update: (id: string, data: { name?: string; description?: string | null; is_active?: boolean }) =>
+    api.put<Organization>(`/api/organizations/${id}`, data).then(r => r.data),
+  remove: (id: string) =>
+    api.delete(`/api/organizations/${id}`).then(r => r.data),
+}
+
+export const teamsApi = {
+  getAll: () =>
+    api.get<{ teams: Team[]; total: number }>('/api/teams').then(r => r.data),
+  get: (id: string) =>
+    api.get<Team>(`/api/teams/${id}`).then(r => r.data),
+  create: (data: { organization_id: string; name: string; description?: string | null; is_active?: boolean }) =>
+    api.post<Team>('/api/teams', data).then(r => r.data),
+  update: (id: string, data: { name?: string; description?: string | null; is_active?: boolean }) =>
+    api.put<Team>(`/api/teams/${id}`, data).then(r => r.data),
+  remove: (id: string) =>
+    api.delete(`/api/teams/${id}`).then(r => r.data),
+}
+
+export const usersApi = {
+  getAll: () =>
+    api.get<{ users: InternalUser[]; total: number }>('/api/users').then(r => r.data),
+  get: (id: string) =>
+    api.get<InternalUser>(`/api/users/${id}`).then(r => r.data),
+  create: (data: { email: string; name: string; role?: string; organization_id?: string | null; team_ids?: string[]; is_active?: boolean }) =>
+    api.post<InternalUser>('/api/users', data).then(r => r.data),
+  update: (id: string, data: { email?: string; name?: string; role?: string; organization_id?: string | null; team_ids?: string[]; is_active?: boolean }) =>
+    api.put<InternalUser>(`/api/users/${id}`, data).then(r => r.data),
+  remove: (id: string) =>
+    api.delete(`/api/users/${id}`).then(r => r.data),
+}
+
+export const accessGroupsApi = {
+  getAll: () =>
+    api.get<{ access_groups: AccessGroup[]; total: number }>('/api/access-groups').then(r => r.data),
+  get: (id: string) =>
+    api.get<AccessGroup>(`/api/access-groups/${id}`).then(r => r.data),
+  create: (data: { name: string; description?: string | null; organization_id?: string | null; team_ids?: string[]; user_ids?: string[]; model_ids?: string[]; provider_ids?: string[]; is_active?: boolean }) =>
+    api.post<AccessGroup>('/api/access-groups', data).then(r => r.data),
+  update: (id: string, data: { name?: string; description?: string | null; model_ids?: string[]; provider_ids?: string[]; is_active?: boolean }) =>
+    api.put<AccessGroup>(`/api/access-groups/${id}`, data).then(r => r.data),
+  remove: (id: string) =>
+    api.delete(`/api/access-groups/${id}`).then(r => r.data),
+}
+
+export const policiesApi = {
+  getAll: () =>
+    api.get<{ policies: Policy[]; total: number }>('/api/policies').then(r => r.data),
+  create: (data: { name: string; description?: string | null; policy_type: string; config?: Record<string, unknown>; is_active?: boolean }) =>
+    api.post<Policy>('/api/policies', data).then(r => r.data),
+  update: (id: string, data: { name?: string; description?: string | null; policy_type?: string; config?: Record<string, unknown>; is_active?: boolean }) =>
+    api.put<Policy>(`/api/policies/${id}`, data).then(r => r.data),
+  remove: (id: string) =>
+    api.delete(`/api/policies/${id}`).then(r => r.data),
+}
+
+export const toolPoliciesApi = {
+  getAll: () =>
+    api.get<{ tool_policies: ToolPolicy[]; total: number }>('/api/tool-policies').then(r => r.data),
+  create: (data: { name: string; description?: string | null; tool_type: string; allowed_models?: string[]; allowed_providers?: string[]; max_tokens_per_call?: number | null; max_calls_per_minute?: number | null; is_active?: boolean }) =>
+    api.post<ToolPolicy>('/api/tool-policies', data).then(r => r.data),
+  update: (id: string, data: { name?: string; description?: string | null; tool_type?: string; allowed_models?: string[]; allowed_providers?: string[]; is_active?: boolean }) =>
+    api.put<ToolPolicy>(`/api/tool-policies/${id}`, data).then(r => r.data),
+  remove: (id: string) =>
+    api.delete(`/api/tool-policies/${id}`).then(r => r.data),
 }
 
 export const configApi = {
