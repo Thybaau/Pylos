@@ -34,6 +34,9 @@ spec:
           ports:
             - containerPort: {{ .Values.backend.service.port }}
               protocol: TCP
+          envFrom:
+            - secretRef:
+                name: {{ .Values.backend.existingSecret | default "pylos-secret" }}
           env:
             - name: PYLOS_DATA_DIR
               value: {{ .Values.backend.dataDir }}
