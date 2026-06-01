@@ -52,6 +52,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.backend.existingSecret | default "pylos-secret" }}
                   key: LEMONADE_API_KEY
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.existingSecret | default "pylos-secret" }}
+                  key: GH_PAT
             {{- if .Values.database.enabled }}
             - name: DATABASE_URL
               {{- if .Values.database.url }}
