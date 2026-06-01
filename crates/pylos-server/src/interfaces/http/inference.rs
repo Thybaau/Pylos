@@ -61,10 +61,29 @@ async fn complete_response(
     vk_info: Option<VirtualKeyInfo>,
 ) -> Response {
     let start = Instant::now();
+    let req_type = "chat_completion";
+    let provider_name = guess_provider(&model);
+
+    state.metrics.inc_requests(&provider_name, &model, req_type);
 
     match state.orchestrator.complete(request, ctx).await {
         Ok(pylos_core::domain::request::PylosResponse::ChatCompletion(resp)) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
+            state.metrics.inc_success(&provider_name, &model);
+            state
+                .metrics
+                .observe_duration(&provider_name, &model, latency / 1000.0);
+            if let Some(ref usage) = resp.usage {
+                state
+                    .metrics
+                    .add_prompt_tokens(&provider_name, &model, usage.prompt_tokens as u64);
+                state.metrics.add_completion_tokens(
+                    &provider_name,
+                    &model,
+                    usage.completion_tokens as u64,
+                );
+            }
+
             let output_preview = resp.choices.first().and_then(|c| c.message.content.clone());
             let finish_reason = resp.choices.first().and_then(|c| c.finish_reason.clone());
             let provider = guess_provider(&resp.model);
@@ -91,15 +110,21 @@ async fn complete_response(
 
             Json(resp).into_response()
         }
-        Ok(pylos_core::domain::request::PylosResponse::Image(resp)) => Json(resp).into_response(),
+        Ok(pylos_core::domain::request::PylosResponse::Image(resp)) => {
+            state.metrics.inc_success(&provider_name, &model);
+            Json(resp).into_response()
+        }
         Ok(pylos_core::domain::request::PylosResponse::Embedding(resp)) => {
+            state.metrics.inc_success(&provider_name, &model);
             Json(resp).into_response()
         }
         Ok(pylos_core::domain::request::PylosResponse::TextCompletion(resp)) => {
+            state.metrics.inc_success(&provider_name, &model);
             Json(resp).into_response()
         }
         Err(e) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
+            state.metrics.inc_error(&provider_name, e.error_type());
             let provider = guess_provider(&model);
             let vk_name = vk_info.map(|v| v.name);
             let entry = build_log_entry(
@@ -160,6 +185,11 @@ async fn stream_response(
     vk_info: Option<VirtualKeyInfo>,
 ) -> Response {
     let start = Instant::now();
+    let req_type = "chat_completion";
+
+    state
+        .metrics
+        .inc_requests(&guess_provider(&model), &model, req_type);
 
     match state.orchestrator.stream(request, ctx).await {
         Ok(chunk_stream) => {
@@ -209,6 +239,7 @@ async fn stream_response(
             let model_clone = model.clone();
             let input_prev = input_preview.clone();
             let acc_log = Arc::clone(&accumulator);
+            let provider_clone = provider.clone();
             tokio::spawn(async move {
                 if log_rx.recv().await.is_some() {
                     let elapsed_total = start.elapsed().as_secs_f64();
@@ -241,9 +272,18 @@ async fn stream_response(
                         state_for_log
                             .metrics
                             .inference_tps
-                            .with_label_values(&[&provider, &model_clone])
+                            .with_label_values(&[&provider_clone, &model_clone])
                             .observe(tps);
                     }
+
+                    state_for_log
+                        .metrics
+                        .inc_success(&provider_clone, &model_clone);
+                    state_for_log.metrics.observe_duration(
+                        &provider_clone,
+                        &model_clone,
+                        elapsed_total,
+                    );
 
                     let pseudo_usage = pylos_core::domain::openai::Usage {
                         prompt_tokens: 0,
@@ -276,6 +316,7 @@ async fn stream_response(
         Err(e) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
             let provider = guess_provider(&model);
+            state.metrics.inc_error(&provider, e.error_type());
             let vk_name = vk_info.map(|v| v.name);
             let entry = build_log_entry(
                 &provider,

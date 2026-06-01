@@ -8,7 +8,6 @@ use prometheus::{
 
 /// Métriques Prometheus exposées par Pylos
 /// Équivalent du plugin telemetry de bifrost
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct Metrics {
     pub registry: Arc<Registry>,
@@ -131,6 +130,58 @@ impl Metrics {
             inference_ttft_seconds,
             inference_tps,
         }
+    }
+
+    /// Incrémente le compteur de requêtes
+    pub fn inc_requests(&self, provider: &str, model: &str, request_type: &str) {
+        self.inference_requests_total
+            .with_label_values(&[provider, model, request_type])
+            .inc();
+    }
+
+    /// Incrémente le compteur de succès
+    pub fn inc_success(&self, provider: &str, model: &str) {
+        self.inference_success_total
+            .with_label_values(&[provider, model])
+            .inc();
+    }
+
+    /// Incrémente le compteur d'erreurs
+    pub fn inc_error(&self, provider: &str, error_type: &str) {
+        self.inference_errors_total
+            .with_label_values(&[provider, error_type])
+            .inc();
+    }
+
+    /// Observe la latence d'une requête
+    pub fn observe_duration(&self, provider: &str, model: &str, duration_secs: f64) {
+        self.inference_duration_seconds
+            .with_label_values(&[provider, model])
+            .observe(duration_secs);
+    }
+
+    /// Ajoute des tokens prompt
+    pub fn add_prompt_tokens(&self, provider: &str, model: &str, count: u64) {
+        self.prompt_tokens_total
+            .with_label_values(&[provider, model])
+            .inc_by(count);
+    }
+
+    /// Ajoute des tokens completion
+    pub fn add_completion_tokens(&self, provider: &str, model: &str, count: u64) {
+        self.completion_tokens_total
+            .with_label_values(&[provider, model])
+            .inc_by(count);
+    }
+
+    /// Incrémente le gauge des requêtes en cours
+    pub fn inc_in_flight(&self) {
+        self.inference_in_flight.inc();
+    }
+
+    /// Décrémente le gauge des requêtes en cours
+    pub fn dec_in_flight(&self) {
+        self.inference_in_flight.dec();
     }
 
     /// Sérialise les métriques au format texte Prometheus

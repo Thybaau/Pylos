@@ -5,16 +5,28 @@ use pylos_core::error::PylosError;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tracing::debug;
+use tracing::{debug, warn};
 
+/// Plugin de batching dynamique.
+///
+/// ATTENTION : Implémentation partielle — ce plugin accumule les requêtes
+/// concurrentes pendant un délai configurable, mais ne les batch pas encore
+/// au niveau du transport. Une vraie implémentation nécessite de grouper
+/// les payloads avant l'envoi au provider amont (ex: OpenAI batching API).
+///
+/// TODO: Implémenter le batching via l'API OpenAI batch (/v1/batch)
+///       ou un mécanisme de coalescing des requêtes.
 pub struct BatchingPlugin {
     delay: Duration,
-    // Mutex pour simuler l'orchestration du batching des requêtes concurrentes vers l'amont
     lock: Arc<Mutex<()>>,
 }
 
 impl BatchingPlugin {
     pub fn new(delay_ms: u64) -> Self {
+        warn!(
+            "BatchingPlugin: NOT YET FULLY IMPLEMENTED. Configured with {}ms delay (stub behavior).",
+            delay_ms
+        );
         Self {
             delay: Duration::from_millis(delay_ms),
             lock: Arc::new(Mutex::new(())),
@@ -39,10 +51,8 @@ impl LlmPlugin for BatchingPlugin {
             model
         );
 
-        // Attente dynamique pour accumuler d'autres requêtes concurrentes
         tokio::time::sleep(self.delay).await;
 
-        // Acquisition exclusive du canal d'inférence par lot pour simuler l'exécution
         let _guard = self.lock.lock().await;
         debug!(
             "BatchingPlugin: Executing batched request group for model '{}'",

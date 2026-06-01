@@ -47,4 +47,20 @@ impl PylosError {
                 | PylosError::RateLimitExceeded(_)
         )
     }
+
+    /// Retourne le type d'erreur pour les labels Prometheus
+    pub fn error_type(&self) -> &'static str {
+        match self {
+            PylosError::Internal(_) => "internal",
+            PylosError::NotFound(_) => "not_found",
+            PylosError::InvalidRequest(_) => "invalid_request",
+            PylosError::ProviderError { .. } => "provider_error",
+            PylosError::AllProvidersFailed(_) => "all_providers_failed",
+            PylosError::Unauthorized(_) => "unauthorized",
+            PylosError::RateLimitExceeded(_) => "rate_limit",
+            PylosError::Timeout(_) => "timeout",
+            PylosError::Unsupported(_) => "unsupported",
+            PylosError::BudgetExceeded(_) => "budget_exceeded",
+        }
+    }
 }

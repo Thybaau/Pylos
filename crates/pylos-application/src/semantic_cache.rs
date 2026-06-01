@@ -273,13 +273,10 @@ impl LlmPlugin for SemanticCachePlugin {
             }
         }
 
-        // Cache miss: save the query vector/text in the RequestContext headers so post_hook doesn't re-embed
+        // Cache miss: save the query vector/text in RequestContext so post_hook doesn't re-embed
         ctx.headers
             .insert("x-cache-query-text".to_string(), user_query);
-        ctx.headers.insert(
-            "x-cache-query-vector".to_string(),
-            serde_json::to_string(&query_vector).unwrap_or_default(),
-        );
+        ctx.cache_query_vector = Some(query_vector);
 
         Ok(None)
     }
@@ -305,14 +302,9 @@ impl LlmPlugin for SemanticCachePlugin {
             None => return Ok(()),
         };
 
-        let query_vector_str = match ctx.headers.get("x-cache-query-vector") {
+        let query_vector = match ctx.cache_query_vector.take() {
             Some(v) => v,
             None => return Ok(()),
-        };
-
-        let query_vector: Vec<f32> = match serde_json::from_str(query_vector_str) {
-            Ok(v) => v,
-            Err(_) => return Ok(()),
         };
 
         // Ensure collection exists

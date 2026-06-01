@@ -117,4 +117,6 @@ pub struct RequestContext {
     pub tried_providers: Vec<String>,
     /// Span tracing pour le call LLM en cours (utilisé par OtelPlugin)
     pub otel_span: Option<tracing::Span>,
+    /// Vecteur d'embedding pour le cache sémantique (évite stockage dans headers HTTP)
+    pub cache_query_vector: Option<Vec<f32>>,
 }

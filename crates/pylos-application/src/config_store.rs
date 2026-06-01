@@ -637,6 +637,35 @@ async fn persist_config_locked(state: &ConfigState) {
     }
 }
 
+fn add_provider_from_env(
+    config: &mut PylosConfig,
+    detected: &mut Vec<&'static str>,
+    name: &'static str,
+    env_key: &str,
+    default_base_url: Option<&str>,
+) {
+    if let Ok(key) = std::env::var(env_key) {
+        if !key.is_empty() {
+            let mut provider = ProviderConfig {
+                keys: vec![ProviderKeyConfig {
+                    name: "default".into(),
+                    value: EnvVar::Literal(key),
+                    models: vec!["*".into()],
+                    weight: 1.0,
+                    bedrock_key_config: None,
+                    azure_config: None,
+                }],
+                ..Default::default()
+            };
+            if let Some(url) = default_base_url {
+                provider.network.base_url = Some(url.into());
+            }
+            config.providers.insert(name.into(), provider);
+            detected.push(name);
+        }
+    }
+}
+
 fn auto_detect_config() -> PylosConfig {
     let mut config = PylosConfig::default();
     let mut detected = vec![];
@@ -665,201 +694,62 @@ fn auto_detect_config() -> PylosConfig {
         }
     }
 
-    // XAI (Grok)
-    if let Ok(key) = std::env::var("XAI_API_KEY") {
-        if !key.is_empty() {
-            config.providers.insert(
-                "xai".into(),
-                ProviderConfig {
-                    keys: vec![ProviderKeyConfig {
-                        name: "default".into(),
-                        value: EnvVar::Literal(key),
-                        models: vec!["*".into()],
-                        weight: 1.0,
-                        bedrock_key_config: None,
-                        azure_config: None,
-                    }],
-                    network: NetworkConfig {
-                        base_url: Some("https://api.x.ai/v1".into()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            );
-            detected.push("xai");
-        }
-    }
-
-    // Anthropic
-    if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-        if !key.is_empty() {
-            config.providers.insert(
-                "anthropic".into(),
-                ProviderConfig {
-                    keys: vec![ProviderKeyConfig {
-                        name: "default".into(),
-                        value: EnvVar::Literal(key),
-                        models: vec!["*".into()],
-                        weight: 1.0,
-                        bedrock_key_config: None,
-                        azure_config: None,
-                    }],
-                    ..Default::default()
-                },
-            );
-            detected.push("anthropic");
-        }
-    }
-
-    // Mistral
-    if let Ok(key) = std::env::var("MISTRAL_API_KEY") {
-        if !key.is_empty() {
-            config.providers.insert(
-                "mistral".into(),
-                ProviderConfig {
-                    keys: vec![ProviderKeyConfig {
-                        name: "default".into(),
-                        value: EnvVar::Literal(key),
-                        models: vec!["*".into()],
-                        weight: 1.0,
-                        bedrock_key_config: None,
-                        azure_config: None,
-                    }],
-                    network: NetworkConfig {
-                        base_url: Some("https://api.mistral.ai/v1".into()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            );
-            detected.push("mistral");
-        }
-    }
-
-    // Groq
-    if let Ok(key) = std::env::var("GROQ_API_KEY") {
-        if !key.is_empty() {
-            config.providers.insert(
-                "groq".into(),
-                ProviderConfig {
-                    keys: vec![ProviderKeyConfig {
-                        name: "default".into(),
-                        value: EnvVar::Literal(key),
-                        models: vec!["*".into()],
-                        weight: 1.0,
-                        bedrock_key_config: None,
-                        azure_config: None,
-                    }],
-                    network: NetworkConfig {
-                        base_url: Some("https://api.groq.com/openai/v1".into()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            );
-            detected.push("groq");
-        }
-    }
-
-    // DeepSeek
-    if let Ok(key) = std::env::var("DEEPSEEK_API_KEY") {
-        if !key.is_empty() {
-            config.providers.insert(
-                "deepseek".into(),
-                ProviderConfig {
-                    keys: vec![ProviderKeyConfig {
-                        name: "default".into(),
-                        value: EnvVar::Literal(key),
-                        models: vec!["*".into()],
-                        weight: 1.0,
-                        bedrock_key_config: None,
-                        azure_config: None,
-                    }],
-                    network: NetworkConfig {
-                        base_url: Some("https://api.deepseek.com".into()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            );
-            detected.push("deepseek");
-        }
-    }
-
-    // Perplexity
-    if let Ok(key) = std::env::var("PERPLEXITY_API_KEY") {
-        if !key.is_empty() {
-            config.providers.insert(
-                "perplexity".into(),
-                ProviderConfig {
-                    keys: vec![ProviderKeyConfig {
-                        name: "default".into(),
-                        value: EnvVar::Literal(key),
-                        models: vec!["*".into()],
-                        weight: 1.0,
-                        bedrock_key_config: None,
-                        azure_config: None,
-                    }],
-                    network: NetworkConfig {
-                        base_url: Some("https://api.perplexity.ai".into()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            );
-            detected.push("perplexity");
-        }
-    }
-
-    // Nebius
-    if let Ok(key) = std::env::var("NEBIUS_API_KEY") {
-        if !key.is_empty() {
-            config.providers.insert(
-                "nebius".into(),
-                ProviderConfig {
-                    keys: vec![ProviderKeyConfig {
-                        name: "default".into(),
-                        value: EnvVar::Literal(key),
-                        models: vec!["*".into()],
-                        weight: 1.0,
-                        bedrock_key_config: None,
-                        azure_config: None,
-                    }],
-                    network: NetworkConfig {
-                        base_url: Some("https://api.studio.nebius.ai/v1".into()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            );
-            detected.push("nebius");
-        }
-    }
-
-    // Cerebras
-    if let Ok(key) = std::env::var("CEREBRAS_API_KEY") {
-        if !key.is_empty() {
-            config.providers.insert(
-                "cerebras".into(),
-                ProviderConfig {
-                    keys: vec![ProviderKeyConfig {
-                        name: "default".into(),
-                        value: EnvVar::Literal(key),
-                        models: vec!["*".into()],
-                        weight: 1.0,
-                        bedrock_key_config: None,
-                        azure_config: None,
-                    }],
-                    network: NetworkConfig {
-                        base_url: Some("https://api.cerebras.ai/v1".into()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            );
-            detected.push("cerebras");
-        }
-    }
+    add_provider_from_env(
+        &mut config,
+        &mut detected,
+        "xai",
+        "XAI_API_KEY",
+        Some("https://api.x.ai/v1"),
+    );
+    add_provider_from_env(
+        &mut config,
+        &mut detected,
+        "anthropic",
+        "ANTHROPIC_API_KEY",
+        None,
+    );
+    add_provider_from_env(
+        &mut config,
+        &mut detected,
+        "mistral",
+        "MISTRAL_API_KEY",
+        Some("https://api.mistral.ai/v1"),
+    );
+    add_provider_from_env(
+        &mut config,
+        &mut detected,
+        "groq",
+        "GROQ_API_KEY",
+        Some("https://api.groq.com/openai/v1"),
+    );
+    add_provider_from_env(
+        &mut config,
+        &mut detected,
+        "deepseek",
+        "DEEPSEEK_API_KEY",
+        Some("https://api.deepseek.com"),
+    );
+    add_provider_from_env(
+        &mut config,
+        &mut detected,
+        "perplexity",
+        "PERPLEXITY_API_KEY",
+        Some("https://api.perplexity.ai"),
+    );
+    add_provider_from_env(
+        &mut config,
+        &mut detected,
+        "nebius",
+        "NEBIUS_API_KEY",
+        Some("https://api.studio.nebius.ai/v1"),
+    );
+    add_provider_from_env(
+        &mut config,
+        &mut detected,
+        "cerebras",
+        "CEREBRAS_API_KEY",
+        Some("https://api.cerebras.ai/v1"),
+    );
 
     // AWS Bedrock — auto-détection si AWS_ACCESS_KEY_ID ou profil AWS présent
     // Priorité à AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY explicites

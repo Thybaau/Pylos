@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use tracing::{debug, warn};
 
 use pylos_core::domain::openai::{
@@ -11,6 +12,25 @@ use pylos_core::domain::traits::LlmPlugin;
 use pylos_core::error::PylosError;
 
 use crate::config_store::ConfigStore;
+
+static RE_EMAIL: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap());
+static RE_PHONE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\+?\d{1,4}[-.\s]?\(?\d{1,3}?\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}").unwrap()
+});
+static RE_CC: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\b(?:\d[ -]*?){13,16}\b").unwrap());
+static RE_OPENAI_KEY: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\bsk-[a-zA-Z0-9]{20,}\b").unwrap());
+static RE_JWT: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\b[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]*\b").unwrap()
+});
+static RE_PRIVATE_KEY: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"(?s)-----BEGIN [A-Z ]+ PRIVATE KEY-----.*?-----END [A-Z ]+ PRIVATE KEY-----",
+    )
+    .unwrap()
+});
 
 pub struct GuardrailsPlugin {
     config_store: Arc<ConfigStore>,
@@ -33,15 +53,9 @@ impl GuardrailsPlugin {
         // 1. PII Masking
         if mask_pii {
             // Emails
-            let email_regex =
-                match regex::Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}") {
-                    Ok(re) => re,
-                    Err(_) => return masked,
-                };
-
             let start_email_idx = pii_map.len() + 1;
             let mut next_masked = masked.clone();
-            for (idx, mat) in (start_email_idx..).zip(email_regex.find_iter(&masked)) {
+            for (idx, mat) in (start_email_idx..).zip(RE_EMAIL.find_iter(&masked)) {
                 let original = mat.as_str().to_string();
                 let placeholder = format!("[EMAIL_{}]", idx);
                 pii_map.insert(placeholder.clone(), original);
@@ -49,15 +63,11 @@ impl GuardrailsPlugin {
             }
             masked = next_masked;
 
-            // Phone Numbers (matches standard international and national formats)
-            let phone_regex =
-                regex::Regex::new(r"\+?\d{1,4}[-.\s]?\(?\d{1,3}?\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}")
-                    .unwrap();
+            // Phone Numbers
             let start_phone_idx = pii_map.len() + 1;
             let mut next_masked = masked.clone();
-            for (phone_idx, mat) in (start_phone_idx..).zip(phone_regex.find_iter(&masked)) {
+            for (phone_idx, mat) in (start_phone_idx..).zip(RE_PHONE.find_iter(&masked)) {
                 let original = mat.as_str().to_string();
-                // Avoid matching short integers as phone numbers
                 if original.chars().filter(|c| c.is_ascii_digit()).count() >= 7 {
                     let placeholder = format!("[PHONE_{}]", phone_idx);
                     pii_map.insert(placeholder.clone(), original);
@@ -67,10 +77,9 @@ impl GuardrailsPlugin {
             masked = next_masked;
 
             // Credit cards
-            let cc_regex = regex::Regex::new(r"\b(?:\d[ -]*?){13,16}\b").unwrap();
             let start_cc_idx = pii_map.len() + 1;
             let mut next_masked = masked.clone();
-            for (idx, mat) in (start_cc_idx..).zip(cc_regex.find_iter(&masked)) {
+            for (idx, mat) in (start_cc_idx..).zip(RE_CC.find_iter(&masked)) {
                 let original = mat.as_str().to_string();
                 let placeholder = format!("[CREDIT_CARD_{}]", idx);
                 pii_map.insert(placeholder.clone(), original);
@@ -82,49 +91,38 @@ impl GuardrailsPlugin {
         // 2. Secrets Masking
         if mask_secrets {
             // OpenAI keys
-            if let Ok(openai_regex) = regex::Regex::new(r"\bsk-[a-zA-Z0-9]{20,}\b") {
-                let mut next_masked = masked.clone();
-                for (secret_idx, mat) in (pii_map.len() + 1..).zip(openai_regex.find_iter(&masked))
-                {
-                    let original = mat.as_str().to_string();
-                    let placeholder = format!("[API_KEY_{}]", secret_idx);
-                    pii_map.insert(placeholder.clone(), original);
-                    next_masked = next_masked.replace(mat.as_str(), &placeholder);
-                }
-                masked = next_masked;
+            let mut next_masked = masked.clone();
+            for (secret_idx, mat) in (pii_map.len() + 1..).zip(RE_OPENAI_KEY.find_iter(&masked)) {
+                let original = mat.as_str().to_string();
+                let placeholder = format!("[API_KEY_{}]", secret_idx);
+                pii_map.insert(placeholder.clone(), original);
+                next_masked = next_masked.replace(mat.as_str(), &placeholder);
             }
+            masked = next_masked;
 
             // JWT Tokens
-            if let Ok(jwt_regex) =
-                regex::Regex::new(r"\b[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]*\b")
-            {
-                let mut jwt_idx = pii_map.len() + 1;
-                let mut next_masked = masked.clone();
-                for mat in jwt_regex.find_iter(&masked) {
-                    let original = mat.as_str().to_string();
-                    if original.len() > 20 {
-                        let placeholder = format!("[JWT_{}]", jwt_idx);
-                        pii_map.insert(placeholder.clone(), original);
-                        next_masked = next_masked.replace(mat.as_str(), &placeholder);
-                        jwt_idx += 1;
-                    }
-                }
-                masked = next_masked;
-            }
-
-            // Private Keys
-            if let Ok(pkey_regex) = regex::Regex::new(
-                r"(?s)-----BEGIN [A-Z ]+ PRIVATE KEY-----.*?-----END [A-Z ]+ PRIVATE KEY-----",
-            ) {
-                let mut next_masked = masked.clone();
-                for (pkey_idx, mat) in (pii_map.len() + 1..).zip(pkey_regex.find_iter(&masked)) {
-                    let original = mat.as_str().to_string();
-                    let placeholder = format!("[PRIVATE_KEY_{}]", pkey_idx);
+            let mut jwt_idx = pii_map.len() + 1;
+            let mut next_masked = masked.clone();
+            for mat in RE_JWT.find_iter(&masked) {
+                let original = mat.as_str().to_string();
+                if original.len() > 20 {
+                    let placeholder = format!("[JWT_{}]", jwt_idx);
                     pii_map.insert(placeholder.clone(), original);
                     next_masked = next_masked.replace(mat.as_str(), &placeholder);
+                    jwt_idx += 1;
                 }
-                masked = next_masked;
             }
+            masked = next_masked;
+
+            // Private Keys
+            let mut next_masked = masked.clone();
+            for (pkey_idx, mat) in (pii_map.len() + 1..).zip(RE_PRIVATE_KEY.find_iter(&masked)) {
+                let original = mat.as_str().to_string();
+                let placeholder = format!("[PRIVATE_KEY_{}]", pkey_idx);
+                pii_map.insert(placeholder.clone(), original);
+                next_masked = next_masked.replace(mat.as_str(), &placeholder);
+            }
+            masked = next_masked;
         }
 
         masked

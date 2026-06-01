@@ -69,7 +69,10 @@ impl InferenceOrchestrator {
     }
 
     fn is_circuit_breaker_open(&self, name: &str) -> bool {
-        let breakers = self.circuit_breakers.lock().unwrap();
+        let breakers = self
+            .circuit_breakers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(state) = breakers.get(name) {
             if state.consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
                 if let Some(last_failure) = state.last_failure {
@@ -83,7 +86,10 @@ impl InferenceOrchestrator {
     }
 
     fn record_success(&self, name: &str) {
-        let mut breakers = self.circuit_breakers.lock().unwrap();
+        let mut breakers = self
+            .circuit_breakers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(state) = breakers.get_mut(name) {
             state.consecutive_failures = 0;
             state.last_failure = None;
@@ -91,10 +97,30 @@ impl InferenceOrchestrator {
     }
 
     fn record_failure(&self, name: &str) {
-        let mut breakers = self.circuit_breakers.lock().unwrap();
+        let mut breakers = self
+            .circuit_breakers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let state = breakers.entry(name.to_string()).or_default();
         state.consecutive_failures += 1;
         state.last_failure = Some(Instant::now());
+    }
+
+    /// Weighted random shuffle using the A-Res algorithm.
+    /// Pre-computes random scores to ensure a deterministic total order.
+    fn weighted_shuffle(
+        items: Vec<(Arc<dyn Provider>, ProviderConfig, f64, bool)>,
+    ) -> Vec<(Arc<dyn Provider>, ProviderConfig, f64, bool)> {
+        let mut scored: Vec<_> = items
+            .into_iter()
+            .map(|item| {
+                let weight = item.2.max(0.0001);
+                let score = fastrand::f64().powf(1.0 / weight);
+                (item, score)
+            })
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.into_iter().map(|(item, _)| item).collect()
     }
 
     fn select_and_order_providers(
@@ -154,25 +180,8 @@ impl InferenceOrchestrator {
             .into_iter()
             .partition(|(_, _, _, is_open)| !*is_open);
 
-        active_supporting.sort_by(|a, b| {
-            let weight_a = a.2.max(0.0001);
-            let weight_b = b.2.max(0.0001);
-            let score_a = fastrand::f64().powf(1.0 / weight_a);
-            let score_b = fastrand::f64().powf(1.0 / weight_b);
-            score_b
-                .partial_cmp(&score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        broken_supporting.sort_by(|a, b| {
-            let weight_a = a.2.max(0.0001);
-            let weight_b = b.2.max(0.0001);
-            let score_a = fastrand::f64().powf(1.0 / weight_a);
-            let score_b = fastrand::f64().powf(1.0 / weight_b);
-            score_b
-                .partial_cmp(&score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        active_supporting = Self::weighted_shuffle(active_supporting);
+        broken_supporting = Self::weighted_shuffle(broken_supporting);
 
         // 4. Do the same for non-supporting
         let (mut active_non_supporting, mut broken_non_supporting): (Vec<_>, Vec<_>) =
@@ -180,25 +189,8 @@ impl InferenceOrchestrator {
                 .into_iter()
                 .partition(|(_, _, _, is_open)| !*is_open);
 
-        active_non_supporting.sort_by(|a, b| {
-            let weight_a = a.2.max(0.0001);
-            let weight_b = b.2.max(0.0001);
-            let score_a = fastrand::f64().powf(1.0 / weight_a);
-            let score_b = fastrand::f64().powf(1.0 / weight_b);
-            score_b
-                .partial_cmp(&score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        broken_non_supporting.sort_by(|a, b| {
-            let weight_a = a.2.max(0.0001);
-            let weight_b = b.2.max(0.0001);
-            let score_a = fastrand::f64().powf(1.0 / weight_a);
-            let score_b = fastrand::f64().powf(1.0 / weight_b);
-            score_b
-                .partial_cmp(&score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        active_non_supporting = Self::weighted_shuffle(active_non_supporting);
+        broken_non_supporting = Self::weighted_shuffle(broken_non_supporting);
 
         let mut ordered = Vec::new();
         for (prov, cfg, _, _) in active_supporting {
