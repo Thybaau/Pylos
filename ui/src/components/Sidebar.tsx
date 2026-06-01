@@ -261,10 +261,10 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
         <button
           onClick={() => {
             if (onClose) onClose();
-            const currentKey = localStorage.getItem('pylos_admin_key') || '';
+            const currentKey = sessionStorage.getItem('pylos_admin_key') || '';
             const newKey = window.prompt("Configure Pylos Admin Key (PYLOS_ADMIN_KEY):", currentKey);
             if (newKey !== null) {
-              localStorage.setItem('pylos_admin_key', newKey);
+              sessionStorage.setItem('pylos_admin_key', newKey);
               window.location.reload();
             }
           }}

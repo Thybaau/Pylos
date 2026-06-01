@@ -589,11 +589,19 @@ fn redact_config(cfg: &pylos_core::domain::config::PylosConfig) -> serde_json::V
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub async fn promote_to_prod_handler() -> impl IntoResponse {
+    let gh_pat = std::env::var("GH_PAT");
+    if gh_pat.is_err() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "GitHub promotion is not configured (GH_PAT not set)" })),
+        )
+            .into_response();
+    }
     match promote_to_production().await {
         Ok(res) => Json(res).into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e })),
+            Json(json!({ "error": "Failed to trigger promotion workflow" })),
         )
             .into_response(),
     }

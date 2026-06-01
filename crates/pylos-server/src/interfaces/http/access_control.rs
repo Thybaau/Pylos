@@ -13,6 +13,34 @@ use pylos_core::domain::organization::{
 
 use crate::state::AppState;
 
+const MAX_STR_LEN: usize = 512;
+const MAX_DESC_LEN: usize = 2048;
+
+fn validate_str(
+    s: &str,
+    max: usize,
+    field: &str,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if s.len() > max {
+        Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("{} exceeds maximum length of {} bytes", field, max) })),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_email(s: &str) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if !s.contains('@') || !s.contains('.') {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid email address" })),
+        ));
+    }
+    Ok(())
+}
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -69,6 +97,14 @@ pub async fn create_organization(
     State(state): State<AppState>,
     Json(req): Json<CreateOrganizationRequest>,
 ) -> impl IntoResponse {
+    if let Err(e) = validate_str(&req.name, MAX_STR_LEN, "name") {
+        return e.into_response();
+    }
+    if let Some(ref d) = req.description {
+        if let Err(e) = validate_str(d, MAX_DESC_LEN, "description") {
+            return e.into_response();
+        }
+    }
     let now = now_ms();
     let org = Organization {
         id: req
@@ -211,6 +247,14 @@ pub async fn create_team(
     State(state): State<AppState>,
     Json(req): Json<CreateTeamRequest>,
 ) -> impl IntoResponse {
+    if let Err(e) = validate_str(&req.name, MAX_STR_LEN, "name") {
+        return e.into_response();
+    }
+    if let Some(ref d) = req.description {
+        if let Err(e) = validate_str(d, MAX_DESC_LEN, "description") {
+            return e.into_response();
+        }
+    }
     let now = now_ms();
     let team = Team {
         id: req
@@ -358,6 +402,15 @@ pub async fn create_user(
     State(state): State<AppState>,
     Json(req): Json<CreateUserRequest>,
 ) -> impl IntoResponse {
+    if let Err(e) = validate_str(&req.email, MAX_STR_LEN, "email") {
+        return e.into_response();
+    }
+    if let Err(e) = validate_email(&req.email) {
+        return e.into_response();
+    }
+    if let Err(e) = validate_str(&req.name, MAX_STR_LEN, "name") {
+        return e.into_response();
+    }
     let now = now_ms();
     let user = InternalUser {
         id: req

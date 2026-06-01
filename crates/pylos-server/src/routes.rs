@@ -5,12 +5,13 @@ use crate::interfaces::http::{
 use crate::middleware::{management_auth_middleware, queuing_middleware, virtual_key_middleware};
 use crate::state::AppState;
 use axum::{
+    extract::DefaultBodyLimit,
     http::Method,
     middleware,
     routing::{delete, get, post, put},
     Router,
 };
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 pub fn create_router(state: AppState) -> Router {
@@ -20,6 +21,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/v1/completions", post(completions::text_completions))
         .route("/v1/embeddings", post(embeddings::create_embeddings))
         .route("/v1/images/generations", post(images::generate_image))
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10 MB
         .layer(middleware::from_fn_with_state(
             state.clone(),
             queuing_middleware,
@@ -161,13 +163,26 @@ fn build_cors(state: &AppState) -> CorsLayer {
     if state.allowed_origins.iter().any(|o| o == "*") {
         return CorsLayer::permissive();
     }
-    let allowed_origins: Vec<_> = state
+    let allowed_origins: Vec<axum::http::HeaderValue> = state
         .allowed_origins
         .iter()
-        .map(|o| o.parse::<axum::http::HeaderValue>().unwrap())
+        .filter_map(|o| match o.parse::<axum::http::HeaderValue>() {
+            Ok(v) => Some(v),
+            Err(e) => {
+                tracing::warn!(origin = %o, error = %e, "Invalid allowed_origin in config, skipping");
+                None
+            }
+        })
         .collect();
+    if allowed_origins.is_empty() {
+        return CorsLayer::permissive();
+    }
     CorsLayer::new()
         .allow_origin(allowed_origins)
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
-        .allow_headers(Any)
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::HeaderName::from_static("x-admin-key"),
+        ])
 }
