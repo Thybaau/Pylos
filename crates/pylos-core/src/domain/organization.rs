@@ -6,6 +6,7 @@ pub struct Organization {
     pub name: String,
     pub description: Option<String>,
     pub is_active: bool,
+    pub tags: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -17,6 +18,7 @@ pub struct Team {
     pub name: String,
     pub description: Option<String>,
     pub is_active: bool,
+    pub tags: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -45,6 +47,7 @@ pub struct AccessGroup {
     pub model_ids: Vec<String>,
     pub provider_ids: Vec<String>,
     pub is_active: bool,
+    pub tags: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }

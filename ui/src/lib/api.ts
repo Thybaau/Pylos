@@ -169,6 +169,7 @@ export interface Organization {
   name: string
   description: string | null
   is_active: boolean
+  tags: string[]
   created_at: number
   updated_at: number
 }
@@ -179,6 +180,7 @@ export interface Team {
   name: string
   description: string | null
   is_active: boolean
+  tags: string[]
   created_at: number
   updated_at: number
 }
@@ -205,6 +207,7 @@ export interface AccessGroup {
   model_ids: string[]
   provider_ids: string[]
   is_active: boolean
+  tags: string[]
   created_at: number
   updated_at: number
 }
@@ -340,26 +343,26 @@ export const healthApi = {
 }
 
 export const organizationsApi = {
-  getAll: () =>
-    api.get<{ organizations: Organization[]; total: number }>('/api/organizations').then(r => r.data),
+  getAll: (tag?: string) =>
+    api.get<{ organizations: Organization[]; total: number }>('/api/organizations', { params: tag ? { tag } : {} }).then(r => r.data),
   get: (id: string) =>
     api.get<Organization>(`/api/organizations/${id}`).then(r => r.data),
-  create: (data: { name: string; description?: string | null; is_active?: boolean }) =>
+  create: (data: { name: string; description?: string | null; is_active?: boolean; tags?: string[] }) =>
     api.post<Organization>('/api/organizations', data).then(r => r.data),
-  update: (id: string, data: { name?: string; description?: string | null; is_active?: boolean }) =>
+  update: (id: string, data: { name?: string; description?: string | null; is_active?: boolean; tags?: string[] }) =>
     api.put<Organization>(`/api/organizations/${id}`, data).then(r => r.data),
   remove: (id: string) =>
     api.delete(`/api/organizations/${id}`).then(r => r.data),
 }
 
 export const teamsApi = {
-  getAll: () =>
-    api.get<{ teams: Team[]; total: number }>('/api/teams').then(r => r.data),
+  getAll: (tag?: string) =>
+    api.get<{ teams: Team[]; total: number }>('/api/teams', { params: tag ? { tag } : {} }).then(r => r.data),
   get: (id: string) =>
     api.get<Team>(`/api/teams/${id}`).then(r => r.data),
-  create: (data: { organization_id: string; name: string; description?: string | null; is_active?: boolean }) =>
+  create: (data: { organization_id: string; name: string; description?: string | null; is_active?: boolean; tags?: string[] }) =>
     api.post<Team>('/api/teams', data).then(r => r.data),
-  update: (id: string, data: { name?: string; description?: string | null; is_active?: boolean }) =>
+  update: (id: string, data: { name?: string; description?: string | null; is_active?: boolean; tags?: string[] }) =>
     api.put<Team>(`/api/teams/${id}`, data).then(r => r.data),
   remove: (id: string) =>
     api.delete(`/api/teams/${id}`).then(r => r.data),
@@ -379,13 +382,13 @@ export const usersApi = {
 }
 
 export const accessGroupsApi = {
-  getAll: () =>
-    api.get<{ access_groups: AccessGroup[]; total: number }>('/api/access-groups').then(r => r.data),
+  getAll: (tag?: string) =>
+    api.get<{ access_groups: AccessGroup[]; total: number }>('/api/access-groups', { params: tag ? { tag } : {} }).then(r => r.data),
   get: (id: string) =>
     api.get<AccessGroup>(`/api/access-groups/${id}`).then(r => r.data),
-  create: (data: { name: string; description?: string | null; organization_id?: string | null; team_ids?: string[]; user_ids?: string[]; model_ids?: string[]; provider_ids?: string[]; is_active?: boolean }) =>
+  create: (data: { name: string; description?: string | null; organization_id?: string | null; team_ids?: string[]; user_ids?: string[]; model_ids?: string[]; provider_ids?: string[]; is_active?: boolean; tags?: string[] }) =>
     api.post<AccessGroup>('/api/access-groups', data).then(r => r.data),
-  update: (id: string, data: { name?: string; description?: string | null; model_ids?: string[]; provider_ids?: string[]; is_active?: boolean }) =>
+  update: (id: string, data: { name?: string; description?: string | null; model_ids?: string[]; provider_ids?: string[]; is_active?: boolean; tags?: string[] }) =>
     api.put<AccessGroup>(`/api/access-groups/${id}`, data).then(r => r.data),
   remove: (id: string) =>
     api.delete(`/api/access-groups/${id}`).then(r => r.data),

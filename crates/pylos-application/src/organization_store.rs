@@ -34,6 +34,7 @@ impl OrganizationStore {
                     name        TEXT NOT NULL,
                     description TEXT,
                     is_active   INTEGER NOT NULL DEFAULT 1,
+                    tags        TEXT NOT NULL DEFAULT '[]',
                     created_at  INTEGER NOT NULL,
                     updated_at  INTEGER NOT NULL
                 )"#,
@@ -49,6 +50,7 @@ impl OrganizationStore {
                     name            TEXT NOT NULL,
                     description     TEXT,
                     is_active       INTEGER NOT NULL DEFAULT 1,
+                    tags            TEXT NOT NULL DEFAULT '[]',
                     created_at      INTEGER NOT NULL,
                     updated_at      INTEGER NOT NULL
                 )"#,
@@ -85,6 +87,7 @@ impl OrganizationStore {
                     model_ids       TEXT NOT NULL DEFAULT '[]',
                     provider_ids    TEXT NOT NULL DEFAULT '[]',
                     is_active       INTEGER NOT NULL DEFAULT 1,
+                    tags            TEXT NOT NULL DEFAULT '[]',
                     created_at      INTEGER NOT NULL,
                     updated_at      INTEGER NOT NULL
                 )"#,
@@ -141,25 +144,49 @@ impl OrganizationStore {
 
     // ── Organizations ──────────────────────────────────────────────────────────
 
-    pub async fn list_organizations(&self) -> Result<Vec<Organization>, PylosError> {
+    pub async fn list_organizations(
+        &self,
+        tag: Option<&str>,
+    ) -> Result<Vec<Organization>, PylosError> {
         match &self.pool {
             DbPool::Sqlite(pool) => {
-                let rows = sqlx::query("SELECT * FROM organizations ORDER BY name")
+                let rows = if let Some(t) = tag {
+                    sqlx::query("SELECT * FROM organizations WHERE tags LIKE $1 ORDER BY name")
+                        .bind(format!("%\"{}\"%", t))
+                        .fetch_all(pool)
+                        .await
+                        .map_err(|e| {
+                            PylosError::Internal(format!("Failed to list organizations: {}", e))
+                        })?
+                } else {
+                    sqlx::query("SELECT * FROM organizations ORDER BY name")
+                        .fetch_all(pool)
+                        .await
+                        .map_err(|e| {
+                            PylosError::Internal(format!("Failed to list organizations: {}", e))
+                        })?
+                };
+                Ok(rows.iter().map(row_to_org_sqlite).collect())
+            }
+            DbPool::Postgres(pool) => {
+                let rows: Vec<sqlx::postgres::PgRow> = if let Some(t) = tag {
+                    sqlx::query::<sqlx::Postgres>(
+                        "SELECT * FROM organizations WHERE tags @> $1 ORDER BY name",
+                    )
+                    .bind(serde_json::json!([t]))
                     .fetch_all(pool)
                     .await
                     .map_err(|e| {
                         PylosError::Internal(format!("Failed to list organizations: {}", e))
-                    })?;
-                Ok(rows.iter().map(row_to_org_sqlite).collect())
-            }
-            DbPool::Postgres(pool) => {
-                let rows =
+                    })?
+                } else {
                     sqlx::query::<sqlx::Postgres>("SELECT * FROM organizations ORDER BY name")
                         .fetch_all(pool)
                         .await
                         .map_err(|e| {
                             PylosError::Internal(format!("Failed to list organizations: {}", e))
-                        })?;
+                        })?
+                };
                 Ok(rows.iter().map(row_to_org_pg).collect())
             }
         }
@@ -192,21 +219,24 @@ impl OrganizationStore {
     }
 
     pub async fn upsert_organization(&self, org: &Organization) -> Result<(), PylosError> {
+        let tags_json = serde_json::to_string(&org.tags).unwrap_or_else(|_| "[]".to_string());
         match &self.pool {
             DbPool::Sqlite(pool) => {
                 sqlx::query(
-                    r#"INSERT INTO organizations (id, name, description, is_active, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                    r#"INSERT INTO organizations (id, name, description, is_active, tags, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         description = excluded.description,
                         is_active = excluded.is_active,
+                        tags = excluded.tags,
                         updated_at = excluded.updated_at"#,
                 )
                 .bind(&org.id)
                 .bind(&org.name)
                 .bind(&org.description)
                 .bind(if org.is_active { 1 } else { 0 })
+                .bind(&tags_json)
                 .bind(org.created_at)
                 .bind(org.updated_at)
                 .execute(pool)
@@ -214,19 +244,23 @@ impl OrganizationStore {
                 .map_err(|e| PylosError::Internal(format!("Failed to upsert organization: {}", e)))?;
             }
             DbPool::Postgres(pool) => {
+                let tags_val: serde_json::Value =
+                    serde_json::from_str(&tags_json).unwrap_or_default();
                 sqlx::query::<sqlx::Postgres>(
-                    r#"INSERT INTO organizations (id, name, description, is_active, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                    r#"INSERT INTO organizations (id, name, description, is_active, tags, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         description = excluded.description,
                         is_active = excluded.is_active,
+                        tags = excluded.tags,
                         updated_at = excluded.updated_at"#,
                 )
                 .bind(&org.id)
                 .bind(&org.name)
                 .bind(&org.description)
                 .bind(org.is_active)
+                .bind(&tags_val)
                 .bind(org.created_at)
                 .bind(org.updated_at)
                 .execute(pool)
@@ -261,37 +295,83 @@ impl OrganizationStore {
 
     // ── Teams ──────────────────────────────────────────────────────────────────
 
-    pub async fn list_teams(&self, organization_id: Option<&str>) -> Result<Vec<Team>, PylosError> {
+    pub async fn list_teams(
+        &self,
+        organization_id: Option<&str>,
+        tag: Option<&str>,
+    ) -> Result<Vec<Team>, PylosError> {
         match &self.pool {
             DbPool::Sqlite(pool) => {
-                let rows = if let Some(org_id) = organization_id {
-                    sqlx::query("SELECT * FROM teams WHERE organization_id = $1 ORDER BY name")
+                let rows = match (organization_id, tag) {
+                    (Some(org_id), Some(t)) => {
+                        sqlx::query(
+                            "SELECT * FROM teams WHERE organization_id = $1 AND tags LIKE $2 ORDER BY name",
+                        )
                         .bind(org_id)
+                        .bind(format!("%\"{}\"%", t))
                         .fetch_all(pool)
                         .await
                         .map_err(|e| PylosError::Internal(format!("Failed to list teams: {}", e)))?
-                } else {
-                    sqlx::query("SELECT * FROM teams ORDER BY name")
-                        .fetch_all(pool)
-                        .await
-                        .map_err(|e| PylosError::Internal(format!("Failed to list teams: {}", e)))?
+                    }
+                    (Some(org_id), None) => {
+                        sqlx::query("SELECT * FROM teams WHERE organization_id = $1 ORDER BY name")
+                            .bind(org_id)
+                            .fetch_all(pool)
+                            .await
+                            .map_err(|e| PylosError::Internal(format!("Failed to list teams: {}", e)))?
+                    }
+                    (None, Some(t)) => {
+                        sqlx::query("SELECT * FROM teams WHERE tags LIKE $1 ORDER BY name")
+                            .bind(format!("%\"{}\"%", t))
+                            .fetch_all(pool)
+                            .await
+                            .map_err(|e| PylosError::Internal(format!("Failed to list teams: {}", e)))?
+                    }
+                    (None, None) => {
+                        sqlx::query("SELECT * FROM teams ORDER BY name")
+                            .fetch_all(pool)
+                            .await
+                            .map_err(|e| PylosError::Internal(format!("Failed to list teams: {}", e)))?
+                    }
                 };
                 Ok(rows.iter().map(row_to_team_sqlite).collect())
             }
             DbPool::Postgres(pool) => {
-                let rows: Vec<sqlx::postgres::PgRow> = if let Some(org_id) = organization_id {
-                    sqlx::query::<sqlx::Postgres>(
-                        "SELECT * FROM teams WHERE organization_id = $1 ORDER BY name",
-                    )
-                    .bind(org_id)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(|e| PylosError::Internal(format!("Failed to list teams: {}", e)))?
-                } else {
-                    sqlx::query::<sqlx::Postgres>("SELECT * FROM teams ORDER BY name")
+                let rows: Vec<sqlx::postgres::PgRow> = match (organization_id, tag) {
+                    (Some(org_id), Some(t)) => {
+                        sqlx::query::<sqlx::Postgres>(
+                            "SELECT * FROM teams WHERE organization_id = $1 AND tags @> $2 ORDER BY name",
+                        )
+                        .bind(org_id)
+                        .bind(serde_json::json!([t]))
                         .fetch_all(pool)
                         .await
                         .map_err(|e| PylosError::Internal(format!("Failed to list teams: {}", e)))?
+                    }
+                    (Some(org_id), None) => {
+                        sqlx::query::<sqlx::Postgres>(
+                            "SELECT * FROM teams WHERE organization_id = $1 ORDER BY name",
+                        )
+                        .bind(org_id)
+                        .fetch_all(pool)
+                        .await
+                        .map_err(|e| PylosError::Internal(format!("Failed to list teams: {}", e)))?
+                    }
+                    (None, Some(t)) => {
+                        sqlx::query::<sqlx::Postgres>(
+                            "SELECT * FROM teams WHERE tags @> $1 ORDER BY name",
+                        )
+                        .bind(serde_json::json!([t]))
+                        .fetch_all(pool)
+                        .await
+                        .map_err(|e| PylosError::Internal(format!("Failed to list teams: {}", e)))?
+                    }
+                    (None, None) => {
+                        sqlx::query::<sqlx::Postgres>("SELECT * FROM teams ORDER BY name")
+                            .fetch_all(pool)
+                            .await
+                            .map_err(|e| PylosError::Internal(format!("Failed to list teams: {}", e)))?
+                    }
                 };
                 Ok(rows.iter().map(row_to_team_pg).collect())
             }
@@ -320,16 +400,18 @@ impl OrganizationStore {
     }
 
     pub async fn upsert_team(&self, team: &Team) -> Result<(), PylosError> {
+        let tags_json = serde_json::to_string(&team.tags).unwrap_or_else(|_| "[]".to_string());
         match &self.pool {
             DbPool::Sqlite(pool) => {
                 sqlx::query(
-                    r#"INSERT INTO teams (id, organization_id, name, description, is_active, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    r#"INSERT INTO teams (id, organization_id, name, description, is_active, tags, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     ON CONFLICT(id) DO UPDATE SET
                         organization_id = excluded.organization_id,
                         name = excluded.name,
                         description = excluded.description,
                         is_active = excluded.is_active,
+                        tags = excluded.tags,
                         updated_at = excluded.updated_at"#,
                 )
                 .bind(&team.id)
@@ -337,6 +419,7 @@ impl OrganizationStore {
                 .bind(&team.name)
                 .bind(&team.description)
                 .bind(if team.is_active { 1 } else { 0 })
+                .bind(&tags_json)
                 .bind(team.created_at)
                 .bind(team.updated_at)
                 .execute(pool)
@@ -344,14 +427,17 @@ impl OrganizationStore {
                 .map_err(|e| PylosError::Internal(format!("Failed to upsert team: {}", e)))?;
             }
             DbPool::Postgres(pool) => {
+                let tags_val: serde_json::Value =
+                    serde_json::from_str(&tags_json).unwrap_or_default();
                 sqlx::query::<sqlx::Postgres>(
-                    r#"INSERT INTO teams (id, organization_id, name, description, is_active, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    r#"INSERT INTO teams (id, organization_id, name, description, is_active, tags, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     ON CONFLICT(id) DO UPDATE SET
                         organization_id = excluded.organization_id,
                         name = excluded.name,
                         description = excluded.description,
                         is_active = excluded.is_active,
+                        tags = excluded.tags,
                         updated_at = excluded.updated_at"#,
                 )
                 .bind(&team.id)
@@ -359,6 +445,7 @@ impl OrganizationStore {
                 .bind(&team.name)
                 .bind(&team.description)
                 .bind(team.is_active)
+                .bind(&tags_val)
                 .bind(team.created_at)
                 .bind(team.updated_at)
                 .execute(pool)
@@ -519,25 +606,49 @@ impl OrganizationStore {
 
     // ── Access Groups ──────────────────────────────────────────────────────────
 
-    pub async fn list_access_groups(&self) -> Result<Vec<AccessGroup>, PylosError> {
+    pub async fn list_access_groups(
+        &self,
+        tag: Option<&str>,
+    ) -> Result<Vec<AccessGroup>, PylosError> {
         match &self.pool {
             DbPool::Sqlite(pool) => {
-                let rows = sqlx::query("SELECT * FROM access_groups ORDER BY name")
+                let rows = if let Some(t) = tag {
+                    sqlx::query("SELECT * FROM access_groups WHERE tags LIKE $1 ORDER BY name")
+                        .bind(format!("%\"{}\"%", t))
+                        .fetch_all(pool)
+                        .await
+                        .map_err(|e| {
+                            PylosError::Internal(format!("Failed to list access groups: {}", e))
+                        })?
+                } else {
+                    sqlx::query("SELECT * FROM access_groups ORDER BY name")
+                        .fetch_all(pool)
+                        .await
+                        .map_err(|e| {
+                            PylosError::Internal(format!("Failed to list access groups: {}", e))
+                        })?
+                };
+                Ok(rows.iter().map(row_to_access_group_sqlite).collect())
+            }
+            DbPool::Postgres(pool) => {
+                let rows: Vec<sqlx::postgres::PgRow> = if let Some(t) = tag {
+                    sqlx::query::<sqlx::Postgres>(
+                        "SELECT * FROM access_groups WHERE tags @> $1 ORDER BY name",
+                    )
+                    .bind(serde_json::json!([t]))
                     .fetch_all(pool)
                     .await
                     .map_err(|e| {
                         PylosError::Internal(format!("Failed to list access groups: {}", e))
-                    })?;
-                Ok(rows.iter().map(row_to_access_group_sqlite).collect())
-            }
-            DbPool::Postgres(pool) => {
-                let rows =
+                    })?
+                } else {
                     sqlx::query::<sqlx::Postgres>("SELECT * FROM access_groups ORDER BY name")
                         .fetch_all(pool)
                         .await
                         .map_err(|e| {
                             PylosError::Internal(format!("Failed to list access groups: {}", e))
-                        })?;
+                        })?
+                };
                 Ok(rows.iter().map(row_to_access_group_pg).collect())
             }
         }
@@ -578,11 +689,12 @@ impl OrganizationStore {
             serde_json::to_string(&ag.model_ids).unwrap_or_else(|_| "[]".to_string());
         let provider_ids_json =
             serde_json::to_string(&ag.provider_ids).unwrap_or_else(|_| "[]".to_string());
+        let tags_json = serde_json::to_string(&ag.tags).unwrap_or_else(|_| "[]".to_string());
         match &self.pool {
             DbPool::Sqlite(pool) => {
                 sqlx::query(
-                    r#"INSERT INTO access_groups (id, name, description, organization_id, team_ids, user_ids, model_ids, provider_ids, is_active, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    r#"INSERT INTO access_groups (id, name, description, organization_id, team_ids, user_ids, model_ids, provider_ids, is_active, tags, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         description = excluded.description,
@@ -592,6 +704,7 @@ impl OrganizationStore {
                         model_ids = excluded.model_ids,
                         provider_ids = excluded.provider_ids,
                         is_active = excluded.is_active,
+                        tags = excluded.tags,
                         updated_at = excluded.updated_at"#,
                 )
                 .bind(&ag.id)
@@ -603,6 +716,7 @@ impl OrganizationStore {
                 .bind(&model_ids_json)
                 .bind(&provider_ids_json)
                 .bind(if ag.is_active { 1 } else { 0 })
+                .bind(&tags_json)
                 .bind(ag.created_at)
                 .bind(ag.updated_at)
                 .execute(pool)
@@ -618,9 +732,11 @@ impl OrganizationStore {
                     serde_json::from_str(&model_ids_json).unwrap_or_default();
                 let provider_ids_val: serde_json::Value =
                     serde_json::from_str(&provider_ids_json).unwrap_or_default();
+                let tags_val: serde_json::Value =
+                    serde_json::from_str(&tags_json).unwrap_or_default();
                 sqlx::query::<sqlx::Postgres>(
-                    r#"INSERT INTO access_groups (id, name, description, organization_id, team_ids, user_ids, model_ids, provider_ids, is_active, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    r#"INSERT INTO access_groups (id, name, description, organization_id, team_ids, user_ids, model_ids, provider_ids, is_active, tags, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         description = excluded.description,
@@ -630,6 +746,7 @@ impl OrganizationStore {
                         model_ids = excluded.model_ids,
                         provider_ids = excluded.provider_ids,
                         is_active = excluded.is_active,
+                        tags = excluded.tags,
                         updated_at = excluded.updated_at"#,
                 )
                 .bind(&ag.id)
@@ -641,6 +758,7 @@ impl OrganizationStore {
                 .bind(&model_ids_val)
                 .bind(&provider_ids_val)
                 .bind(ag.is_active)
+                .bind(&tags_val)
                 .bind(ag.created_at)
                 .bind(ag.updated_at)
                 .execute(pool)
@@ -903,6 +1021,8 @@ fn row_to_org_sqlite(row: &sqlx::sqlite::SqliteRow) -> Organization {
         name: row.try_get("name").unwrap_or_default(),
         description: row.try_get("description").ok(),
         is_active: row.try_get::<i64, _>("is_active").unwrap_or(1) != 0,
+        tags: serde_json::from_str(&row.try_get::<String, _>("tags").unwrap_or_default())
+            .unwrap_or_default(),
         created_at: row.try_get("created_at").unwrap_or_default(),
         updated_at: row.try_get("updated_at").unwrap_or_default(),
     }
@@ -915,6 +1035,8 @@ fn row_to_team_sqlite(row: &sqlx::sqlite::SqliteRow) -> Team {
         name: row.try_get("name").unwrap_or_default(),
         description: row.try_get("description").ok(),
         is_active: row.try_get::<i64, _>("is_active").unwrap_or(1) != 0,
+        tags: serde_json::from_str(&row.try_get::<String, _>("tags").unwrap_or_default())
+            .unwrap_or_default(),
         created_at: row.try_get("created_at").unwrap_or_default(),
         updated_at: row.try_get("updated_at").unwrap_or_default(),
     }
@@ -953,6 +1075,8 @@ fn row_to_access_group_sqlite(row: &sqlx::sqlite::SqliteRow) -> AccessGroup {
         )
         .unwrap_or_default(),
         is_active: row.try_get::<i64, _>("is_active").unwrap_or(1) != 0,
+        tags: serde_json::from_str(&row.try_get::<String, _>("tags").unwrap_or_default())
+            .unwrap_or_default(),
         created_at: row.try_get("created_at").unwrap_or_default(),
         updated_at: row.try_get("updated_at").unwrap_or_default(),
     }
@@ -1004,6 +1128,11 @@ fn row_to_org_pg(row: &sqlx::postgres::PgRow) -> Organization {
         name: row.try_get("name").unwrap_or_default(),
         description: row.try_get("description").ok(),
         is_active: row.try_get::<bool, _>("is_active").unwrap_or(true),
+        tags: serde_json::from_value(
+            row.try_get::<serde_json::Value, _>("tags")
+                .unwrap_or_default(),
+        )
+        .unwrap_or_default(),
         created_at: row.try_get("created_at").unwrap_or_default(),
         updated_at: row.try_get("updated_at").unwrap_or_default(),
     }
@@ -1016,6 +1145,11 @@ fn row_to_team_pg(row: &sqlx::postgres::PgRow) -> Team {
         name: row.try_get("name").unwrap_or_default(),
         description: row.try_get("description").ok(),
         is_active: row.try_get::<bool, _>("is_active").unwrap_or(true),
+        tags: serde_json::from_value(
+            row.try_get::<serde_json::Value, _>("tags")
+                .unwrap_or_default(),
+        )
+        .unwrap_or_default(),
         created_at: row.try_get("created_at").unwrap_or_default(),
         updated_at: row.try_get("updated_at").unwrap_or_default(),
     }
@@ -1066,6 +1200,11 @@ fn row_to_access_group_pg(row: &sqlx::postgres::PgRow) -> AccessGroup {
         )
         .unwrap_or_default(),
         is_active: row.try_get::<bool, _>("is_active").unwrap_or(true),
+        tags: serde_json::from_value(
+            row.try_get::<serde_json::Value, _>("tags")
+                .unwrap_or_default(),
+        )
+        .unwrap_or_default(),
         created_at: row.try_get("created_at").unwrap_or_default(),
         updated_at: row.try_get("updated_at").unwrap_or_default(),
     }

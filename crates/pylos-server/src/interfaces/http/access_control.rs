@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -57,14 +57,24 @@ pub struct CreateOrganizationRequest {
     pub description: Option<String>,
     #[serde(default = "default_true")]
     pub is_active: bool,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 fn default_true() -> bool {
     true
 }
 
-pub async fn list_organizations(State(state): State<AppState>) -> impl IntoResponse {
-    match state.org_store.list_organizations().await {
+#[derive(Debug, Deserialize)]
+pub struct ListQuery {
+    pub tag: Option<String>,
+}
+
+pub async fn list_organizations(
+    State(state): State<AppState>,
+    Query(q): Query<ListQuery>,
+) -> impl IntoResponse {
+    match state.org_store.list_organizations(q.tag.as_deref()).await {
         Ok(orgs) => Json(json!({ "organizations": orgs, "total": orgs.len() })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -113,6 +123,7 @@ pub async fn create_organization(
         name: req.name,
         description: req.description,
         is_active: req.is_active,
+        tags: req.tags,
         created_at: now,
         updated_at: now,
     };
@@ -131,6 +142,7 @@ pub struct UpdateOrganizationRequest {
     pub name: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
+    pub tags: Option<Vec<String>>,
 }
 
 pub async fn update_organization(
@@ -163,6 +175,9 @@ pub async fn update_organization(
     }
     if let Some(active) = req.is_active {
         org.is_active = active;
+    }
+    if let Some(tags) = req.tags {
+        org.tags = tags;
     }
     org.updated_at = now_ms();
     match state.org_store.upsert_organization(&org).await {
@@ -206,6 +221,8 @@ pub struct CreateTeamRequest {
     pub description: Option<String>,
     #[serde(default = "default_true")]
     pub is_active: bool,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,10 +231,14 @@ pub struct UpdateTeamRequest {
     pub name: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
+    pub tags: Option<Vec<String>>,
 }
 
-pub async fn list_teams(State(state): State<AppState>) -> impl IntoResponse {
-    match state.org_store.list_teams(None).await {
+pub async fn list_teams(
+    State(state): State<AppState>,
+    Query(q): Query<ListQuery>,
+) -> impl IntoResponse {
+    match state.org_store.list_teams(None, q.tag.as_deref()).await {
         Ok(teams) => Json(json!({ "teams": teams, "total": teams.len() })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -264,6 +285,7 @@ pub async fn create_team(
         name: req.name,
         description: req.description,
         is_active: req.is_active,
+        tags: req.tags,
         created_at: now,
         updated_at: now,
     };
@@ -311,9 +333,12 @@ pub async fn update_team(
     if let Some(active) = req.is_active {
         team.is_active = active;
     }
+    if let Some(tags) = req.tags {
+        team.tags = tags;
+    }
     team.updated_at = now_ms();
     match state.org_store.upsert_team(&team).await {
-        Ok(()) => Json(json!(team)).into_response(),
+        Ok(()) => (StatusCode::CREATED, Json(json!(team))).into_response(),
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": e.to_string() })),
@@ -523,6 +548,8 @@ pub struct CreateAccessGroupRequest {
     pub provider_ids: Vec<String>,
     #[serde(default = "default_true")]
     pub is_active: bool,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -535,10 +562,14 @@ pub struct UpdateAccessGroupRequest {
     pub model_ids: Option<Vec<String>>,
     pub provider_ids: Option<Vec<String>>,
     pub is_active: Option<bool>,
+    pub tags: Option<Vec<String>>,
 }
 
-pub async fn list_access_groups(State(state): State<AppState>) -> impl IntoResponse {
-    match state.org_store.list_access_groups().await {
+pub async fn list_access_groups(
+    State(state): State<AppState>,
+    Query(q): Query<ListQuery>,
+) -> impl IntoResponse {
+    match state.org_store.list_access_groups(q.tag.as_deref()).await {
         Ok(groups) => {
             Json(json!({ "access_groups": groups, "total": groups.len() })).into_response()
         }
@@ -586,6 +617,7 @@ pub async fn create_access_group(
         model_ids: req.model_ids,
         provider_ids: req.provider_ids,
         is_active: req.is_active,
+        tags: req.tags,
         created_at: now,
         updated_at: now,
     };
@@ -644,6 +676,9 @@ pub async fn update_access_group(
     }
     if let Some(active) = req.is_active {
         ag.is_active = active;
+    }
+    if let Some(tags) = req.tags {
+        ag.tags = tags;
     }
     ag.updated_at = now_ms();
     match state.org_store.upsert_access_group(&ag).await {

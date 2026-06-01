@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { accessGroupsApi, providersApi, modelsApi, type AccessGroup } from '../lib/api'
 import {
-  Plus, Pencil, Trash2, X, Check, RotateCcw, AlertTriangle, CheckCircle, XCircle, Shield,
+  Plus, Pencil, Trash2, X, Check, RotateCcw, AlertTriangle, CheckCircle, XCircle, Shield, Tags,
 } from 'lucide-react'
+import TagInput from '../components/TagInput'
 
-interface AgFormState { name: string; description: string; model_ids: string[]; provider_ids: string[]; is_active: boolean }
-const DEFAULT_FORM: AgFormState = { name: '', description: '', model_ids: [], provider_ids: [], is_active: true }
+interface AgFormState { name: string; description: string; model_ids: string[]; provider_ids: string[]; is_active: boolean; tags: string[] }
+const DEFAULT_FORM: AgFormState = { name: '', description: '', model_ids: [], provider_ids: [], is_active: true, tags: [] }
 
 function AgModal({ initial, isEdit, onClose, onSave, isSaving, error }: {
   initial: AgFormState; isEdit: boolean; onClose: () => void; onSave: (f: AgFormState) => void; isSaving: boolean; error: string | null
@@ -34,6 +35,10 @@ function AgModal({ initial, isEdit, onClose, onSave, isSaving, error }: {
             <input type="text" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               placeholder="Optional description"
               className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50" /></div>
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1.5 flex items-center gap-1.5"><Tags size={12} />Tags</label>
+            <TagInput tags={form.tags} onChange={tags => setForm(f => ({ ...f, tags }))} />
+          </div>
           <div><label className="block text-xs text-zinc-400 mb-1.5">Allowed Providers</label>
             <div className="flex flex-wrap gap-1.5 p-2 bg-zinc-950 border border-zinc-800 rounded-lg min-h-[42px]">
               {providers?.providers.map(p => {
@@ -100,9 +105,10 @@ export default function AccessGroups() {
   const [editing, setEditing] = useState<AccessGroup | null>(null)
   const [deleting, setDeleting] = useState<AccessGroup | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const [tagFilter, setTagFilter] = useState('')
 
-  const { data, isLoading } = useQuery({ queryKey: ['access-groups'], queryFn: accessGroupsApi.getAll })
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['access-groups'] })
+  const { data, isLoading } = useQuery({ queryKey: ['access-groups', tagFilter], queryFn: () => accessGroupsApi.getAll(tagFilter || undefined) })
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['access-groups', tagFilter] })
 
   const createMut = useMutation({ mutationFn: (f: AgFormState) => accessGroupsApi.create(f), onSuccess: () => { invalidate(); setShowCreate(false); setMutationError(null) }, onError: (e: Error) => setMutationError(e.message) })
   const updateMut = useMutation({ mutationFn: ({ id, f }: { id: string; f: AgFormState }) => accessGroupsApi.update(id, f), onSuccess: () => { invalidate(); setEditing(null); setMutationError(null) }, onError: (e: Error) => setMutationError(e.message) })
@@ -115,18 +121,26 @@ export default function AccessGroups() {
         <button onClick={() => { setMutationError(null); setShowCreate(true) }}
           className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-sm rounded-lg"><Plus size={15} />Create group</button>
       </div>
+      <div className="flex items-center gap-2">
+        <Tags size={14} className="text-zinc-500 shrink-0" />
+        <input type="text" value={tagFilter} onChange={e => setTagFilter(e.target.value)}
+          placeholder="Filter by tag..."
+          className="w-48 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50" />
+        {tagFilter && <button onClick={() => setTagFilter('')} className="text-xs text-zinc-500 hover:text-white"><X size={14} /></button>}
+      </div>
       <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/30 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="border-b border-zinc-800/50">
-            <tr>{['Name', 'Description', 'Providers', 'Models', 'Status', ''].map(h => <th key={h} className="text-left px-5 py-3.5 text-xs text-zinc-500 uppercase tracking-wide font-medium">{h}</th>)}</tr>
+            <tr>{['Name', 'Description', 'Tags', 'Providers', 'Models', 'Status', ''].map(h => <th key={h} className="text-left px-5 py-3.5 text-xs text-zinc-500 uppercase tracking-wide font-medium">{h}</th>)}</tr>
           </thead>
           <tbody>
             {isLoading ? Array.from({ length: 3 }).map((_, i) => (
-              <tr key={i} className="border-b border-zinc-800/30">{Array.from({ length: 6 }).map((_, j) => <td key={j} className="px-5 py-3.5"><div className="h-3 bg-zinc-800 rounded animate-pulse w-24" /></td>)}</tr>
+              <tr key={i} className="border-b border-zinc-800/30">{Array.from({ length: 7 }).map((_, j) => <td key={j} className="px-5 py-3.5"><div className="h-3 bg-zinc-800 rounded animate-pulse w-24" /></td>)}</tr>
             )) : data?.access_groups.map(ag => (
               <tr key={ag.id} className="border-b border-zinc-800/30 transition-colors group hover:bg-zinc-800/30">
                 <td className="px-5 py-3.5"><div className="flex items-center gap-2"><Shield size={14} className="text-emerald-400 shrink-0" /><span className="font-medium text-white">{ag.name}</span></div></td>
                 <td className="px-5 py-3.5 text-zinc-400 text-xs">{ag.description || '—'}</td>
+                <td className="px-5 py-3.5"><div className="flex flex-wrap gap-1">{ag.tags?.map(t => <span key={t} className="text-xs bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full">{t}</span>)}</div></td>
                 <td className="px-5 py-3.5"><div className="flex flex-wrap gap-1">{ag.provider_ids.map(p => <span key={p} className="px-2 py-0.5 rounded-full text-xs bg-zinc-800 text-zinc-300 border border-zinc-700/50">{p}</span>)}</div></td>
                 <td className="px-5 py-3.5 text-xs text-zinc-400">{ag.model_ids.length > 0 ? ag.model_ids.slice(0, 3).join(', ') + (ag.model_ids.length > 3 ? '…' : '') : '—'}</td>
                 <td className="px-5 py-3.5">{ag.is_active ? <span className="flex items-center gap-1.5 text-emerald-400 text-xs"><CheckCircle size={12} /> Active</span> : <span className="flex items-center gap-1.5 text-zinc-500 text-xs"><XCircle size={12} /> Inactive</span>}</td>
@@ -141,7 +155,7 @@ export default function AccessGroups() {
         {!isLoading && !data?.access_groups.length && <div className="text-center py-16 text-zinc-600">No access groups configured</div>}
       </div>
       {showCreate && <AgModal initial={DEFAULT_FORM} isEdit={false} onClose={() => { setShowCreate(false); setMutationError(null) }} onSave={f => createMut.mutate(f)} isSaving={createMut.isPending} error={mutationError} />}
-      {editing && <AgModal initial={{ name: editing.name, description: editing.description || '', model_ids: editing.model_ids, provider_ids: editing.provider_ids, is_active: editing.is_active }} isEdit={true} onClose={() => { setEditing(null); setMutationError(null) }} onSave={f => updateMut.mutate({ id: editing.id, f })} isSaving={updateMut.isPending} error={mutationError} />}
+      {editing && <AgModal initial={{ name: editing.name, description: editing.description || '', model_ids: editing.model_ids, provider_ids: editing.provider_ids, is_active: editing.is_active, tags: editing.tags ?? [] }} isEdit={true} onClose={() => { setEditing(null); setMutationError(null) }} onSave={f => updateMut.mutate({ id: editing.id, f })} isSaving={updateMut.isPending} error={mutationError} />}
       {deleting && <DeleteConfirmModal name={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => deleteMut.mutate(deleting.id)} isDeleting={deleteMut.isPending} />}
     </div>
   )

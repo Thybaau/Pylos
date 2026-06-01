@@ -12,8 +12,8 @@ function UserModal({ initial, isEdit, onClose, onSave, isSaving, error }: {
   initial: UserFormState; isEdit: boolean; onClose: () => void; onSave: (f: UserFormState) => void; isSaving: boolean; error: string | null
 }) {
   const [form, setForm] = useState<UserFormState>(initial)
-  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: organizationsApi.getAll })
-  const { data: allTeams } = useQuery({ queryKey: ['teams'], queryFn: teamsApi.getAll })
+  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: () => organizationsApi.getAll() })
+  const { data: allTeams } = useQuery({ queryKey: ['teams'], queryFn: () => teamsApi.getAll() })
 
   const toggleTeam = (tid: string) => {
     setForm(f => ({ ...f, team_ids: f.team_ids.includes(tid) ? f.team_ids.filter(t => t !== tid) : [...f.team_ids, tid] }))
@@ -111,7 +111,7 @@ export default function InternalUsers() {
   const [mutationError, setMutationError] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({ queryKey: ['users'], queryFn: usersApi.getAll })
-  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: organizationsApi.getAll })
+  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: () => organizationsApi.getAll() })
   const invalidate = () => qc.invalidateQueries({ queryKey: ['users'] })
 
   const orgMap = new Map(orgs?.organizations.map(o => [o.id, o.name]) ?? [])

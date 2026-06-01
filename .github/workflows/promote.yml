@@ -37,16 +37,18 @@ jobs:
         uses: azure/setup-kubectl@v4
 
       - name: Configure kubectl
+        env:
+          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
         run: |
           mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBECONFIG_JO3 }}" > $HOME/.kube/config
+          echo "$KUBECONFIG_CONTENT" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
       - name: Restart Production Deployment
         run: |
-          kubectl rollout restart deployment pylos-server -n pylos
+          kubectl rollout restart deployment pylos -n pylos
           kubectl rollout restart deployment pylos-ui -n pylos
-          kubectl rollout status deployment pylos-server -n pylos
+          kubectl rollout status deployment pylos -n pylos
           kubectl rollout status deployment pylos-ui -n pylos
 
       - name: Notify Slack

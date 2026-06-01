@@ -2,17 +2,18 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { teamsApi, organizationsApi, type Team } from '../lib/api'
 import {
-  Users, Plus, Pencil, Trash2, X, Check, RotateCcw, AlertTriangle, CheckCircle, XCircle,
+  Users, Plus, Pencil, Trash2, X, Check, RotateCcw, AlertTriangle, CheckCircle, XCircle, Tags,
 } from 'lucide-react'
+import TagInput from '../components/TagInput'
 
-interface TeamFormState { organization_id: string; name: string; description: string; is_active: boolean }
-const DEFAULT_FORM: TeamFormState = { organization_id: '', name: '', description: '', is_active: true }
+interface TeamFormState { organization_id: string; name: string; description: string; is_active: boolean; tags: string[] }
+const DEFAULT_FORM: TeamFormState = { organization_id: '', name: '', description: '', is_active: true, tags: [] }
 
 function TeamModal({ initial, isEdit, onClose, onSave, isSaving, error }: {
   initial: TeamFormState; isEdit: boolean; onClose: () => void; onSave: (f: TeamFormState) => void; isSaving: boolean; error: string | null
 }) {
   const [form, setForm] = useState<TeamFormState>(initial)
-  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: organizationsApi.getAll })
+  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: () => organizationsApi.getAll() })
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl w-full max-w-lg mx-4">
@@ -40,6 +41,10 @@ function TeamModal({ initial, isEdit, onClose, onSave, isSaving, error }: {
             <input type="text" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               placeholder="Optional description"
               className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50" />
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1.5 flex items-center gap-1.5"><Tags size={12} />Tags</label>
+            <TagInput tags={form.tags} onChange={tags => setForm(f => ({ ...f, tags }))} />
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => setForm(f => ({ ...f, is_active: !f.is_active }))}
@@ -89,10 +94,11 @@ export default function Teams() {
   const [editing, setEditing] = useState<Team | null>(null)
   const [deleting, setDeleting] = useState<Team | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const [tagFilter, setTagFilter] = useState('')
 
-  const { data, isLoading } = useQuery({ queryKey: ['teams'], queryFn: teamsApi.getAll })
-  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: organizationsApi.getAll })
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['teams'] })
+  const { data, isLoading } = useQuery({ queryKey: ['teams', tagFilter], queryFn: () => teamsApi.getAll(tagFilter || undefined) })
+  const { data: orgs } = useQuery({ queryKey: ['organizations'], queryFn: () => organizationsApi.getAll() })
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['teams', tagFilter] })
 
   const orgMap = new Map(orgs?.organizations.map(o => [o.id, o.name]) ?? [])
 
@@ -107,19 +113,27 @@ export default function Teams() {
         <button onClick={() => { setMutationError(null); setShowCreate(true) }}
           className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-sm rounded-lg"><Plus size={15} />Create team</button>
       </div>
+      <div className="flex items-center gap-2">
+        <Tags size={14} className="text-zinc-500 shrink-0" />
+        <input type="text" value={tagFilter} onChange={e => setTagFilter(e.target.value)}
+          placeholder="Filter by tag..."
+          className="w-48 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50" />
+        {tagFilter && <button onClick={() => setTagFilter('')} className="text-xs text-zinc-500 hover:text-white"><X size={14} /></button>}
+      </div>
       <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/30 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="border-b border-zinc-800/50">
-            <tr>{['Name', 'Organization', 'Description', 'Status', ''].map(h => <th key={h} className="text-left px-5 py-3.5 text-xs text-zinc-500 uppercase tracking-wide font-medium">{h}</th>)}</tr>
+            <tr>{['Name', 'Organization', 'Description', 'Tags', 'Status', ''].map(h => <th key={h} className="text-left px-5 py-3.5 text-xs text-zinc-500 uppercase tracking-wide font-medium">{h}</th>)}</tr>
           </thead>
           <tbody>
             {isLoading ? Array.from({ length: 3 }).map((_, i) => (
-              <tr key={i} className="border-b border-zinc-800/30">{Array.from({ length: 5 }).map((_, j) => <td key={j} className="px-5 py-3.5"><div className="h-3 bg-zinc-800 rounded animate-pulse w-24" /></td>)}</tr>
+              <tr key={i} className="border-b border-zinc-800/30">{Array.from({ length: 6 }).map((_, j) => <td key={j} className="px-5 py-3.5"><div className="h-3 bg-zinc-800 rounded animate-pulse w-24" /></td>)}</tr>
             )) : data?.teams.map(team => (
               <tr key={team.id} className="border-b border-zinc-800/30 transition-colors group hover:bg-zinc-800/30">
                 <td className="px-5 py-3.5"><div className="flex items-center gap-2"><Users size={14} className="text-emerald-400 shrink-0" /><span className="font-medium text-white">{team.name}</span></div></td>
                 <td className="px-5 py-3.5 text-zinc-400 text-xs">{orgMap.get(team.organization_id) || team.organization_id}</td>
                 <td className="px-5 py-3.5 text-zinc-400 text-xs">{team.description || '—'}</td>
+                <td className="px-5 py-3.5"><div className="flex flex-wrap gap-1">{team.tags?.map(t => <span key={t} className="text-xs bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full">{t}</span>)}</div></td>
                 <td className="px-5 py-3.5">{team.is_active ? <span className="flex items-center gap-1.5 text-emerald-400 text-xs"><CheckCircle size={12} /> Active</span> : <span className="flex items-center gap-1.5 text-zinc-500 text-xs"><XCircle size={12} /> Inactive</span>}</td>
                 <td className="px-5 py-3.5"><div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all">
                   <button onClick={() => { setMutationError(null); setEditing(team) }} className="p-1.5 text-zinc-500 hover:text-emerald-400 hover:bg-emerald-400/10 rounded-lg"><Pencil size={13} /></button>
@@ -132,7 +146,7 @@ export default function Teams() {
         {!isLoading && !data?.teams.length && <div className="text-center py-16 text-zinc-600">No teams configured</div>}
       </div>
       {showCreate && <TeamModal initial={DEFAULT_FORM} isEdit={false} onClose={() => { setShowCreate(false); setMutationError(null) }} onSave={f => createMut.mutate(f)} isSaving={createMut.isPending} error={mutationError} />}
-      {editing && <TeamModal initial={{ organization_id: editing.organization_id, name: editing.name, description: editing.description || '', is_active: editing.is_active }} isEdit={true} onClose={() => { setEditing(null); setMutationError(null) }} onSave={f => updateMut.mutate({ id: editing.id, f })} isSaving={updateMut.isPending} error={mutationError} />}
+      {editing && <TeamModal initial={{ organization_id: editing.organization_id, name: editing.name, description: editing.description || '', is_active: editing.is_active, tags: editing.tags ?? [] }} isEdit={true} onClose={() => { setEditing(null); setMutationError(null) }} onSave={f => updateMut.mutate({ id: editing.id, f })} isSaving={updateMut.isPending} error={mutationError} />}
       {deleting && <DeleteConfirmModal name={deleting.name} onClose={() => setDeleting(null)} onConfirm={() => deleteMut.mutate(deleting.id)} isDeleting={deleteMut.isPending} />}
     </div>
   )
