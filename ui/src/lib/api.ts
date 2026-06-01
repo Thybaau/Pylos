@@ -266,4 +266,6 @@ export const configApi = {
   get: () => api.get('/config').then(r => r.data),
   reload: () => api.post('/config/reload').then(r => r.data),
   promote: () => api.post<{ success: boolean; message: string }>('/api/github/promote').then(r => r.data),
+  updateGuardrails: (data: { enabled: boolean; mask_pii: boolean; mask_secrets: boolean; prevent_prompt_injection: boolean; blocked_keywords: string[] }) => 
+    api.put('/config/guardrails', data).then(r => r.data),
 }

@@ -8,6 +8,7 @@ import Logs from './pages/Logs'
 import Providers from './pages/Providers'
 import VirtualKeys from './pages/VirtualKeys'
 import ModelCatalog from './pages/ModelCatalog'
+import Guardrails from './pages/Guardrails'
 import Analytics from './pages/Analytics'
 import {
   Menu,
@@ -18,6 +19,7 @@ import {
   Server,
   KeyRound,
   BookOpen,
+  Shield,
 } from 'lucide-react'
 
 const queryClient = new QueryClient({
@@ -73,6 +75,7 @@ const MOBILE_NAV = [
   { to: '/providers',  icon: Server,          label: 'Providers' },
   { to: '/keys',       icon: KeyRound,        label: 'Keys' },
   { to: '/models',     icon: BookOpen,        label: 'Models' },
+  { to: '/guardrails', icon: Shield,          label: 'Guardrails' },
 ]
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -114,6 +117,7 @@ export default function App() {
                 <Route path="/providers"  element={<Providers />} />
                 <Route path="/keys"       element={<VirtualKeys />} />
                 <Route path="/models"     element={<ModelCatalog />} />
+                <Route path="/guardrails" element={<Guardrails />} />
                 <Route path="/analytics"  element={<Analytics />} />
               </Routes>
             </ErrorBoundary>

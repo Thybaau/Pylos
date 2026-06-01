@@ -10,6 +10,7 @@ import {
   BookOpen,
   AlertCircle,
   BarChart2,
+  Shield,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -23,6 +24,7 @@ const NAV = [
   { to: '/providers',  icon: Server,          label: 'Providers' },
   { to: '/keys',       icon: KeyRound,        label: 'Virtual Keys' },
   { to: '/models',     icon: BookOpen,        label: 'Models' },
+  { to: '/guardrails', icon: Shield,          label: 'Guardrails' },
 ]
 
 export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
