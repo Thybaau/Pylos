@@ -10,6 +10,15 @@ import VirtualKeys from './pages/VirtualKeys'
 import ModelCatalog from './pages/ModelCatalog'
 import Guardrails from './pages/Guardrails'
 import Analytics from './pages/Analytics'
+import Teams from './pages/Teams'
+import InternalUsers from './pages/InternalUsers'
+import Organizations from './pages/Organizations'
+import AccessGroups from './pages/AccessGroups'
+import Budgets from './pages/Budgets'
+import Policies from './pages/Policies'
+import SearchTools from './pages/SearchTools'
+import VectorStores from './pages/VectorStores'
+import ToolPolicies from './pages/ToolPolicies'
 import {
   Menu,
   LayoutDashboard,
@@ -119,6 +128,15 @@ export default function App() {
                 <Route path="/models"     element={<ModelCatalog />} />
                 <Route path="/guardrails" element={<Guardrails />} />
                 <Route path="/analytics"  element={<Analytics />} />
+                <Route path="/teams"          element={<Teams />} />
+                <Route path="/users"          element={<InternalUsers />} />
+                <Route path="/organizations"  element={<Organizations />} />
+                <Route path="/access-groups"  element={<AccessGroups />} />
+                <Route path="/budgets"        element={<Budgets />} />
+                <Route path="/policies"       element={<Policies />} />
+                <Route path="/tools/search"   element={<SearchTools />} />
+                <Route path="/tools/vector-stores" element={<VectorStores />} />
+                <Route path="/tools/policies" element={<ToolPolicies />} />
               </Routes>
             </ErrorBoundary>
           </main>

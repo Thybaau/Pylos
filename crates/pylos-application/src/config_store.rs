@@ -598,17 +598,36 @@ impl std::fmt::Debug for ReloadSummary {
 /// Appelé avec le write-lock déjà tenu — donc prend une ref sur ConfigState.
 /// En cas d'échec (pas de fichier configuré, erreur I/O), log un warning et continue.
 async fn persist_config_locked(state: &ConfigState) {
-    let Some(path) = &state.file_path else {
-        debug!("No config file path — skipping persist (auto-detected config)");
-        return;
-    };
-
     let json = match serde_json::to_string_pretty(&state.config) {
         Ok(j) => j,
         Err(e) => {
             warn!(error = %e, "Failed to serialize config for persistence");
             return;
         }
+    };
+
+    if let Some(pool) = &state.db_pool {
+        match pool {
+            Pool::Sqlite(p) => {
+                let _ = sqlx::query("INSERT INTO gateway_config (id, config) VALUES ('pylos', $1) ON CONFLICT(id) DO UPDATE SET config = excluded.config")
+                    .bind(&json)
+                    .execute(p)
+                    .await;
+            }
+            Pool::Postgres(p) => {
+                let val: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+                let _ = sqlx::query("INSERT INTO gateway_config (id, config) VALUES ('pylos', $1) ON CONFLICT(id) DO UPDATE SET config = excluded.config")
+                    .bind(&val)
+                    .execute(p)
+                    .await;
+            }
+        }
+        debug!("Config persisted to database");
+    }
+
+    let Some(path) = &state.file_path else {
+        debug!("No config file path — skipping file persist");
+        return;
     };
 
     if let Err(e) = tokio::fs::write(path, json.as_bytes()).await {

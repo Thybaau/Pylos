@@ -6,17 +6,29 @@ import {
   KeyRound,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   FlaskConical,
   BookOpen,
   AlertCircle,
   BarChart2,
   Shield,
+  Users,
+  User,
+  Landmark,
+  Layers,
+  CreditCard,
+  FileBadge,
+  Wrench,
+  Search,
+  Database,
+  ShieldCheck,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { healthApi } from '../lib/api'
 
-const NAV = [
+const NAV_MAIN = [
   { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/analytics',  icon: BarChart2,       label: 'RUM Analytics' },
   { to: '/playground', icon: FlaskConical,    label: 'Playground' },
@@ -27,8 +39,27 @@ const NAV = [
   { to: '/guardrails', icon: Shield,          label: 'Guardrails' },
 ]
 
+const NAV_ACCESS = [
+  { to: '/teams',          icon: Users,          label: 'Teams' },
+  { to: '/users',          icon: User,           label: 'Internal Users' },
+  { to: '/organizations',  icon: Landmark,       label: 'Organizations' },
+  { to: '/access-groups',  icon: Layers,         label: 'Access Groups' },
+  { to: '/budgets',        icon: CreditCard,     label: 'Budgets' },
+]
+
+const NAV_POLICIES = [
+  { to: '/policies', icon: FileBadge, label: 'Policies' },
+]
+
+const NAV_TOOLS = [
+  { to: '/tools/search', icon: Search, label: 'Search Tools' },
+  { to: '/tools/vector-stores', icon: Database, label: 'Vector Stores' },
+  { to: '/tools/policies', icon: ShieldCheck, label: 'Tool Policies' },
+]
+
 export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
   const [collapsed, setCollapsed] = useState(false)
+  const [toolsExpanded, setToolsExpanded] = useState(true)
 
   const { data: health, isError } = useQuery({
     queryKey: ['health'],
@@ -77,7 +108,105 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
 
         {/* Nav */}
         <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-          {NAV.map(({ to, icon: Icon, label }) => (
+          {NAV_MAIN.map(({ to, icon: Icon, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              onClick={onClose}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
+                ${isActive
+                  ? 'bg-zinc-800 text-white'
+                  : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0" />}
+                  <Icon size={18} className="flex-shrink-0" />
+                  {(!collapsed || isOpen) && <span>{label}</span>}
+                </>
+              )}
+            </NavLink>
+          ))}
+
+          {NAV_POLICIES.map(({ to, icon: Icon, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              onClick={onClose}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
+                ${isActive
+                  ? 'bg-zinc-800 text-white'
+                  : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0" />}
+                  <Icon size={18} className="flex-shrink-0" />
+                  {(!collapsed || isOpen) && <span>{label}</span>}
+                </>
+              )}
+            </NavLink>
+          ))}
+
+          <div className="flex flex-col mt-1">
+            <button
+              onClick={() => {
+                if (collapsed) setCollapsed(false);
+                setToolsExpanded(!toolsExpanded);
+              }}
+              className="flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100 w-full"
+            >
+              <div className="flex items-center gap-3">
+                <Wrench size={18} className="flex-shrink-0" />
+                {(!collapsed || isOpen) && <span>Tools</span>}
+              </div>
+              {(!collapsed || isOpen) && (
+                toolsExpanded ? <ChevronUp size={16} className="opacity-70" /> : <ChevronDown size={16} className="opacity-70" />
+              )}
+            </button>
+            {toolsExpanded && (!collapsed || isOpen) && (
+              <div className="flex flex-col mt-1 ml-4 space-y-1 border-l border-zinc-800/50 pl-2">
+                {NAV_TOOLS.map(({ to, icon: Icon, label }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    onClick={onClose}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
+                      ${isActive
+                        ? 'bg-zinc-800 text-white'
+                        : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
+                      }`
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0 absolute -ml-4" />}
+                        <Icon size={16} className="flex-shrink-0" />
+                        <span>{label}</span>
+                      </>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {(!collapsed || isOpen) ? (
+            <div className="px-3 pt-6 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+              Access Control
+            </div>
+          ) : (
+            <div className="mx-3 mt-6 mb-2 border-t border-zinc-800/50" />
+          )}
+
+          {NAV_ACCESS.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
