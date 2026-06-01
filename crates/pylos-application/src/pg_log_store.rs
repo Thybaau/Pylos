@@ -100,14 +100,17 @@ impl PgLogStore {
             .map(|r| r.try_get::<i64, _>(0).unwrap_or(0) as u64)
             .unwrap_or(0);
 
+        let limit_idx = params.len() + 1;
+        let offset_idx = params.len() + 2;
         let data_sql = format!(
-            "SELECT * FROM requests {} ORDER BY timestamp DESC LIMIT {} OFFSET {}",
-            where_clause, limit, offset
+            "SELECT * FROM requests {} ORDER BY timestamp DESC LIMIT ${} OFFSET ${}",
+            where_clause, limit_idx, offset_idx
         );
         let mut data_q = sqlx::query(&data_sql);
         for p in &params {
             data_q = data_q.bind(p);
         }
+        data_q = data_q.bind(limit as i64).bind(offset as i64);
         let rows = data_q
             .fetch_all(&self.pool)
             .await

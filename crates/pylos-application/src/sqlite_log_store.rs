@@ -148,10 +148,10 @@ impl SqliteLogStore {
 
         // Données paginées
         let data_sql = format!(
-            "SELECT * FROM requests {} ORDER BY timestamp DESC LIMIT {} OFFSET {}",
-            where_clause, limit, offset
+            "SELECT * FROM requests {} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+            where_clause
         );
-        let rows = self.query_rows(&data_sql, &params).await;
+        let rows = self.query_rows_with_offset(&data_sql, &params, limit, offset).await;
 
         (rows, total)
     }
@@ -335,6 +335,28 @@ impl SqliteLogStore {
         Ok(row.try_get::<i64, _>(0).unwrap_or(0) as u64)
     }
 
+    async fn query_rows_with_offset(
+        &self,
+        sql: &str,
+        params: &[String],
+        limit: usize,
+        offset: usize,
+    ) -> Vec<LogEntry> {
+        let mut q = sqlx::query(sql);
+        for p in params {
+            q = q.bind(p);
+        }
+        q = q.bind(limit as i64).bind(offset as i64);
+        match q.fetch_all(&self.pool).await {
+            Ok(rows) => rows.iter().map(row_to_log_entry).collect(),
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to query log entries");
+                vec![]
+            }
+        }
+    }
+
+    #[allow(dead_code)]
     async fn query_rows(&self, sql: &str, params: &[String]) -> Vec<LogEntry> {
         let mut q = sqlx::query(sql);
         for p in params {

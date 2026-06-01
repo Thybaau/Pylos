@@ -5,11 +5,12 @@ use crate::interfaces::http::{
 use crate::middleware::{management_auth_middleware, queuing_middleware, virtual_key_middleware};
 use crate::state::AppState;
 use axum::{
+    http::Method,
     middleware,
     routing::{delete, get, post, put},
     Router,
 };
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 pub fn create_router(state: AppState) -> Router {
@@ -28,15 +29,15 @@ pub fn create_router(state: AppState) -> Router {
             virtual_key_middleware,
         ));
 
-    // Routes API observabilité (logs)
-    let logs_routes = Router::new()
+    let management_routes = Router::new()
+        // Logs API (protégées par l'auth management)
         .route("/api/logs", get(logs::get_logs))
         .route("/api/logs/stats", get(logs::get_logs_stats))
         .route("/api/logs/histogram", get(logs::get_logs_histogram))
         .route("/api/logs/histogram/tokens", get(logs::get_token_histogram))
-        .route("/api/logs/filterdata", get(logs::get_filter_data));
-
-    let management_routes = Router::new()
+        .route("/api/logs/filterdata", get(logs::get_filter_data))
+        // Models read-only (protégé — liste les providers configurés)
+        .route("/v1/models", get(models::list_models))
         // Model management routes
         .route(
             "/v1/models/pull/:provider",
@@ -147,15 +148,26 @@ pub fn create_router(state: AppState) -> Router {
         .route("/", get(health::root))
         .route("/health", get(health::health_check))
         .route("/metrics", get(metrics::metrics))
-        // Models read-only (pas d'auth)
-        .route("/v1/models", get(models::list_models))
         // Inférence
         .merge(inference_routes)
-        // Logs API
-        .merge(logs_routes)
         .merge(management_routes)
         // Middleware global
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
+        .layer(build_cors(&state))
         .with_state(state)
+}
+
+fn build_cors(state: &AppState) -> CorsLayer {
+    if state.allowed_origins.iter().any(|o| o == "*") {
+        return CorsLayer::permissive();
+    }
+    let allowed_origins: Vec<_> = state
+        .allowed_origins
+        .iter()
+        .map(|o| o.parse::<axum::http::HeaderValue>().unwrap())
+        .collect();
+    CorsLayer::new()
+        .allow_origin(allowed_origins)
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers(Any)
 }

@@ -37,7 +37,9 @@ pub async fn management_auth_middleware(
     let provided = extract_admin_key(request.headers());
 
     match provided {
-        Some(key) if key == expected => next.run(request).await,
+        Some(key) if constant_time_eq(key.as_bytes(), expected.as_bytes()) => {
+            next.run(request).await
+        }
         Some(_) => (
             StatusCode::FORBIDDEN,
             Json(json!({
@@ -61,6 +63,18 @@ pub async fn management_auth_middleware(
         )
             .into_response(),
     }
+}
+
+/// Constant-time string comparison to prevent timing side-channel attacks.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut result: u8 = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
 }
 
 fn extract_admin_key(headers: &axum::http::HeaderMap) -> Option<&str> {

@@ -48,13 +48,13 @@ impl OidcAuthenticator {
         validation.set_issuer(&[&self.expected_issuer]);
         validation.set_audience(&[&self.expected_audience]);
 
-        // Si aucune clé n'est fournie (ex: JWKS hors ligne dans les tests), on utilise une clé mock
-        let key = match &self.decoding_key {
-            Some(k) => k.clone(),
-            None => DecodingKey::from_secret(b"secret-mock-validation-key"),
-        };
+        let key = self.decoding_key.as_ref().ok_or_else(|| {
+            PylosError::InvalidRequest(
+                "OIDC provider not configured — no decoding key available".into(),
+            )
+        })?;
 
-        let token_data = decode::<OidcClaims>(token, &key, &validation)
+        let token_data = decode::<OidcClaims>(token, key, &validation)
             .map_err(|e| PylosError::InvalidRequest(format!("Failed to validate JWT: {}", e)))?;
 
         Ok(token_data.claims)
@@ -80,7 +80,8 @@ mod tests {
 
         let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(key)).unwrap();
 
-        let authenticator = OidcAuthenticator::new("https://auth.example.com", "pylos-client");
+        let authenticator = OidcAuthenticator::new("https://auth.example.com", "pylos-client")
+            .with_decoding_key(DecodingKey::from_secret(key));
         let result = authenticator.validate_token(&token);
         assert!(result.is_ok());
         let claims = result.unwrap();

@@ -2,7 +2,7 @@ import axios from 'axios'
 
 // Seed admin key from runtime config injected by nginx (config.js)
 if (typeof window !== 'undefined' && (window as any).__PYLOS_ADMIN_KEY__) {
-  localStorage.setItem('pylos_admin_key', (window as any).__PYLOS_ADMIN_KEY__)
+  sessionStorage.setItem('pylos_admin_key', (window as any).__PYLOS_ADMIN_KEY__)
 }
 
 const getBaseUrl = (): string => {
@@ -30,7 +30,7 @@ export const api = axios.create({
 // Request interceptor to attach the Admin Key from localStorage and dynamically set baseURL
 api.interceptors.request.use((config) => {
   config.baseURL = getBaseUrl();
-  const adminKey = typeof window !== 'undefined' ? localStorage.getItem('pylos_admin_key') : null;
+  const adminKey = typeof window !== 'undefined' ? sessionStorage.getItem('pylos_admin_key') : null;
   if (adminKey) {
     config.headers['Authorization'] = `Bearer ${adminKey}`;
   }
@@ -51,13 +51,13 @@ api.interceptors.response.use(
       !originalRequest._retry
     ) {
       originalRequest._retry = true;
-      const currentKey = localStorage.getItem('pylos_admin_key');
+      const currentKey = sessionStorage.getItem('pylos_admin_key');
       const promptMsg = error.response.status === 401
         ? "Administration key required. Please enter your PYLOS_ADMIN_KEY:"
         : "Invalid administration key. Please enter a valid PYLOS_ADMIN_KEY:";
       const adminKey = window.prompt(promptMsg, currentKey || '');
       if (adminKey !== null) {
-        localStorage.setItem('pylos_admin_key', adminKey);
+        sessionStorage.setItem('pylos_admin_key', adminKey);
         originalRequest.headers['Authorization'] = `Bearer ${adminKey}`;
         return api(originalRequest);
       }
