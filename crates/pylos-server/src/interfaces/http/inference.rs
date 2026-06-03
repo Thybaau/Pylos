@@ -28,8 +28,10 @@ use crate::state::AppState;
 pub async fn chat_completions(
     State(state): State<AppState>,
     Extension(vk_info): Extension<Option<VirtualKeyInfo>>,
-    Json(payload): Json<ChatCompletionRequest>,
+    Json(mut payload): Json<ChatCompletionRequest>,
 ) -> Response {
+    crate::compression::optimize_request(&mut payload);
+
     let is_stream = payload.stream.unwrap_or(false);
     let model = payload.model.clone();
     let input_preview = payload

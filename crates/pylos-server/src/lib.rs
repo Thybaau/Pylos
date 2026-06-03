@@ -1,3 +1,4 @@
+pub mod compression;
 pub mod infrastructure;
 pub mod interfaces;
 pub mod metrics;
