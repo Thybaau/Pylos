@@ -147,6 +147,12 @@ export default function Dashboard() {
           color="blue"
           icon={<Zap size={14} />}
         />
+        <StatCard
+          label="Compression Saved"
+          value={s ? formatNumber(s.total_compression_saved_bytes) + ' B' : '—'}
+          color="green"
+          icon={<Zap size={14} />}
+        />
       </div>
 
       {/* Charts */}

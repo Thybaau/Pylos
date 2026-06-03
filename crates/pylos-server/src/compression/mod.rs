@@ -4,10 +4,13 @@ pub mod smart_crusher;
 use pylos_core::domain::openai::ChatCompletionRequest;
 
 /// Applique les différentes passes d'optimisation / compression sur la requête LLM
-pub fn optimize_request(request: &mut ChatCompletionRequest) {
+/// Retourne le nombre d'octets économisés
+pub fn optimize_request(request: &mut ChatCompletionRequest) -> usize {
     // 1. Minifier le JSON (Smart Crusher)
-    smart_crusher::minify_json_content(request);
+    let saved_bytes = smart_crusher::minify_json_content(request);
 
     // 2. Réaligner le cache (Cache Aligner)
     cache_aligner::align_system_messages(request);
+
+    saved_bytes
 }

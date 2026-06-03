@@ -56,6 +56,7 @@ pub async fn generate_image(
                 None,
                 None,
                 vk_name,
+                0,
             );
             let state_clone = state.clone();
             tokio::spawn(async move {
@@ -82,6 +83,7 @@ pub async fn generate_image(
                 None,
                 None,
                 vk_name,
+                0,
             );
             let state_clone = state.clone();
             tokio::spawn(async move {
@@ -117,6 +119,7 @@ pub async fn generate_image(
                 None,
                 None,
                 vk_name,
+                0,
             );
             tokio::spawn(async move {
                 state.log_store.push(entry).await;

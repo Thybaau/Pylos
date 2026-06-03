@@ -30,7 +30,7 @@ pub async fn chat_completions(
     Extension(vk_info): Extension<Option<VirtualKeyInfo>>,
     Json(mut payload): Json<ChatCompletionRequest>,
 ) -> Response {
-    crate::compression::optimize_request(&mut payload);
+    let saved_bytes = crate::compression::optimize_request(&mut payload);
 
     let is_stream = payload.stream.unwrap_or(false);
     let model = payload.model.clone();
@@ -48,9 +48,27 @@ pub async fn chat_completions(
     }
 
     if is_stream {
-        stream_response(state, request, ctx, model, input_preview, vk_info).await
+        stream_response(
+            state,
+            request,
+            ctx,
+            model,
+            input_preview,
+            vk_info,
+            saved_bytes,
+        )
+        .await
     } else {
-        complete_response(state, request, ctx, model, input_preview, vk_info).await
+        complete_response(
+            state,
+            request,
+            ctx,
+            model,
+            input_preview,
+            vk_info,
+            saved_bytes,
+        )
+        .await
     }
 }
 
@@ -61,6 +79,7 @@ async fn complete_response(
     model: String,
     input_preview: Option<String>,
     vk_info: Option<VirtualKeyInfo>,
+    saved_bytes: usize,
 ) -> Response {
     let start = Instant::now();
     let req_type = "chat_completion";
@@ -103,6 +122,7 @@ async fn complete_response(
                 input_preview,
                 output_preview,
                 vk_name,
+                saved_bytes,
             );
 
             let state_clone = state.clone();
@@ -141,6 +161,7 @@ async fn complete_response(
                 input_preview,
                 None,
                 vk_name,
+                saved_bytes,
             );
             let state_clone = state.clone();
             tokio::spawn(async move {
@@ -185,6 +206,7 @@ async fn stream_response(
     model: String,
     input_preview: Option<String>,
     vk_info: Option<VirtualKeyInfo>,
+    saved_bytes: usize,
 ) -> Response {
     let start = Instant::now();
     let req_type = "chat_completion";
@@ -306,6 +328,7 @@ async fn stream_response(
                         input_prev,
                         output_preview,
                         vk_name,
+                        saved_bytes,
                     );
                     state_for_log.log_store.push(entry).await;
                 }
@@ -332,6 +355,7 @@ async fn stream_response(
                 input_preview,
                 None,
                 vk_name,
+                saved_bytes,
             );
             tokio::spawn(async move {
                 state.log_store.push(entry).await;

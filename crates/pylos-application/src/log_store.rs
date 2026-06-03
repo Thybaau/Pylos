@@ -30,6 +30,7 @@ pub struct LogEntry {
     pub is_stream: bool,
     pub input_preview: Option<String>,
     pub output_preview: Option<String>,
+    pub compression_saved_bytes: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -64,6 +65,7 @@ pub struct LogStats {
     pub total_cost_usd: f64,
     pub total_prompt_tokens: i64,
     pub total_completion_tokens: i64,
+    pub total_compression_saved_bytes: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,6 +167,11 @@ impl SqliteBackend {
             retention_days,
         };
         b.migrate()?;
+        // Tentative d'ajout de la colonne si elle n'existe pas (migration à chaud)
+        let _ = b.conn.execute(
+            "ALTER TABLE logs ADD COLUMN compression_saved_bytes INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
         Ok(b)
     }
 
@@ -187,7 +194,8 @@ impl SqliteBackend {
                 virtual_key       TEXT,
                 is_stream         INTEGER NOT NULL DEFAULT 0,
                 input_preview     TEXT,
-                output_preview    TEXT
+                output_preview    TEXT,
+                compression_saved_bytes INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_ts ON logs(timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_provider ON logs(provider);
@@ -198,7 +206,7 @@ impl SqliteBackend {
     fn insert(&self, e: &LogEntry) -> rusqlite::Result<()> {
         self.conn.execute(
             "INSERT OR IGNORE INTO logs VALUES
-             (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+             (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
             params![
                 e.id,
                 e.timestamp,
@@ -216,7 +224,8 @@ impl SqliteBackend {
                 e.virtual_key,
                 e.is_stream as i32,
                 e.input_preview,
-                e.output_preview
+                e.output_preview,
+                e.compression_saved_bytes as i32
             ],
         )?;
         Ok(())
@@ -280,7 +289,7 @@ impl SqliteBackend {
             "SELECT id,timestamp,provider,model,object,status,latency_ms,
                     prompt_tokens,completion_tokens,total_tokens,cost_usd,
                     finish_reason,error_message,virtual_key,is_stream,
-                    input_preview,output_preview
+                    input_preview,output_preview,compression_saved_bytes
              FROM logs {where_str}
              ORDER BY timestamp DESC LIMIT ?7 OFFSET ?8"
         );
@@ -338,7 +347,8 @@ impl SqliteBackend {
                     SUM(CAST(total_tokens AS INTEGER)),
                     SUM(cost_usd),
                     SUM(CAST(prompt_tokens AS INTEGER)),
-                    SUM(CAST(completion_tokens AS INTEGER))
+                    SUM(CAST(completion_tokens AS INTEGER)),
+                    SUM(CAST(compression_saved_bytes AS INTEGER))
              FROM logs {where_str}"
         );
 
@@ -358,6 +368,7 @@ impl SqliteBackend {
                     total_cost_usd: r.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
                     total_prompt_tokens: r.get::<_, Option<i64>>(5)?.unwrap_or(0),
                     total_completion_tokens: r.get::<_, Option<i64>>(6)?.unwrap_or(0),
+                    total_compression_saved_bytes: r.get::<_, Option<i64>>(7)?.unwrap_or(0),
                 })
             })
     }
@@ -508,6 +519,7 @@ fn row_to_entry(r: &rusqlite::Row) -> rusqlite::Result<LogEntry> {
         is_stream: r.get::<_, i32>(14)? != 0,
         input_preview: r.get(15)?,
         output_preview: r.get(16)?,
+        compression_saved_bytes: r.get::<_, Option<i32>>(17)?.unwrap_or(0) as usize,
     })
 }
 
@@ -666,6 +678,10 @@ fn memory_stats(entries: &[&LogEntry]) -> LogStats {
         total_cost_usd: entries.iter().map(|e| e.cost_usd).sum(),
         total_prompt_tokens: entries.iter().map(|e| e.prompt_tokens as i64).sum(),
         total_completion_tokens: entries.iter().map(|e| e.completion_tokens as i64).sum(),
+        total_compression_saved_bytes: entries
+            .iter()
+            .map(|e| e.compression_saved_bytes as i64)
+            .sum(),
     }
 }
 
@@ -735,6 +751,7 @@ pub fn build_log_entry(
     input_preview: Option<String>,
     output_preview: Option<String>,
     virtual_key: Option<String>,
+    compression_saved_bytes: usize,
 ) -> LogEntry {
     let (prompt_tokens, completion_tokens, total_tokens) = usage
         .map(|u| (u.prompt_tokens, u.completion_tokens, u.total_tokens))
@@ -762,6 +779,7 @@ pub fn build_log_entry(
         is_stream,
         input_preview: input_preview.map(|s| truncate(&s, 200)),
         output_preview: output_preview.map(|s| truncate(&s, 200)),
+        compression_saved_bytes,
     }
 }
 

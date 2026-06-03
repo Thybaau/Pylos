@@ -92,6 +92,7 @@ export interface LogStats {
   total_cost_usd: number
   total_prompt_tokens: number
   total_completion_tokens: number
+  total_compression_saved_bytes: number
 }
 
 export interface HistogramBucket {

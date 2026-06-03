@@ -47,8 +47,8 @@ impl PgLogStore {
                 (id, timestamp, provider, model, object, status, latency_ms,
                  prompt_tokens, completion_tokens, total_tokens, cost_usd,
                  finish_reason, error_message, virtual_key, is_stream,
-                 input_preview, output_preview)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                 input_preview, output_preview, compression_saved_bytes)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             ON CONFLICT(id) DO NOTHING
             "#,
         )
@@ -69,6 +69,7 @@ impl PgLogStore {
         .bind(entry.is_stream as i16)
         .bind(&entry.input_preview)
         .bind(&entry.output_preview)
+        .bind(entry.compression_saved_bytes as i32)
         .execute(&self.pool)
         .await
         {
@@ -134,7 +135,8 @@ impl PgLogStore {
                 SUM(total_tokens)           AS total_tokens,
                 SUM(prompt_tokens)          AS total_prompt,
                 SUM(completion_tokens)      AS total_completion,
-                SUM(cost_usd)               AS total_cost
+                SUM(cost_usd)               AS total_cost,
+                SUM(compression_saved_bytes) AS total_compression_saved_bytes
             FROM requests {}
             "#,
             where_clause
@@ -166,6 +168,7 @@ impl PgLogStore {
                     total_cost_usd: total_cost,
                     total_prompt_tokens: total_prompt,
                     total_completion_tokens: total_completion,
+                    total_compression_saved_bytes: row.try_get::<i64, _>(7).unwrap_or(0),
                 }
             }
             Err(_) => LogStats::default(),
@@ -339,7 +342,10 @@ fn row_to_log_entry(row: &sqlx::postgres::PgRow) -> LogEntry {
         error_message: row.try_get("error_message").ok(),
         virtual_key: row.try_get("virtual_key").ok(),
         is_stream: is_stream_int != 0,
-        input_preview: row.try_get("input_preview").ok(),
-        output_preview: row.try_get("output_preview").ok(),
+        input_preview: row.try_get("input_preview").unwrap_or_default(),
+        output_preview: row.try_get("output_preview").unwrap_or_default(),
+        compression_saved_bytes: row
+            .try_get::<i32, _>("compression_saved_bytes")
+            .unwrap_or(0) as usize,
     }
 }

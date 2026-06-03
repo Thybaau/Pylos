@@ -25,6 +25,7 @@ reqwest = { workspace = true }
 regex = "1.10"
 jsonschema = "0.18"
 moka = { workspace = true }
+neo4rs = "0.8.0"
 
 
 [dev-dependencies]
