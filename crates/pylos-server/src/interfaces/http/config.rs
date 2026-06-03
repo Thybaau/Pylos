@@ -217,6 +217,7 @@ pub async fn list_virtual_keys(State(state): State<AppState>) -> impl IntoRespon
             "team_alias": vk.team_alias,
             "team_id": vk.team_id,
             "organization_id": vk.organization_id,
+            "access_group_id": vk.access_group_id,
             "user_email": vk.user_email,
             "user_id": vk.user_id,
             "created_at": vk.created_at,
@@ -275,6 +276,8 @@ pub struct CreateVirtualKeyRequest {
     #[serde(default)]
     pub organization_id: Option<String>,
     #[serde(default)]
+    pub access_group_id: Option<String>,
+    #[serde(default)]
     pub user_email: Option<String>,
     #[serde(default)]
     pub user_id: Option<String>,
@@ -310,6 +313,7 @@ pub async fn create_virtual_key(
         team_alias: req.team_alias,
         team_id: req.team_id,
         organization_id: req.organization_id,
+        access_group_id: req.access_group_id,
         user_email: req.user_email,
         user_id: req.user_id,
         created_at: None,
@@ -380,6 +384,8 @@ pub struct UpdateVirtualKeyRequest {
     #[serde(default)]
     pub organization_id: Option<String>,
     #[serde(default)]
+    pub access_group_id: Option<String>,
+    #[serde(default)]
     pub user_email: Option<String>,
     #[serde(default)]
     pub user_id: Option<String>,
@@ -435,6 +441,9 @@ pub async fn update_virtual_key(
     }
     if req.organization_id.is_some() {
         vk.organization_id = req.organization_id;
+    }
+    if req.access_group_id.is_some() {
+        vk.access_group_id = req.access_group_id;
     }
     if req.user_email.is_some() {
         vk.user_email = req.user_email;

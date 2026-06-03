@@ -2949,6 +2949,7 @@ dependencies = [
  "axum 0.7.9",
  "fastrand",
  "futures",
+ "jsonwebtoken",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",

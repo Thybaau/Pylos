@@ -46,6 +46,7 @@ impl VirtualKeyStore {
                     team_alias        TEXT,
                     team_id           TEXT,
                     organization_id   TEXT,
+                    access_group_id   TEXT,
                     user_email        TEXT,
                     user_id           TEXT,
                     created_at        INTEGER,
@@ -163,11 +164,11 @@ impl VirtualKeyStore {
                     r#"
                     INSERT INTO virtual_keys
                         (id, name, description, value, is_active, rate_limit_id, provider_configs,
-                         team_alias, team_id, organization_id, user_email, user_id,
+                         team_alias, team_id, organization_id, access_group_id, user_email, user_id,
                          created_at, created_by, updated_at, last_active, expires_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7,
-                            $8, $9, $10, $11, $12,
-                            COALESCE($13, ?), $14, COALESCE($15, ?), $16, $17)
+                            $8, $9, $10, $11, $12, $13,
+                            COALESCE($14, ?), $15, COALESCE($16, ?), $17, $18)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         description = excluded.description,
@@ -178,6 +179,7 @@ impl VirtualKeyStore {
                         team_alias = excluded.team_alias,
                         team_id = excluded.team_id,
                         organization_id = excluded.organization_id,
+                        access_group_id = excluded.access_group_id,
                         user_email = excluded.user_email,
                         user_id = excluded.user_id,
                         created_by = excluded.created_by,
@@ -196,6 +198,7 @@ impl VirtualKeyStore {
                 .bind(&vk.team_alias)
                 .bind(&vk.team_id)
                 .bind(&vk.organization_id)
+                .bind(&vk.access_group_id)
                 .bind(&vk.user_email)
                 .bind(&vk.user_id)
                 .bind(vk.created_at)
@@ -220,11 +223,11 @@ impl VirtualKeyStore {
                     r#"
                     INSERT INTO virtual_keys
                         (id, name, description, value, is_active, rate_limit_id, provider_configs,
-                         team_alias, team_id, organization_id, user_email, user_id,
+                         team_alias, team_id, organization_id, access_group_id, user_email, user_id,
                          created_at, created_by, updated_at, last_active, expires_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7,
-                            $8, $9, $10, $11, $12,
-                            COALESCE($13, $18), $14, COALESCE($15, $19), $16, $17)
+                            $8, $9, $10, $11, $12, $13,
+                            COALESCE($14, $19), $15, COALESCE($16, $20), $17, $18)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         description = excluded.description,
@@ -235,6 +238,7 @@ impl VirtualKeyStore {
                         team_alias = excluded.team_alias,
                         team_id = excluded.team_id,
                         organization_id = excluded.organization_id,
+                        access_group_id = excluded.access_group_id,
                         user_email = excluded.user_email,
                         user_id = excluded.user_id,
                         created_by = excluded.created_by,
@@ -253,6 +257,7 @@ impl VirtualKeyStore {
                 .bind(&vk.team_alias)
                 .bind(&vk.team_id)
                 .bind(&vk.organization_id)
+                .bind(&vk.access_group_id)
                 .bind(&vk.user_email)
                 .bind(&vk.user_id)
                 .bind(vk.created_at)
@@ -314,6 +319,7 @@ fn row_to_vk_config_sqlite(row: &sqlx::sqlite::SqliteRow) -> VirtualKeyConfig {
         team_alias: row.try_get("team_alias").ok(),
         team_id: row.try_get("team_id").ok(),
         organization_id: row.try_get("organization_id").ok(),
+        access_group_id: row.try_get("access_group_id").ok(),
         user_email: row.try_get("user_email").ok(),
         user_id: row.try_get("user_id").ok(),
         created_at: row.try_get("created_at").ok(),
@@ -343,6 +349,7 @@ fn row_to_vk_config_pg(row: &sqlx::postgres::PgRow) -> VirtualKeyConfig {
         team_alias: row.try_get("team_alias").ok(),
         team_id: row.try_get("team_id").ok(),
         organization_id: row.try_get("organization_id").ok(),
+        access_group_id: row.try_get("access_group_id").ok(),
         user_email: row.try_get("user_email").ok(),
         user_id: row.try_get("user_id").ok(),
         created_at: row.try_get("created_at").ok(),
@@ -376,6 +383,7 @@ mod tests {
             team_alias: None,
             team_id: None,
             organization_id: None,
+            access_group_id: None,
             user_email: None,
             user_id: None,
             created_at: None,

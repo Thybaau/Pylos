@@ -83,6 +83,10 @@ pub struct AppState {
     pub system_prompt_store: Arc<pylos_application::SystemPromptStore>,
     pub org_store: Arc<OrganizationStore>,
     pub admin_key: Option<String>,
+    pub google_client_id: Option<String>,
+    pub google_client_secret: Option<String>,
+    pub google_redirect_uri: Option<String>,
+    pub jwt_secret: String,
     pub allowed_origins: Vec<String>,
     pub inference_semaphore: Arc<tokio::sync::Semaphore>,
     pub max_concurrency: usize,
@@ -480,6 +484,17 @@ impl AppState {
             system_prompt_store,
             org_store,
             admin_key: std::env::var("PYLOS_ADMIN_KEY").ok(),
+            google_client_id: std::env::var("GOOGLE_CLIENT_ID").ok(),
+            google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").ok(),
+            google_redirect_uri: std::env::var("GOOGLE_REDIRECT_URI").ok(),
+            jwt_secret: std::env::var("JWT_SECRET").unwrap_or_else(|_| {
+                // Generates a random session JWT key if none is provided
+                let mut s = String::new();
+                for _ in 0..32 {
+                    s.push(fastrand::alphanumeric());
+                }
+                s
+            }),
             allowed_origins: cfg.server.allowed_origins.clone(),
             inference_semaphore,
             max_concurrency,

@@ -114,6 +114,7 @@ interface VkFormState {
   team_alias: string
   team_id: string
   organization_id: string
+  access_group_id: string
   user_email: string
   user_id: string
   created_by: string
@@ -128,6 +129,7 @@ const DEFAULT_FORM: VkFormState = {
   team_alias: '',
   team_id: '',
   organization_id: '',
+  access_group_id: '',
   user_email: '',
   user_id: '',
   created_by: '',
@@ -156,6 +158,7 @@ function vkToForm(vk: VirtualKey): VkFormState {
     team_alias: vk.team_alias ?? '',
     team_id: vk.team_id ?? '',
     organization_id: vk.organization_id ?? '',
+    access_group_id: vk.access_group_id ?? '',
     user_email: vk.user_email ?? '',
     user_id: vk.user_id ?? '',
     created_by: vk.created_by ?? '',
@@ -180,6 +183,7 @@ function formToPayload(form: VkFormState) {
     team_alias: form.team_alias || null,
     team_id: form.team_id || null,
     organization_id: form.organization_id || null,
+    access_group_id: form.access_group_id || null,
     user_email: form.user_email || null,
     user_id: form.user_id || null,
     created_by: form.created_by || null,
@@ -381,6 +385,12 @@ function VkModal({ initial, isEdit, onClose, onSave, isSaving, error, createdKey
               />
             </div>
             <div>
+              <label className="block text-xs text-zinc-400 mb-1.5">Access Group ID</label>
+              <input type="text" value={form.access_group_id} onChange={e => setField('access_group_id', e.target.value)} placeholder="ag-xxx"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
+              />
+            </div>
+            <div>
               <label className="block text-xs text-zinc-400 mb-1.5">User Email</label>
               <input type="email" value={form.user_email} onChange={e => setField('user_email', e.target.value)} placeholder="user@example.com"
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
@@ -509,6 +519,7 @@ const COLUMNS = [
   { key: 'team_alias', label: 'Team Alias' },
   { key: 'team_id', label: 'Team ID' },
   { key: 'organization_id', label: 'Org ID' },
+  { key: 'access_group_id', label: 'Group ID' },
   { key: 'user_email', label: 'User Email' },
   { key: 'user_id', label: 'User ID' },
   { key: 'created_at', label: 'Created At' },
@@ -563,13 +574,14 @@ export default function VirtualKeys() {
     return data.virtual_keys.filter(vk => {
       if (!q) return true
       const fields: Record<string, string> = {
-        all: [vk.id, vk.name, vk.team_alias ?? '', vk.team_id ?? '', vk.organization_id ?? '',
+        all: [vk.id, vk.name, vk.team_alias ?? '', vk.team_id ?? '', vk.organization_id ?? '', vk.access_group_id ?? '',
               vk.user_email ?? '', vk.user_id ?? '', vk.created_by ?? '', vk.description ?? ''].join(' '),
         id: vk.id,
         name: vk.name,
         team_alias: vk.team_alias ?? '',
         team_id: vk.team_id ?? '',
         organization_id: vk.organization_id ?? '',
+        access_group_id: vk.access_group_id ?? '',
         user_email: vk.user_email ?? '',
         user_id: vk.user_id ?? '',
         created_by: vk.created_by ?? '',
@@ -619,6 +631,7 @@ export default function VirtualKeys() {
             { key: 'team_alias', label: 'Team Alias' },
             { key: 'team_id', label: 'Team ID' },
             { key: 'organization_id', label: 'Org ID' },
+            { key: 'access_group_id', label: 'Group ID' },
             { key: 'user_email', label: 'User Email' },
             { key: 'user_id', label: 'User ID' },
             { key: 'created_by', label: 'Created By' },
@@ -677,6 +690,7 @@ export default function VirtualKeys() {
                       <td className="px-3 py-3 text-[11px] text-zinc-300">{fmtVal(vk.team_alias)}</td>
                       <td className="px-3 py-3 text-[11px] text-zinc-500">{fmtVal(vk.team_id)}</td>
                       <td className="px-3 py-3 text-[11px] text-zinc-500">{fmtVal(vk.organization_id)}</td>
+                      <td className="px-3 py-3 text-[11px] text-zinc-500">{fmtVal(vk.access_group_id)}</td>
                       <td className="px-3 py-3 text-[11px] text-zinc-300">{fmtVal(vk.user_email)}</td>
                       <td className="px-3 py-3 text-[11px] text-zinc-500">{fmtVal(vk.user_id)}</td>
                       <td className="px-3 py-3 text-[11px] text-zinc-400">{tsDisplay(vk.created_at)}</td>

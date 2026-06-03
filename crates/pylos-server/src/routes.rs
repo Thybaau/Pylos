@@ -1,6 +1,6 @@
 use crate::interfaces::http::{
-    access_control, completions, config, embeddings, health, images, inference, logs, metrics,
-    models,
+    access_control, auth, completions, config, embeddings, health, images, inference, logs,
+    metrics, models,
 };
 use crate::middleware::{management_auth_middleware, queuing_middleware, virtual_key_middleware};
 use crate::state::AppState;
@@ -146,10 +146,15 @@ pub fn create_router(state: AppState) -> Router {
             management_auth_middleware,
         ));
 
+    let auth_routes = Router::new()
+        .route("/api/auth/config", get(auth::get_auth_config))
+        .route("/api/auth/google/callback", post(auth::google_callback));
+
     Router::new()
         .route("/", get(health::root))
         .route("/health", get(health::health_check))
         .route("/metrics", get(metrics::metrics))
+        .merge(auth_routes)
         // Inférence
         .merge(inference_routes)
         .merge(management_routes)

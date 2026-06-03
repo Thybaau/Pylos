@@ -551,6 +551,10 @@ pub struct VirtualKeyConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub organization_id: Option<String>,
 
+    /// ID du groupe d'accès associé
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access_group_id: Option<String>,
+
     /// Email de l'utilisateur propriétaire
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_email: Option<String>,

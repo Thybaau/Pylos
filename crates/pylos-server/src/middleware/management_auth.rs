@@ -26,43 +26,68 @@ pub async fn management_auth_middleware(
     request: Request<Body>,
     next: Next,
 ) -> Response {
-    let admin_key = state.admin_key.as_deref();
-
-    // Si pas de clé admin configurée → warn mais laisse passer (compatibilité)
-    let Some(expected) = admin_key else {
-        return next.run(request).await;
-    };
-
     // Extrait la clé depuis Authorization: Bearer ou X-Admin-Key
     let provided = extract_admin_key(request.headers());
 
-    match provided {
-        Some(key) if constant_time_eq(key.as_bytes(), expected.as_bytes()) => {
-            next.run(request).await
+    let Some(provided_key) = provided else {
+        // Si pas de clé admin configurée globale → laisse passer (compatibilité)
+        if state.admin_key.is_none() {
+            return next.run(request).await;
         }
-        Some(_) => (
-            StatusCode::FORBIDDEN,
-            Json(json!({
-                "error": {
-                    "message": "Invalid admin key",
-                    "type": "forbidden",
-                    "code": 403
-                }
-            })),
-        )
-            .into_response(),
-        None => (
+        return (
             StatusCode::UNAUTHORIZED,
             Json(json!({
                 "error": {
-                    "message": "Management API requires Authorization: Bearer <PYLOS_ADMIN_KEY>",
+                    "message": "Management API requires Authorization: Bearer <token>",
                     "type": "unauthorized",
                     "code": 401
                 }
             })),
         )
-            .into_response(),
+            .into_response();
+    };
+
+    // 1. Essayer de valider le token comme un JWT de session
+    let validation = jsonwebtoken::Validation::default();
+    let decoding_key = jsonwebtoken::DecodingKey::from_secret(state.jwt_secret.as_bytes());
+    if let Ok(token_data) = jsonwebtoken::decode::<crate::interfaces::http::auth::PylosSessionClaims>(
+        provided_key,
+        &decoding_key,
+        &validation,
+    ) {
+        let email = token_data.claims.sub.to_lowercase();
+        // Vérifie si l'utilisateur est toujours actif dans le store
+        if let Ok(users) = state.org_store.list_users().await {
+            if users
+                .iter()
+                .any(|u| u.email.to_lowercase() == email && u.is_active)
+            {
+                return next.run(request).await;
+            }
+        }
     }
+
+    // 2. Fallback sur la clé d'administration statique globale
+    if let Some(expected) = &state.admin_key {
+        if constant_time_eq(provided_key.as_bytes(), expected.as_bytes()) {
+            return next.run(request).await;
+        }
+    } else {
+        // Si pas de clé d'administration configurée
+        return next.run(request).await;
+    }
+
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": {
+                "message": "Invalid token or admin key",
+                "type": "forbidden",
+                "code": 403
+            }
+        })),
+    )
+        .into_response()
 }
 
 /// Constant-time string comparison to prevent timing side-channel attacks.

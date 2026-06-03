@@ -132,6 +132,7 @@ export interface VirtualKey {
   team_alias: string | null
   team_id: string | null
   organization_id: string | null
+  access_group_id: string | null
   user_email: string | null
   user_id: string | null
   created_at: number | null
@@ -422,4 +423,11 @@ export const configApi = {
   promote: () => api.post<{ success: boolean; message: string }>('/api/github/promote').then(r => r.data),
   updateGuardrails: (data: { enabled: boolean; mask_pii: boolean; mask_secrets: boolean; prevent_prompt_injection: boolean; blocked_keywords: string[] }) => 
     api.put('/config/guardrails', data).then(r => r.data),
+}
+
+export const authApi = {
+  getConfig: () =>
+    api.get<{ google_auth_enabled: boolean; google_client_id: string | null; google_redirect_uri: string | null }>('/api/auth/config').then(r => r.data),
+  googleCallback: (code: string, redirectUri?: string) =>
+    api.post<{ token: string; user: { email: string; name: string; role: string } }>('/api/auth/google/callback', { code, redirect_uri: redirectUri }).then(r => r.data),
 }
