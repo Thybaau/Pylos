@@ -10,6 +10,7 @@ use serde_json::json;
 use pylos_core::domain::organization::{
     AccessGroup, InternalUser, Organization, Policy, Team, ToolPolicy,
 };
+use pylos_core::domain::search_tool::SearchToolConfig;
 
 use crate::state::AppState;
 
@@ -977,6 +978,152 @@ pub async fn delete_tool_policy(
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": format!("Tool policy '{}' not found", id) })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+// ── Search Tools ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSearchToolRequest {
+    pub id: Option<String>,
+    pub name: String,
+    pub description: Option<String>,
+    pub tool_type: String,
+    #[serde(default = "default_config")]
+    pub config: serde_json::Value,
+    #[serde(default = "default_true")]
+    pub is_active: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSearchToolRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub tool_type: Option<String>,
+    pub config: Option<serde_json::Value>,
+    pub is_active: Option<bool>,
+}
+
+fn default_config() -> serde_json::Value {
+    serde_json::json!({})
+}
+
+pub async fn list_search_tools(State(state): State<AppState>) -> impl IntoResponse {
+    match state.search_tool_store.list_search_tools().await {
+        Ok(tools) => Json(json!({ "search_tools": tools, "total": tools.len() })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn create_search_tool(
+    State(state): State<AppState>,
+    Json(req): Json<CreateSearchToolRequest>,
+) -> impl IntoResponse {
+    if let Err(e) = validate_str(&req.name, MAX_STR_LEN, "name") {
+        return e.into_response();
+    }
+    if let Some(ref desc) = req.description {
+        if let Err(e) = validate_str(desc, MAX_DESC_LEN, "description") {
+            return e.into_response();
+        }
+    }
+    let now = now_ms();
+    let st = SearchToolConfig {
+        id: req
+            .id
+            .unwrap_or_else(|| format!("st-{}", fastrand::u32(..))),
+        name: req.name,
+        description: req.description,
+        tool_type: req.tool_type,
+        config: req.config,
+        is_active: req.is_active,
+        created_at: now,
+        updated_at: now,
+    };
+    match state.search_tool_store.upsert_search_tool(&st).await {
+        Ok(()) => (StatusCode::CREATED, Json(json!(st))).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn update_search_tool(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateSearchToolRequest>,
+) -> impl IntoResponse {
+    let existing = match state.search_tool_store.get_search_tool(&id).await {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": format!("Search tool '{}' not found", id) })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+    let mut st = existing;
+    if let Some(name) = req.name {
+        if let Err(e) = validate_str(&name, MAX_STR_LEN, "name") {
+            return e.into_response();
+        }
+        st.name = name;
+    }
+    if let Some(desc) = req.description {
+        st.description = Some(desc);
+    }
+    if let Some(tt) = req.tool_type {
+        st.tool_type = tt;
+    }
+    if let Some(config) = req.config {
+        st.config = config;
+    }
+    if let Some(active) = req.is_active {
+        st.is_active = active;
+    }
+    st.updated_at = now_ms();
+    match state.search_tool_store.upsert_search_tool(&st).await {
+        Ok(()) => Json(json!(st)).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn delete_search_tool(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.search_tool_store.delete_search_tool(&id).await {
+        Ok(true) => {
+            Json(json!({ "message": format!("Search tool '{}' deleted", id) })).into_response()
+        }
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": format!("Search tool '{}' not found", id) })),
         )
             .into_response(),
         Err(e) => (

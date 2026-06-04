@@ -6,6 +6,7 @@ pub mod openai;
 pub mod organization;
 pub mod provider;
 pub mod request;
+pub mod search_tool;
 pub mod system_prompt;
 pub mod traits;
 pub mod virtual_key;

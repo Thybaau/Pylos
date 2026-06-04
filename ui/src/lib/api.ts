@@ -225,6 +225,17 @@ export interface Policy {
   updated_at: number
 }
 
+export interface SearchToolConfig {
+  id: string
+  name: string
+  description: string | null
+  tool_type: string
+  config: Record<string, unknown>
+  is_active: boolean
+  created_at: number
+  updated_at: number
+}
+
 export interface ToolPolicy {
   id: string
   name: string
@@ -416,6 +427,17 @@ export const toolPoliciesApi = {
     api.put<ToolPolicy>(`/api/tool-policies/${id}`, data).then(r => r.data),
   remove: (id: string) =>
     api.delete(`/api/tool-policies/${id}`).then(r => r.data),
+}
+
+export const searchToolsApi = {
+  getAll: () =>
+    api.get<{ search_tools: SearchToolConfig[]; total: number }>('/api/search-tools').then(r => r.data),
+  create: (data: { name: string; description?: string | null; tool_type: string; config?: Record<string, unknown>; is_active?: boolean }) =>
+    api.post<SearchToolConfig>('/api/search-tools', data).then(r => r.data),
+  update: (id: string, data: { name?: string; description?: string | null; tool_type?: string; config?: Record<string, unknown>; is_active?: boolean }) =>
+    api.put<SearchToolConfig>(`/api/search-tools/${id}`, data).then(r => r.data),
+  remove: (id: string) =>
+    api.delete(`/api/search-tools/${id}`).then(r => r.data),
 }
 
 export const configApi = {

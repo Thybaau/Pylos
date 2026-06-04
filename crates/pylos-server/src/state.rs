@@ -4,7 +4,7 @@ use std::sync::Arc;
 use pylos_application::{
     BudgetPlugin, BudgetStore, ConfigStore, GuardrailsPlugin, InferenceOrchestrator, LogStore,
     ModelCatalog, OrganizationStore, OtelConfig, PgLogStore, RateLimitPlugin, RateLimitStore,
-    SemanticCachePlugin, StructuredOutputPlugin, VirtualKeyStore,
+    SearchToolStore, SemanticCachePlugin, StructuredOutputPlugin, VirtualKeyStore,
 };
 use pylos_core::domain::traits::LlmPlugin;
 
@@ -82,6 +82,7 @@ pub struct AppState {
     pub vk_store: Arc<VirtualKeyStore>,
     pub system_prompt_store: Arc<pylos_application::SystemPromptStore>,
     pub org_store: Arc<OrganizationStore>,
+    pub search_tool_store: Arc<SearchToolStore>,
     pub admin_key: Option<String>,
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
@@ -110,6 +111,7 @@ impl AppState {
         Arc<VirtualKeyStore>,
         Arc<pylos_application::SystemPromptStore>,
         Arc<OrganizationStore>,
+        Arc<SearchToolStore>,
     )> {
         let db_scheme = db_url.split(':').next().unwrap_or("unknown");
         tracing::info!(database_url = %format!("{}://***@***/***", db_scheme), "Using PostgreSQL for all stores");
@@ -151,6 +153,10 @@ impl AppState {
                     anyhow::anyhow!("Failed to open PostgreSQL organization store: {}", e)
                 })?,
         );
+        let pg_search_tool =
+            Arc::new(SearchToolStore::open_postgres(db_url).await.map_err(|e| {
+                anyhow::anyhow!("Failed to open PostgreSQL search tool store: {}", e)
+            })?);
 
         if let Err(e) = config_store.init_database(db_url).await {
             tracing::warn!(error = %e, "Failed to initialize PostgreSQL config store");
@@ -164,6 +170,7 @@ impl AppState {
             pg_vk,
             pg_prompts,
             pg_org,
+            pg_search_tool,
         ))
     }
 
@@ -178,6 +185,7 @@ impl AppState {
         Arc<VirtualKeyStore>,
         Arc<pylos_application::SystemPromptStore>,
         Arc<OrganizationStore>,
+        Arc<SearchToolStore>,
     )> {
         let data_dir = data_dir.unwrap_or_else(|| {
             std::env::var("PYLOS_DATA_DIR")
@@ -237,6 +245,13 @@ impl AppState {
                 .map_err(|e| anyhow::anyhow!("Failed to open system prompt store: {}", e))?,
         );
 
+        let st_db_path = data_dir.join("pylos-searchtools.db");
+        let sqlite_search_tool = Arc::new(
+            SearchToolStore::open(&st_db_path)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to open search tool store: {}", e))?,
+        );
+
         let config_db_path = data_dir.join("pylos-config.db");
         let sqlite_config_db_url =
             format!("sqlite://{}?mode=rwc", config_db_path.to_string_lossy());
@@ -252,6 +267,7 @@ impl AppState {
             sqlite_vk,
             sqlite_prompts,
             sqlite_org,
+            sqlite_search_tool,
         ))
     }
 
@@ -287,13 +303,8 @@ impl AppState {
         )));
         tracing::info!("RagPlugin registered");
 
-        if !cfg.governance.budgets.is_empty() {
-            plugins.push(Arc::new(BudgetPlugin::new(Arc::clone(budget_store))));
-            tracing::info!(
-                count = cfg.governance.budgets.len(),
-                "Budget plugin enabled"
-            );
-        }
+        plugins.push(Arc::new(BudgetPlugin::new(Arc::clone(budget_store))));
+        tracing::info!("Budget plugin enabled");
 
         let has_rl = cfg
             .governance
@@ -463,6 +474,7 @@ impl AppState {
             vk_store,
             system_prompt_store,
             org_store,
+            search_tool_store,
         ) = if let Some(ref db_url) = database_url {
             Self::init_postgres_stores(db_url, &config_store).await?
         } else {
@@ -509,6 +521,7 @@ impl AppState {
             vk_store,
             system_prompt_store,
             org_store,
+            search_tool_store,
             admin_key: std::env::var("PYLOS_ADMIN_KEY").ok(),
             google_client_id: std::env::var("GOOGLE_CLIENT_ID").ok(),
             google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").ok(),

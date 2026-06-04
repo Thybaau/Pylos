@@ -17,11 +17,13 @@ pub mod batching;
 pub mod organization_store;
 pub mod prefix_cache;
 pub mod prompt_registry;
+pub mod search_tool_store;
 pub mod structured_output;
 pub mod use_cases;
 pub mod virtual_key_store;
 
 pub use organization_store::OrganizationStore;
+pub use search_tool_store::SearchToolStore;
 pub use system_prompt_store::SystemPromptStore;
 pub use virtual_key_store::VirtualKeyStore;
 

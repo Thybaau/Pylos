@@ -141,6 +141,20 @@ pub fn create_router(state: AppState) -> Router {
             "/api/tool-policies/:id",
             delete(access_control::delete_tool_policy),
         )
+        // Search Tools routes
+        .route("/api/search-tools", get(access_control::list_search_tools))
+        .route(
+            "/api/search-tools",
+            post(access_control::create_search_tool),
+        )
+        .route(
+            "/api/search-tools/:id",
+            put(access_control::update_search_tool),
+        )
+        .route(
+            "/api/search-tools/:id",
+            delete(access_control::delete_search_tool),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             management_auth_middleware,

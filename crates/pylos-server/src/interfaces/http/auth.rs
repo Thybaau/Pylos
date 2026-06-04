@@ -225,6 +225,58 @@ pub async fn google_callback(
                 )
                     .into_response();
             }
+
+            // Create a default virtual key with $1 budget
+            let vk_id = format!("vk-{}", random_id);
+            let vk_value = format!("sk-pylos-{}", fastrand::u64(..));
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            let vk_cfg = pylos_core::domain::config::VirtualKeyConfig {
+                id: vk_id.clone(),
+                name: format!("Default Key for {}", google_user.email),
+                description: Some("Automatically generated key on registration".to_string()),
+                value: Some(pylos_core::domain::config::EnvVar::Literal(
+                    vk_value.clone(),
+                )),
+                is_active: true,
+                rate_limit_id: None,
+                provider_configs: vec![],
+                team_alias: None,
+                team_id: None,
+                organization_id: None,
+                access_group_id: None,
+                user_email: Some(google_user.email.clone()),
+                user_id: Some(new_user.id.clone()),
+                created_at: Some(now_secs * 1000),
+                created_by: Some("auto-registration".to_string()),
+                updated_at: Some(now_secs * 1000),
+                last_active: None,
+                expires_at: None,
+            };
+
+            if let Err(e) = state.vk_store.upsert_key(&vk_cfg).await {
+                tracing::error!(error = %e, "Failed to create default virtual key for new user");
+            } else {
+                let vk = pylos_core::domain::virtual_key::VirtualKey::new(
+                    vk_value.clone(),
+                    &vk_cfg.name,
+                );
+                state.vk_registry.register(vk).await;
+            }
+
+            let budget_cfg = pylos_core::domain::config::BudgetConfig {
+                id: format!("b-{}", random_id),
+                max_limit: 1.0,
+                reset_duration: pylos_core::domain::config::Duration("1M".to_string()),
+                current_usage: 0.0,
+                virtual_key_id: Some(vk_id.clone()),
+            };
+            if let Err(e) = state.budget_store.upsert_budget(&vk_id, &budget_cfg).await {
+                tracing::error!(error = %e, "Failed to create default budget for new user VK");
+            }
+
             role.to_string()
         }
     };

@@ -14,6 +14,7 @@ pub use domain::config::{
 pub use domain::provider::ProviderConfig as RuntimeProviderConfig;
 pub use domain::provider::{ProviderKey, ProviderKind, RoutingTarget};
 pub use domain::request::{PylosRequest, PylosResponse, RequestContext, StreamChunk};
+pub use domain::search_tool::SearchToolConfig;
 pub use domain::traits::{ChunkStream, LlmPlugin, Provider};
 pub use domain::virtual_key::{VirtualKey, VirtualKeyRegistry, VIRTUAL_KEY_PREFIX};
 
