@@ -1,4 +1,5 @@
 pub mod budget_store;
+pub mod cache_aligner;
 pub mod config_store;
 pub(crate) mod db_pool;
 pub mod guardrails;
@@ -26,6 +27,7 @@ pub use virtual_key_store::VirtualKeyStore;
 
 pub use batching::BatchingPlugin;
 pub use budget_store::{BudgetPlugin, BudgetStore};
+pub use cache_aligner::CacheAlignerPlugin;
 pub use config_store::ConfigStore;
 pub use guardrails::GuardrailsPlugin;
 pub use log_store::{

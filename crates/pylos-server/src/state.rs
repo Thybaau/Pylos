@@ -263,6 +263,7 @@ impl AppState {
     ) -> Vec<Arc<dyn LlmPlugin>> {
         let mut plugins: Vec<Arc<dyn LlmPlugin>> = Vec::new();
         plugins.push(Arc::new(StructuredOutputPlugin::new()));
+        plugins.push(Arc::new(pylos_application::CacheAlignerPlugin::new()));
 
         let qdrant_url =
             std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://qdrant:6333".to_string());
