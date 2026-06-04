@@ -270,3 +270,13 @@ pub async fn google_callback(
     }))
     .into_response()
 }
+
+pub async fn logout() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(json!({
+            "status": "success",
+            "message": "Logged out successfully"
+        })),
+    )
+}

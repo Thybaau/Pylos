@@ -23,10 +23,11 @@ import {
   Search,
   Database,
   ShieldCheck,
+  LogOut,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { healthApi } from '../lib/api'
+import { healthApi, authApi } from '../lib/api'
 
 const NAV_MAIN = [
   { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
@@ -60,6 +61,9 @@ const NAV_TOOLS = [
 export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
   const [collapsed, setCollapsed] = useState(false)
   const [toolsExpanded, setToolsExpanded] = useState(true)
+
+  const userJson = typeof window !== 'undefined' ? sessionStorage.getItem('pylos_user') : null;
+  const user = userJson ? JSON.parse(userJson) : null;
 
   const { data: health, isError } = useQuery({
     queryKey: ['health'],
@@ -274,6 +278,70 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
         >
           <KeyRound size={16} className="flex-shrink-0" />
           {(!collapsed || isOpen) && <span>Admin Key</span>}
+        </button>
+
+        {/* User profile card */}
+        {user ? (
+          <div className="px-4 py-3 border-t border-zinc-800/50 flex flex-col gap-2">
+            {(!collapsed || isOpen) ? (
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center font-bold text-indigo-400 text-sm">
+                  {user.name ? user.name.substring(0, 2).toUpperCase() : 'U'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">{user.name}</p>
+                  <p className="text-xs text-zinc-500 truncate">{user.email}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-center">
+                <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center font-bold text-indigo-400 text-sm" title={user.name}>
+                  {user.name ? user.name.substring(0, 2).toUpperCase() : 'U'}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="px-4 py-3 border-t border-zinc-800/50 flex flex-col gap-2">
+            {(!collapsed || isOpen) ? (
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-zinc-850 border border-zinc-800 flex items-center justify-center font-bold text-amber-500 text-sm">
+                  AD
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">Administrator</p>
+                  <p className="text-xs text-zinc-500 truncate">Static Admin Key</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-center">
+                <div className="w-8 h-8 rounded-full bg-zinc-850 border border-zinc-800 flex items-center justify-center font-bold text-amber-500 text-sm" title="Administrator">
+                  AD
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={async () => {
+            if (onClose) onClose();
+            try {
+              await authApi.logout();
+            } catch (e) {
+              console.error("Logout request failed:", e);
+            } finally {
+              sessionStorage.removeItem('pylos_admin_key');
+              sessionStorage.removeItem('pylos_user');
+              window.location.href = '/login';
+            }
+          }}
+          className="flex items-center gap-3 px-4 py-3 border-t border-zinc-800/50
+            text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors text-sm w-full text-left"
+          title="Logout"
+        >
+          <LogOut size={16} className="flex-shrink-0" />
+          {(!collapsed || isOpen) && <span>Logout</span>}
         </button>
 
         {/* Collapse button */}
