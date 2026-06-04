@@ -178,17 +178,54 @@ pub async fn google_callback(
     };
 
     let matched_user = users
-        .into_iter()
-        .find(|u| u.email.to_lowercase() == google_user.email.to_lowercase() && u.is_active);
+        .iter()
+        .find(|u| u.email.to_lowercase() == google_user.email.to_lowercase());
 
     let user_role = match matched_user {
-        Some(user) => user.role,
+        Some(user) => {
+            if !user.is_active {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": format!("User email {} is inactive in Pylos", google_user.email) })),
+                )
+                    .into_response();
+            }
+            user.role.clone()
+        }
         None => {
-            // Check if there are absolutely no active users in the db yet (first login)
-            // or if we have PYLOS_ADMIN_KEY set. If yes, we reject.
-            // If the user email is explicitly allowed or if we should bootstrap.
-            // For security, only allow registered active users.
-            return (StatusCode::FORBIDDEN, Json(json!({ "error": format!("User email {} is not authorized or is inactive in Pylos", google_user.email) }))).into_response();
+            let role = if users.is_empty() { "admin" } else { "member" };
+            // Generate a random ID using fastrand
+            let random_id = (0..16)
+                .map(|_| fastrand::alphanumeric())
+                .collect::<String>();
+            let new_user = pylos_core::domain::organization::InternalUser {
+                id: format!("usr_{}", random_id),
+                email: google_user.email.clone(),
+                name: google_user
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| google_user.email.clone()),
+                role: role.to_string(),
+                organization_id: None,
+                team_ids: vec![],
+                is_active: true,
+                created_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+                updated_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+            };
+            if let Err(e) = state.org_store.upsert_user(&new_user).await {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": format!("Failed to auto-register user: {}", e) })),
+                )
+                    .into_response();
+            }
+            role.to_string()
         }
     };
 
