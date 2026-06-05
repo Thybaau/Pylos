@@ -38,6 +38,9 @@ pub struct Metrics {
 
     /// Débit de tokens par seconde (TPS)
     pub inference_tps: HistogramVec,
+
+    /// Nombre d'octets économisés grâce à la compression / Caveman
+    pub compression_saved_bytes_total: IntCounterVec,
 }
 
 impl Metrics {
@@ -118,6 +121,14 @@ impl Metrics {
         )
         .expect("Failed to register inference_tps");
 
+        let compression_saved_bytes_total = register_int_counter_vec_with_registry!(
+            "pylos_compression_saved_bytes_total",
+            "Total number of bytes saved by request optimization and Caveman compression",
+            &["provider", "model"],
+            registry
+        )
+        .expect("Failed to register compression_saved_bytes_total");
+
         Self {
             registry: Arc::new(registry),
             inference_requests_total,
@@ -129,6 +140,7 @@ impl Metrics {
             inference_in_flight,
             inference_ttft_seconds,
             inference_tps,
+            compression_saved_bytes_total,
         }
     }
 
@@ -170,6 +182,13 @@ impl Metrics {
     /// Ajoute des tokens completion
     pub fn add_completion_tokens(&self, provider: &str, model: &str, count: u64) {
         self.completion_tokens_total
+            .with_label_values(&[provider, model])
+            .inc_by(count);
+    }
+
+    /// Ajoute le nombre d'octets économisés grâce à la compression / Caveman
+    pub fn add_saved_bytes(&self, provider: &str, model: &str, count: u64) {
+        self.compression_saved_bytes_total
             .with_label_values(&[provider, model])
             .inc_by(count);
     }

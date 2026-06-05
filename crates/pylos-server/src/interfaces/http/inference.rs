@@ -118,6 +118,11 @@ async fn complete_response(
                     usage.completion_tokens as u64,
                 );
             }
+            if saved_bytes > 0 {
+                state
+                    .metrics
+                    .add_saved_bytes(&provider_name, &model, saved_bytes as u64);
+            }
 
             let output_preview = resp.choices.first().and_then(|c| c.message.content.clone());
             let finish_reason = resp.choices.first().and_then(|c| c.finish_reason.clone());
@@ -322,6 +327,13 @@ async fn stream_response(
                         &model_clone,
                         elapsed_total,
                     );
+                    if saved_bytes > 0 {
+                        state_for_log.metrics.add_saved_bytes(
+                            &provider_clone,
+                            &model_clone,
+                            saved_bytes as u64,
+                        );
+                    }
 
                     let pseudo_usage = pylos_core::domain::openai::Usage {
                         prompt_tokens: 0,
