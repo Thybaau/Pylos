@@ -27,10 +27,24 @@ use crate::state::AppState;
 /// Handler POST /v1/chat/completions
 pub async fn chat_completions(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Extension(vk_info): Extension<Option<VirtualKeyInfo>>,
     Json(mut payload): Json<ChatCompletionRequest>,
 ) -> Response {
-    let saved_bytes = crate::compression::optimize_request(&mut payload);
+    let caveman_mode = headers
+        .get("x-caveman-mode")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.parse::<crate::compression::CavemanMode>().ok())
+        .unwrap_or(crate::compression::CavemanMode::Off);
+
+    let shrink_input = headers
+        .get("x-caveman-compress")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s == "true" || s == "1")
+        .unwrap_or(false);
+
+    let saved_bytes =
+        crate::compression::optimize_request(&mut payload, caveman_mode, shrink_input);
 
     let is_stream = payload.stream.unwrap_or(false);
     let model = payload.model.clone();

@@ -183,6 +183,8 @@ export default function Playground() {
   const [streaming, setStreaming] = useState(true)
   const [temperature, setTemperature] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(512)
+  const [cavemanMode, setCavemanMode] = useState<'off' | 'lite' | 'full' | 'ultra' | 'wenyan'>('off')
+  const [cavemanCompress, setCavemanCompress] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
   const [lastResult, setLastResult] = useState<RunResult | null>(null)
   const [streamingContent, setStreamingContent] = useState('')
@@ -267,10 +269,18 @@ export default function Playground() {
     }
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (cavemanMode !== 'off') {
+        headers['x-caveman-mode'] = cavemanMode
+      }
+      if (cavemanCompress) {
+        headers['x-caveman-compress'] = 'true'
+      }
+
       if (streaming) {
         const resp = await fetch('/v1/chat/completions', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify(payload),
           signal: abortRef.current.signal,
         })
@@ -341,6 +351,7 @@ export default function Playground() {
         })
       } else {
         const resp = await api.post('/v1/chat/completions', payload, {
+          headers,
           signal: abortRef.current.signal,
         })
         const latency = performance.now() - start
@@ -514,6 +525,42 @@ export default function Playground() {
             >
               <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform
                 ${streaming ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
+
+          <div className="border-t border-zinc-800/50" />
+
+          {/* Caveman Mode */}
+          <div className="space-y-1.5">
+            <label className="text-xs text-zinc-400">Caveman Output Mode</label>
+            <select
+              value={cavemanMode}
+              onChange={e => setCavemanMode(e.target.value as any)}
+              disabled={isRunning}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 disabled:opacity-50"
+            >
+              <option value="off">Off (Normal)</option>
+              <option value="lite">Lite (Direct)</option>
+              <option value="full">Full (Classic)</option>
+              <option value="ultra">Ultra (Terse)</option>
+              <option value="wenyan">Wenyan (Classical)</option>
+            </select>
+          </div>
+
+          {/* Input Shrinking */}
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-xs text-zinc-400">Input Shrinking</span>
+              <span className="text-[10px] text-zinc-500">Strip prompt fillers</span>
+            </div>
+            <button
+              onClick={() => setCavemanCompress(!cavemanCompress)}
+              disabled={isRunning}
+              className={`relative w-10 h-5 rounded-full transition-colors
+                ${cavemanCompress ? 'bg-emerald-600' : 'bg-zinc-700'}`}
+            >
+              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform
+                ${cavemanCompress ? 'translate-x-5' : 'translate-x-0.5'}`} />
             </button>
           </div>
 
