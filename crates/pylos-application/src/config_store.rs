@@ -538,22 +538,14 @@ impl ConfigStore {
     pub async fn upsert_guardrails_config(
         &self,
         enabled: bool,
-        mask_pii: bool,
-        mask_secrets: bool,
-        prevent_prompt_injection: bool,
-        blocked_keywords: Vec<String>,
+        config: serde_json::Value,
     ) -> Result<(), PylosError> {
         let mut state = self.state.write().await;
 
         let new_plugin = pylos_core::domain::config::PluginConfig {
             name: "guardrails".to_string(),
             enabled,
-            config: serde_json::json!({
-                "mask_pii": mask_pii,
-                "mask_secrets": mask_secrets,
-                "prevent_prompt_injection": prevent_prompt_injection,
-                "blocked_keywords": blocked_keywords,
-            }),
+            config,
         };
 
         if let Some(pos) = state

@@ -663,10 +663,7 @@ pub async fn promote_to_production() -> Result<serde_json::Value, String> {
 #[derive(Debug, Deserialize)]
 pub struct UpdateGuardrailsRequest {
     pub enabled: bool,
-    pub mask_pii: bool,
-    pub mask_secrets: bool,
-    pub prevent_prompt_injection: bool,
-    pub blocked_keywords: Vec<String>,
+    pub config: serde_json::Value,
 }
 
 pub async fn update_guardrails(
@@ -675,13 +672,7 @@ pub async fn update_guardrails(
 ) -> impl IntoResponse {
     match state
         .config_store
-        .upsert_guardrails_config(
-            req.enabled,
-            req.mask_pii,
-            req.mask_secrets,
-            req.prevent_prompt_injection,
-            req.blocked_keywords,
-        )
+        .upsert_guardrails_config(req.enabled, req.config)
         .await
     {
         Ok(()) => {

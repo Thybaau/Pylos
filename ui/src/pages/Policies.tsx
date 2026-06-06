@@ -101,6 +101,46 @@ export default function Policies() {
     onSuccess: () => { invalidate(); setShowCreate(false); setMutationError(null) },
     onError: (e: Error) => setMutationError(e.message),
   })
+
+  const seedCommonMut = useMutation({
+    mutationFn: async () => {
+      const templates = [
+        {
+          name: "Standard Tier Rate Limit",
+          description: "Limits requests to 60 RPM and 50,000 tokens per minute.",
+          policy_type: "rate_limit",
+          config: { max_requests_per_minute: 60, max_tokens_per_minute: 50000 },
+          is_active: true
+        },
+        {
+          name: "Developer Access Control",
+          description: "Restricts access to local development keys and models.",
+          policy_type: "access_control",
+          config: { allowed_roles: ["admin", "developer"], require_mfa: false },
+          is_active: true
+        },
+        {
+          name: "Cost Optimization Routing",
+          description: "Routes requests dynamically to the cheapest available provider.",
+          policy_type: "routing",
+          config: { strategy: "lowest_cost", fallback_provider: "openai" },
+          is_active: true
+        },
+        {
+          name: "Security & PII Auditing",
+          description: "Enforces log auditing, PII masking, and prompt injection checks.",
+          policy_type: "audit",
+          config: { mask_pii: true, log_payloads: true, prevent_injection: true },
+          is_active: true
+        }
+      ]
+      for (const t of templates) {
+        await policiesApi.create(t)
+      }
+    },
+    onSuccess: () => { invalidate() },
+  })
+
   const updateMut = useMutation({
     mutationFn: ({ id, f }: { id: string; f: PolicyFormState }) => {
       let config: Record<string, unknown> = {}
@@ -116,8 +156,18 @@ export default function Policies() {
     <div className="p-6 space-y-6 overflow-y-auto h-full">
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-bold text-white">Policies</h1><p className="text-sm text-zinc-400 mt-1">{data?.total ?? '—'} configured</p></div>
-        <button onClick={() => { setMutationError(null); setShowCreate(true) }}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-sm rounded-lg"><Plus size={15} />Create policy</button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => seedCommonMut.mutate()}
+            disabled={seedCommonMut.isPending}
+            className="flex items-center gap-2 px-4 py-2 border border-zinc-800 hover:border-zinc-700 bg-zinc-900/50 hover:bg-zinc-900 active:scale-[0.98] text-zinc-300 hover:text-white text-sm rounded-lg transition-all"
+          >
+            {seedCommonMut.isPending ? <RotateCcw size={14} className="animate-spin" /> : <Plus size={14} />}
+            Add Common Policies
+          </button>
+          <button onClick={() => { setMutationError(null); setShowCreate(true) }}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-sm rounded-lg"><Plus size={15} />Create policy</button>
+        </div>
       </div>
       <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/30 overflow-hidden">
         <table className="w-full text-sm">
