@@ -6,7 +6,7 @@ import { formatLatency, formatCost, providerColor } from '../lib/utils'
 import {
   Send, StopCircle, Trash2, ChevronDown,
   Zap, Clock, Hash, Coins, CheckCircle, XCircle,
-  SlidersHorizontal, X,
+  SlidersHorizontal, X, Star,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -45,12 +45,13 @@ async function fetchModels(): Promise<Model[]> {
 // ─── Composants ──────────────────────────────────────────────────────────────
 
 function ModelSelect({
-  models, value, onChange, disabled,
+  models, value, onChange, disabled, favorites = [],
 }: {
   models: Model[]
   value: string
   onChange: (v: string) => void
   disabled?: boolean
+  favorites?: string[]
 }) {
   const grouped: Record<string, Model[]> = {}
   for (const m of models) {
@@ -72,12 +73,16 @@ function ModelSelect({
         <option value="">— Select a model —</option>
         {Object.entries(grouped).map(([provider, ms]) => (
           <optgroup key={provider} label={`▸ ${provider.toUpperCase()}`}>
-            {ms.map(m => (
-              <option key={`${provider}/${m.id}`} value={`${provider}::${m.id}`}>
-                {m.id}
-                {m.details?.parameter_size ? ` (${m.details.parameter_size})` : ''}
-              </option>
-            ))}
+            {ms.map(m => {
+              const val = `${provider}::${m.id}`
+              const isFav = favorites.includes(val)
+              return (
+                <option key={val} value={val}>
+                  {isFav ? '★ ' : ''}{m.id}
+                  {m.details?.parameter_size ? ` (${m.details.parameter_size})` : ''}
+                </option>
+              )
+            })}
           </optgroup>
         ))}
       </select>
@@ -176,7 +181,17 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
 export default function Playground() {
   const [searchParams] = useSearchParams()
   const modelParam = searchParams.get('model')
-  const [selectedModel, setSelectedModel] = useState('')
+  const [selectedModel, setSelectedModel] = useState(() => {
+    return localStorage.getItem('pylos-playground-last-model') || ''
+  })
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('pylos-playground-favorites')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
   const [systemPrompt, setSystemPrompt] = useState('You are a helpful assistant.')
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
@@ -191,6 +206,24 @@ export default function Playground() {
   const [showConfig, setShowConfig] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (selectedModel) {
+      localStorage.setItem('pylos-playground-last-model', selectedModel)
+    }
+  }, [selectedModel])
+
+  useEffect(() => {
+    localStorage.setItem('pylos-playground-favorites', JSON.stringify(favorites))
+  }, [favorites])
+
+  const toggleFavorite = (modelStr: string) => {
+    setFavorites(prev =>
+      prev.includes(modelStr)
+        ? prev.filter(m => m !== modelStr)
+        : [...prev, modelStr]
+    )
+  }
   const { data: modelsData, isLoading: modelsLoading } = useQuery({
     queryKey: ['models'],
     queryFn: fetchModels,
@@ -221,6 +254,15 @@ export default function Playground() {
       )
       if (matched) {
         setSelectedModel(`${matched.provider}::${matched.id}`)
+        return
+      }
+    }
+
+    const savedModel = localStorage.getItem('pylos-playground-last-model')
+    if (savedModel) {
+      const matched = models.find(m => `${m.provider}::${m.id}` === savedModel)
+      if (matched) {
+        setSelectedModel(savedModel)
         return
       }
     }
@@ -449,17 +491,70 @@ export default function Playground() {
           {/* Model selector */}
           <div className="space-y-1.5">
             <label className="text-xs text-zinc-400">Model</label>
-            {modelsLoading
-              ? <div className="h-9 bg-zinc-800 rounded-lg animate-pulse" />
-              : <ModelSelect
-                  models={models}
-                  value={selectedModel}
-                  onChange={setSelectedModel}
+            <div className="flex gap-2">
+              <div className="flex-1 min-w-0">
+                {modelsLoading
+                  ? <div className="h-9 bg-zinc-800 rounded-lg animate-pulse" />
+                  : <ModelSelect
+                      models={models}
+                      value={selectedModel}
+                      onChange={setSelectedModel}
+                      disabled={isRunning}
+                      favorites={favorites}
+                    />
+                }
+              </div>
+              {selectedModel && (
+                <button
+                  onClick={() => toggleFavorite(selectedModel)}
                   disabled={isRunning}
-                />
-            }
+                  className={`p-2 rounded-lg border flex items-center justify-center flex-shrink-0 transition-all active:scale-95
+                    ${favorites.includes(selectedModel)
+                      ? 'bg-amber-500/10 border-amber-500/50 text-amber-400 hover:bg-amber-500/20'
+                      : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                    }`}
+                  title={favorites.includes(selectedModel) ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  <Star size={16} fill={favorites.includes(selectedModel) ? 'currentColor' : 'none'} />
+                </button>
+              )}
+            </div>
+
+            {/* Quick Switch Favorites */}
+            {favorites.length > 0 && (
+              <div className="pt-1 space-y-1">
+                <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-1">
+                  <Star size={10} fill="currentColor" className="text-amber-500" />
+                  <span>Favorite Models</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {favorites.map(fav => {
+                    const [prov, ...restId] = fav.split('::')
+                    const name = restId.join('::')
+                    const isSelected = selectedModel === fav
+                    return (
+                      <button
+                        key={fav}
+                        onClick={() => setSelectedModel(fav)}
+                        disabled={isRunning}
+                        title={`${name} (${prov})`}
+                        className={`text-xs px-2 py-1 rounded-md transition-all text-left truncate max-w-full flex items-center gap-1.5 border active:scale-[0.97]
+                          ${isSelected
+                            ? 'bg-emerald-600/10 border-emerald-500/40 text-emerald-400 font-medium'
+                            : 'bg-zinc-900/40 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+                          }`}
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: providerColor(prov) }} />
+                        <span className="truncate">{name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {currentProvider && (
-              <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <div className="flex items-center gap-1.5 text-xs text-zinc-500 pt-1">
                 <div className="w-1.5 h-1.5 rounded-full" style={{ background: providerColor(currentProvider) }} />
                 {currentProvider}
               </div>

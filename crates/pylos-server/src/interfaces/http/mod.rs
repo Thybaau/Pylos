@@ -10,3 +10,4 @@ pub mod logs;
 pub mod metrics;
 pub mod models;
 pub mod system_prompts;
+pub mod vector_stores;

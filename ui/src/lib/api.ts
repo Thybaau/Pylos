@@ -456,3 +456,24 @@ export const authApi = {
   logout: () =>
     api.post<{ status: string; message: string }>('/api/auth/logout').then(r => r.data),
 }
+
+export interface VectorCollection {
+  name: string
+  status: string
+  points_count: number
+  vector_size: number
+  distance: string
+}
+
+export const vectorStoresApi = {
+  getAll: () =>
+    api.get<{ collections: VectorCollection[] }>('/api/vector-stores/collections').then(r => r.data),
+  create: (data: { name: string; vector_size: number; distance: string }) =>
+    api.post('/api/vector-stores/collections', data).then(r => r.data),
+  remove: (name: string) =>
+    api.delete(`/api/vector-stores/collections/${name}`).then(r => r.data),
+  addDocument: (name: string, data: { text: string; embedding_model: string; payload?: Record<string, unknown> }) =>
+    api.post(`/api/vector-stores/collections/${name}/points`, data).then(r => r.data),
+  search: (name: string, data: { query: string; embedding_model: string; limit?: number }) =>
+    api.post<Array<{ id: string | number; score: number; payload: Record<string, unknown> }>>(`/api/vector-stores/collections/${name}/search`, data).then(r => r.data),
+}

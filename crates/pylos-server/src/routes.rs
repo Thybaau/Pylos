@@ -1,6 +1,6 @@
 use crate::interfaces::http::{
     access_control, auth, completions, config, embeddings, health, images, inference, logs,
-    metrics, models,
+    metrics, models, vector_stores,
 };
 use crate::middleware::{management_auth_middleware, queuing_middleware, virtual_key_middleware};
 use crate::state::AppState;
@@ -154,6 +154,27 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/search-tools/:id",
             delete(access_control::delete_search_tool),
+        )
+        // Vector Stores routes
+        .route(
+            "/api/vector-stores/collections",
+            get(vector_stores::list_collections),
+        )
+        .route(
+            "/api/vector-stores/collections",
+            post(vector_stores::create_collection),
+        )
+        .route(
+            "/api/vector-stores/collections/:name",
+            delete(vector_stores::delete_collection),
+        )
+        .route(
+            "/api/vector-stores/collections/:name/points",
+            post(vector_stores::add_document),
+        )
+        .route(
+            "/api/vector-stores/collections/:name/search",
+            post(vector_stores::search_collection),
         )
         .layer(middleware::from_fn_with_state(
             state.clone(),
