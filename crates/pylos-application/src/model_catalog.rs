@@ -46,6 +46,18 @@ pub struct ModelInfo {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ModelHealth {
+    pub id: String,
+    pub provider: String,
+    pub model_id: String,
+    pub health_status: String,
+    pub error_details: Option<String>,
+    pub last_check_ms: Option<i64>,
+    pub last_success_ms: Option<i64>,
+}
+
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PricingReloadStatus {
     pub source_url: String,
     pub last_reload_ms: Option<i64>,
@@ -123,6 +135,15 @@ impl ModelCatalog {
                 updated_at_ms           INTEGER NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_uniq ON model_catalog(provider, model_id);
+            CREATE TABLE IF NOT EXISTS model_health (
+                id              TEXT PRIMARY KEY,
+                provider        TEXT NOT NULL,
+                model_id        TEXT NOT NULL,
+                health_status   TEXT NOT NULL DEFAULT 'none',
+                error_details   TEXT,
+                last_check_ms   INTEGER,
+                last_success_ms INTEGER
+            );
         "#,
         )
         .execute(&pool)
@@ -409,6 +430,79 @@ impl ModelCatalog {
                 .bind(periodic_schedule)
                 .execute(pool)
                 .await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn list_model_health(&self) -> Result<Vec<ModelHealth>, sqlx::Error> {
+        let sql = "SELECT id, provider, model_id, health_status, error_details, last_check_ms, last_success_ms FROM model_health";
+        match &self.pool {
+            Pool::Sqlite(pool) => {
+                let rows = sqlx::query(sql)
+                    .fetch_all(pool)
+                    .await?;
+                Ok(rows.iter().map(|r| ModelHealth {
+                    id: r.try_get("id").unwrap_or_default(),
+                    provider: r.try_get("provider").unwrap_or_default(),
+                    model_id: r.try_get("model_id").unwrap_or_default(),
+                    health_status: r.try_get("health_status").unwrap_or_else(|_| "none".to_string()),
+                    error_details: r.try_get("error_details").ok(),
+                    last_check_ms: r.try_get::<Option<i64>, _>("last_check_ms").unwrap_or(None),
+                    last_success_ms: r.try_get::<Option<i64>, _>("last_success_ms").unwrap_or(None),
+                }).collect())
+            }
+            Pool::Postgres(pool) => {
+                let rows = sqlx::query::<sqlx::Postgres>(sql)
+                    .fetch_all(pool)
+                    .await?;
+                Ok(rows.iter().map(|r| ModelHealth {
+                    id: r.try_get("id").unwrap_or_default(),
+                    provider: r.try_get("provider").unwrap_or_default(),
+                    model_id: r.try_get("model_id").unwrap_or_default(),
+                    health_status: r.try_get("health_status").unwrap_or_else(|_| "none".to_string()),
+                    error_details: r.try_get("error_details").ok(),
+                    last_check_ms: r.try_get::<Option<i64>, _>("last_check_ms").unwrap_or(None),
+                    last_success_ms: r.try_get::<Option<i64>, _>("last_success_ms").unwrap_or(None),
+                }).collect())
+            }
+        }
+    }
+
+    pub async fn update_model_health(&self, health: &ModelHealth) -> Result<(), sqlx::Error> {
+        let sql = r#"
+            INSERT INTO model_health (id, provider, model_id, health_status, error_details, last_check_ms, last_success_ms)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT(id) DO UPDATE SET
+                health_status = excluded.health_status,
+                error_details = excluded.error_details,
+                last_check_ms = excluded.last_check_ms,
+                last_success_ms = excluded.last_success_ms
+        "#;
+        match &self.pool {
+            Pool::Sqlite(pool) => {
+                sqlx::query(sql)
+                    .bind(&health.id)
+                    .bind(&health.provider)
+                    .bind(&health.model_id)
+                    .bind(&health.health_status)
+                    .bind(&health.error_details)
+                    .bind(health.last_check_ms)
+                    .bind(health.last_success_ms)
+                    .execute(pool)
+                    .await?;
+            }
+            Pool::Postgres(pool) => {
+                sqlx::query(sql)
+                    .bind(&health.id)
+                    .bind(&health.provider)
+                    .bind(&health.model_id)
+                    .bind(&health.health_status)
+                    .bind(&health.error_details)
+                    .bind(health.last_check_ms)
+                    .bind(health.last_success_ms)
+                    .execute(pool)
+                    .await?;
             }
         }
         Ok(())
