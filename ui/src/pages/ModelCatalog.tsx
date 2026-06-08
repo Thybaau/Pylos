@@ -325,6 +325,128 @@ function DeleteConfirm({
   )
 }
 
+function PriceDataManagementTab() {
+  const qc = useQueryClient()
+  const { data: status, isLoading, refetch } = useQuery({
+    queryKey: ['pricingStatus'],
+    queryFn: () => modelsApi.getPricingStatus(),
+  })
+
+  const reloadMutation = useMutation({
+    mutationFn: () => modelsApi.reloadPricingData(),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ['models'] })
+      refetch()
+      alert(res.message || "Successfully reloaded pricing data")
+    },
+    onError: (e: any) => {
+      alert(`Failed to reload pricing data: ${e.message}`)
+    }
+  })
+
+  const scheduleMutation = useMutation({
+    mutationFn: (schedule: string | null) => modelsApi.schedulePricingReload(schedule),
+    onSuccess: () => {
+      refetch()
+      alert("Successfully updated schedule")
+    },
+    onError: (e: any) => {
+      alert(`Failed to update schedule: ${e.message}`)
+    }
+  })
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-4 animate-pulse">
+        <div className="h-8 bg-zinc-900 rounded w-1/4"></div>
+        <div className="h-32 bg-zinc-900 rounded"></div>
+      </div>
+    )
+  }
+
+  const lastReload = status?.last_reload_ms 
+    ? new Date(status.last_reload_ms).toLocaleString() 
+    : 'Never'
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-white">Price Data Management</h2>
+        <p className="text-xs text-zinc-400 mt-1">
+          Manage model pricing data and configure automatic reload schedules
+        </p>
+      </div>
+
+      <div className="flex gap-4">
+        <button
+          onClick={() => reloadMutation.mutate()}
+          disabled={reloadMutation.isPending}
+          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold disabled:opacity-50 transition-all active:scale-[0.98]"
+        >
+          {reloadMutation.isPending ? (
+            <RotateCcw size={14} className="animate-spin" />
+          ) : (
+            <RefreshCw size={14} />
+          )}
+          Reload Price Data
+        </button>
+
+        <button
+          onClick={() => {
+            const sched = window.prompt(
+              "Enter periodic reload schedule (e.g. 'hourly', 'daily', 'weekly', or leave blank to disable):",
+              status?.periodic_schedule || ''
+            )
+            if (sched !== null) {
+              scheduleMutation.mutate(sched.trim() || null)
+            }
+          }}
+          className="px-4 py-2.5 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white rounded-xl text-xs font-semibold transition-all active:scale-[0.98]"
+        >
+          Set Up Periodic Reload
+        </button>
+      </div>
+
+      <div className="border border-zinc-800/80 rounded-2xl bg-zinc-900/20 overflow-hidden shadow-2xl p-6 space-y-6">
+        <div className="flex items-center gap-3 pb-4 border-b border-zinc-800/50">
+          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-500/15 text-indigo-400 shrink-0">
+            <Info size={16} />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Pricing Data Source</h3>
+            <p className="text-xs text-zinc-500 font-mono mt-0.5">
+              {status?.source_url}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-zinc-900/40 rounded-xl p-4 border border-zinc-800/50">
+            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Models loaded</div>
+            <div className="text-2xl font-bold text-white mt-1">
+              {status?.models_count || 0}
+            </div>
+          </div>
+
+          <div className="bg-zinc-900/40 rounded-xl p-4 border border-zinc-800/50">
+            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Last Run</div>
+            <div className="text-sm font-bold text-zinc-200 mt-2 truncate">
+              {lastReload}
+            </div>
+          </div>
+
+          <div className="bg-zinc-900/40 rounded-xl p-4 border border-zinc-800/50">
+            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Reload Schedule</div>
+            <div className="text-sm font-bold text-zinc-200 mt-2 capitalize">
+              {status?.periodic_schedule || 'No periodic reload scheduled'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ModelCatalog() {
@@ -451,298 +573,304 @@ export default function ModelCatalog() {
         ))}
       </div>
 
-      {/* Dropdown Filters (Current Team & View) */}
-      <div className="flex items-center gap-6 text-xs text-zinc-400 bg-zinc-900/20 p-1 rounded-lg">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-zinc-500">Current Team:</span>
-          <div className="relative group">
-            <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 font-semibold hover:border-zinc-700 transition-colors">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-              Personal
-              <ChevronDown size={12} className="text-zinc-500" />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 ml-auto">
-          <span className="font-medium text-zinc-500">View:</span>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 font-semibold hover:border-zinc-700 transition-colors">
-            Current Team Models
-            <ChevronDown size={12} className="text-zinc-500" />
-          </button>
-        </div>
-      </div>
-
-      {/* Search and Filters Bar */}
-      <div className="flex gap-3 items-center flex-wrap">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search size={14} className="absolute left-3.5 top-3 text-zinc-500" />
-          <input
-            type="text"
-            placeholder="Search model names..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
-          />
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors">
-            <Filter size={13} className="text-zinc-400" />
-            Filters
-          </button>
-          <button 
-            onClick={() => { setSearch(''); setProvider('all') }}
-            className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors"
-          >
-            Reset Filters
-          </button>
-          {provider !== 'all' && (
-            <button
-              disabled={pullMutation.isPending}
-              onClick={() => pullMutation.mutate(provider)}
-              className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold disabled:opacity-50 transition-all active:scale-[0.98]"
-            >
-              {pullMutation.isPending ? (
-                <RotateCcw size={12} className="animate-spin text-indigo-300" />
-              ) : (
-                <RefreshCw size={12} />
-              )}
-              Sync {provider}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Sync buttons per provider */}
-      <div className="flex gap-1.5 flex-wrap py-1">
-        {PROVIDERS.map(p => (
-          <button
-            key={p}
-            onClick={() => setProvider(p)}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors
-              ${provider === p
-                ? 'bg-zinc-800 text-white border border-zinc-700'
-                : 'bg-zinc-900/50 text-zinc-500 border border-zinc-800/80 hover:text-zinc-300 hover:border-zinc-700/50'}`}
-          >
-            {p}
-          </button>
-        ))}
-      </div>
-
-      {/* Error state */}
-      {isError && (
-        <div className="flex items-center gap-3 bg-red-900/20 border border-red-800/50 rounded-xl p-4 text-red-300">
-          <AlertCircle size={16} className="shrink-0" />
-          <span className="text-sm">Failed to load models. </span>
-          <button onClick={() => refetch()} className="text-sm underline hover:no-underline">Retry</button>
-        </div>
-      )}
-
-      {/* Models Table Listing */}
-      {isLoading ? (
-        <div className="space-y-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-16 rounded-xl border border-zinc-800/50 bg-zinc-900/30 animate-pulse" />
-          ))}
-        </div>
+      {activeTab === 'reload' ? (
+        <PriceDataManagementTab />
       ) : (
-        <div className="border border-zinc-800/80 rounded-2xl bg-zinc-900/20 overflow-hidden shadow-2xl">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-zinc-900/40 border-b border-zinc-800/80">
-                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest w-[25%]">Model ID</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest w-[25%]">Model Information</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Credentials</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Created By</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Updated At</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-right">Costs</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Team ID</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Access Group</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Status</th>
-                <th className="px-6 py-4 w-20 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/50">
-              {filtered.map(({ id, pylos }) => {
-                const modelHash = getModelHash(pylos?.model_id ?? id);
-                return (
-                  <Fragment key={id}>
-                    <tr
-                      className={`transition-colors cursor-pointer group hover:bg-zinc-900/40
-                        ${expandedId === id ? 'bg-zinc-900/30' : ''}
-                        ${pylos?.enabled === false ? 'opacity-40 grayscale' : ''}`}
-                      onClick={() => setExpandedId(expandedId === id ? null : id)}
-                    >
-                      {/* Model ID */}
-                      <td className="px-6 py-4">
-                        <span className="font-mono text-xs text-indigo-400 hover:text-indigo-300 font-semibold truncate block max-w-[180px]">
-                          {modelHash}
-                        </span>
-                      </td>
+        <>
+          {/* Dropdown Filters (Current Team & View) */}
+          <div className="flex items-center gap-6 text-xs text-zinc-400 bg-zinc-900/20 p-1 rounded-lg">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-zinc-500">Current Team:</span>
+              <div className="relative group">
+                <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 font-semibold hover:border-zinc-700 transition-colors">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                  Personal
+                  <ChevronDown size={12} className="text-zinc-500" />
+                </button>
+              </div>
+            </div>
 
-                      {/* Model Information */}
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-zinc-100 group-hover:text-white transition-colors text-xs">
-                            {pylos?.display_name || pylos?.model_id || id}
-                          </span>
-                          <span className="text-[10px] text-zinc-500 font-mono mt-0.5">
-                            {pylos?.provider ?? 'unknown'}/{pylos?.model_id ?? id}
-                          </span>
-                        </div>
-                      </td>
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="font-medium text-zinc-500">View:</span>
+              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 font-semibold hover:border-zinc-700 transition-colors">
+                Current Team Models
+                <ChevronDown size={12} className="text-zinc-500" />
+              </button>
+            </div>
+          </div>
 
-                      {/* Credentials */}
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700/50">
-                          Manual
-                        </span>
-                      </td>
+          {/* Search and Filters Bar */}
+          <div className="flex gap-3 items-center flex-wrap">
+            <div className="relative flex-1 min-w-[240px]">
+              <Search size={14} className="absolute left-3.5 top-3 text-zinc-500" />
+              <input
+                type="text"
+                placeholder="Search model names..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+              />
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button className="flex items-center gap-1.5 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors">
+                <Filter size={13} className="text-zinc-400" />
+                Filters
+              </button>
+              <button 
+                onClick={() => { setSearch(''); setProvider('all') }}
+                className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors"
+              >
+                Reset Filters
+              </button>
+              {provider !== 'all' && (
+                <button
+                  disabled={pullMutation.isPending}
+                  onClick={() => pullMutation.mutate(provider)}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold disabled:opacity-50 transition-all active:scale-[0.98]"
+                >
+                  {pullMutation.isPending ? (
+                    <RotateCcw size={12} className="animate-spin text-indigo-300" />
+                  ) : (
+                    <RefreshCw size={12} />
+                  )}
+                  Sync {provider}
+                </button>
+              )}
+            </div>
+          </div>
 
-                      {/* Created By */}
-                      <td className="px-6 py-4 text-xs text-zinc-400">
-                        Defined in config
-                      </td>
+          {/* Sync buttons per provider */}
+          <div className="flex gap-1.5 flex-wrap py-1">
+            {PROVIDERS.map(p => (
+              <button
+                key={p}
+                onClick={() => setProvider(p)}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors
+                  ${provider === p
+                    ? 'bg-zinc-800 text-white border border-zinc-700'
+                    : 'bg-zinc-900/50 text-zinc-500 border border-zinc-800/80 hover:text-zinc-300 hover:border-zinc-700/50'}`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
 
-                      {/* Updated At */}
-                      <td className="px-6 py-4 text-xs text-zinc-500 font-mono">
-                        -
-                      </td>
+          {/* Error state */}
+          {isError && (
+            <div className="flex items-center gap-3 bg-red-900/20 border border-red-800/50 rounded-xl p-4 text-red-300">
+              <AlertCircle size={16} className="shrink-0" />
+              <span className="text-sm">Failed to load models. </span>
+              <button onClick={() => refetch()} className="text-sm underline hover:no-underline">Retry</button>
+            </div>
+          )}
 
-                      {/* Costs */}
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span className="text-[10px] font-mono text-zinc-300">
-                            In: <span className="font-semibold text-emerald-400">{formatPrice(pylos?.input_price_per_1m_usd ?? 0)}</span>
-                          </span>
-                          <span className="text-[10px] font-mono text-zinc-400">
-                            Out: <span className="font-semibold text-blue-400">{formatPrice(pylos?.output_price_per_1m_usd ?? 0)}</span>
-                          </span>
-                        </div>
-                      </td>
+          {/* Models Table Listing */}
+          {isLoading ? (
+            <div className="space-y-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-16 rounded-xl border border-zinc-800/50 bg-zinc-900/30 animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="border border-zinc-800/80 rounded-2xl bg-zinc-900/20 overflow-hidden shadow-2xl">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-zinc-900/40 border-b border-zinc-800/80">
+                    <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest w-[25%]">Model ID</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest w-[25%]">Model Information</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Credentials</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Created By</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Updated At</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-right">Costs</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Team ID</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Access Group</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-center">Status</th>
+                    <th className="px-6 py-4 w-20 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/50">
+                  {filtered.map(({ id, pylos }) => {
+                    const modelHash = getModelHash(pylos?.model_id ?? id);
+                    return (
+                      <Fragment key={id}>
+                        <tr
+                          className={`transition-colors cursor-pointer group hover:bg-zinc-900/40
+                            ${expandedId === id ? 'bg-zinc-900/30' : ''}
+                            ${pylos?.enabled === false ? 'opacity-40 grayscale' : ''}`}
+                          onClick={() => setExpandedId(expandedId === id ? null : id)}
+                        >
+                          {/* Model ID */}
+                          <td className="px-6 py-4">
+                            <span className="font-mono text-xs text-indigo-400 hover:text-indigo-300 font-semibold truncate block max-w-[180px]">
+                              {modelHash}
+                            </span>
+                          </td>
 
-                      {/* Team ID */}
-                      <td className="px-6 py-4 text-center text-xs text-zinc-500">
-                        -
-                      </td>
-
-                      {/* Access Group */}
-                      <td className="px-6 py-4 text-center text-xs text-zinc-500">
-                        -
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-6 py-4 text-center">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700/60 uppercase tracking-wider">
-                          Config Model
-                        </span>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
-                          {pylos && (
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => { setMutationError(null); setEditingModel(pylos) }}
-                                className="p-1.5 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-400/10 rounded-lg transition-all"
-                                title="Edit Model"
-                              >
-                                <Pencil size={13} />
-                              </button>
-                              <button
-                                onClick={() => setDeletingModel({ provider: pylos.provider, model_id: pylos.model_id })}
-                                className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
-                                title="Delete Model"
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                          {/* Model Information */}
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col">
+                              <span className="font-bold text-zinc-100 group-hover:text-white transition-colors text-xs">
+                                {pylos?.display_name || pylos?.model_id || id}
+                              </span>
+                              <span className="text-[10px] text-zinc-500 font-mono mt-0.5">
+                                {pylos?.provider ?? 'unknown'}/{pylos?.model_id ?? id}
+                              </span>
                             </div>
-                          )}
-                          <div className={`text-zinc-600 transition-transform duration-200 ${expandedId === id ? 'rotate-180' : ''}`}>
-                            <ChevronDown size={14} />
+                          </td>
+
+                          {/* Credentials */}
+                          <td className="px-6 py-4">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700/50">
+                              Manual
+                            </span>
+                          </td>
+
+                          {/* Created By */}
+                          <td className="px-6 py-4 text-xs text-zinc-400">
+                            Defined in config
+                          </td>
+
+                          {/* Updated At */}
+                          <td className="px-6 py-4 text-xs text-zinc-500 font-mono">
+                            -
+                          </td>
+
+                          {/* Costs */}
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex flex-col items-end gap-0.5">
+                              <span className="text-[10px] font-mono text-zinc-300">
+                                In: <span className="font-semibold text-emerald-400">{formatPrice(pylos?.input_price_per_1m_usd ?? 0)}</span>
+                              </span>
+                              <span className="text-[10px] font-mono text-zinc-400">
+                                Out: <span className="font-semibold text-blue-400">{formatPrice(pylos?.output_price_per_1m_usd ?? 0)}</span>
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Team ID */}
+                          <td className="px-6 py-4 text-center text-xs text-zinc-500">
+                            -
+                          </td>
+
+                          {/* Access Group */}
+                          <td className="px-6 py-4 text-center text-xs text-zinc-500">
+                            -
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-6 py-4 text-center">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700/60 uppercase tracking-wider">
+                              Config Model
+                            </span>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
+                              {pylos && (
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => { setMutationError(null); setEditingModel(pylos) }}
+                                    className="p-1.5 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-400/10 rounded-lg transition-all"
+                                    title="Edit Model"
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletingModel({ provider: pylos.provider, model_id: pylos.model_id })}
+                                    className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                                    title="Delete Model"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              )}
+                              <div className={`text-zinc-600 transition-transform duration-200 ${expandedId === id ? 'rotate-180' : ''}`}>
+                                <ChevronDown size={14} />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Expanded view */}
+                        {expandedId === id && pylos && (
+                          <tr className="bg-zinc-900/10 border-l-2 border-l-indigo-500">
+                            <td colSpan={10} className="px-8 py-6">
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+                                <div>
+                                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Technical Details</div>
+                                  <div className="space-y-1.5">
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-zinc-400">Context Window</span>
+                                      <span className="text-zinc-200 font-semibold font-mono">{formatContext(pylos.context_window)} tokens</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-zinc-400">Max Output</span>
+                                      <span className="text-zinc-200 font-semibold font-mono">{formatContext(pylos.max_output_tokens)} tokens</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-zinc-400">Provider</span>
+                                      <span className="text-zinc-200 font-semibold capitalize">{pylos.provider}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 font-semibold">Capabilities</div>
+                                  <div className="flex gap-1.5 flex-wrap">
+                                    <CapBadge ok={pylos.supports_vision} label="Vision" />
+                                    <CapBadge ok={pylos.supports_tools} label="Tools" />
+                                    <CapBadge ok={pylos.supports_embeddings} label="Embed" />
+                                    <CapBadge ok={pylos.supports_streaming} label="Stream" />
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Cost Estimation</div>
+                                  <div className="space-y-1 text-xs">
+                                    <div className="text-zinc-400">Avg. request cost</div>
+                                    <div className="text-base font-mono font-bold text-white">
+                                      ${((pylos.input_price_per_1m_usd / 1000) + (pylos.output_price_per_1m_usd / 2000)).toFixed(4)}
+                                    </div>
+                                    <div className="text-[10px] text-zinc-500">(1K prompt + 500 completion)</div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Integration Snippet</div>
+                                  <div className="bg-zinc-950/80 rounded-xl p-3 border border-zinc-800/80 font-mono text-[10px] text-emerald-400 overflow-x-auto">
+                                    {`model: "${pylos.model_id}", // Managed by Pylos`}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+
+                  {filtered.length === 0 && !isError && (
+                    <tr>
+                      <td colSpan={10} className="py-24 text-center">
+                        <div className="flex flex-col items-center justify-center text-zinc-500 space-y-4">
+                          <div className="w-12 h-12 rounded-full bg-zinc-800/30 flex items-center justify-center">
+                            <Search size={18} className="text-zinc-600" />
                           </div>
+                          <div className="text-xs">No models found matching your criteria</div>
+                          <button 
+                            onClick={() => { setSearch(''); setProvider('all') }}
+                            className="text-xs text-indigo-400 hover:underline"
+                          >
+                            Clear all filters
+                          </button>
                         </div>
                       </td>
                     </tr>
-
-                    {/* Expanded view */}
-                    {expandedId === id && pylos && (
-                      <tr className="bg-zinc-900/10 border-l-2 border-l-indigo-500">
-                        <td colSpan={10} className="px-8 py-6">
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-                            <div>
-                              <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Technical Details</div>
-                              <div className="space-y-1.5">
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-zinc-400">Context Window</span>
-                                  <span className="text-zinc-200 font-semibold font-mono">{formatContext(pylos.context_window)} tokens</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-zinc-400">Max Output</span>
-                                  <span className="text-zinc-200 font-semibold font-mono">{formatContext(pylos.max_output_tokens)} tokens</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-zinc-400">Provider</span>
-                                  <span className="text-zinc-200 font-semibold capitalize">{pylos.provider}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 font-semibold">Capabilities</div>
-                              <div className="flex gap-1.5 flex-wrap">
-                                <CapBadge ok={pylos.supports_vision} label="Vision" />
-                                <CapBadge ok={pylos.supports_tools} label="Tools" />
-                                <CapBadge ok={pylos.supports_embeddings} label="Embed" />
-                                <CapBadge ok={pylos.supports_streaming} label="Stream" />
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Cost Estimation</div>
-                              <div className="space-y-1 text-xs">
-                                <div className="text-zinc-400">Avg. request cost</div>
-                                <div className="text-base font-mono font-bold text-white">
-                                  ${((pylos.input_price_per_1m_usd / 1000) + (pylos.output_price_per_1m_usd / 2000)).toFixed(4)}
-                                </div>
-                                <div className="text-[10px] text-zinc-500">(1K prompt + 500 completion)</div>
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Integration Snippet</div>
-                              <div className="bg-zinc-950/80 rounded-xl p-3 border border-zinc-800/80 font-mono text-[10px] text-emerald-400 overflow-x-auto">
-                                {`model: "${pylos.model_id}", // Managed by Pylos`}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                )
-              })}
-
-              {filtered.length === 0 && !isError && (
-                <tr>
-                  <td colSpan={10} className="py-24 text-center">
-                    <div className="flex flex-col items-center justify-center text-zinc-500 space-y-4">
-                      <div className="w-12 h-12 rounded-full bg-zinc-800/30 flex items-center justify-center">
-                        <Search size={18} className="text-zinc-600" />
-                      </div>
-                      <div className="text-xs">No models found matching your criteria</div>
-                      <button 
-                        onClick={() => { setSearch(''); setProvider('all') }}
-                        className="text-xs text-indigo-400 hover:underline"
-                      >
-                        Clear all filters
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
 
       {/* Modals */}

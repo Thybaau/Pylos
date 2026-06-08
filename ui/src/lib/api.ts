@@ -348,6 +348,15 @@ export const modelsApi = {
 
   pull: (provider: string) =>
     api.post(`/v1/models/pull/${provider}`).then(r => r.data),
+
+  getPricingStatus: () =>
+    api.get<{ source_url: string; last_reload_ms: number | null; models_count: number; periodic_schedule: string | null }>('/v1/models/pricing/status').then(r => r.data),
+
+  reloadPricingData: () =>
+    api.post<{ success: boolean; message: string; status: any }>('/v1/models/pricing/reload').then(r => r.data),
+
+  schedulePricingReload: (schedule: string | null) =>
+    api.post<{ success: boolean; status: any }>('/v1/models/pricing/schedule', { schedule }).then(r => r.data),
 }
 
 export const healthApi = {

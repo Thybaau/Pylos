@@ -45,6 +45,15 @@ pub struct ModelInfo {
     pub enabled: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PricingReloadStatus {
+    pub source_url: String,
+    pub last_reload_ms: Option<i64>,
+    pub models_count: i32,
+    pub periodic_schedule: Option<String>,
+}
+
+
 #[derive(Clone)]
 pub struct ModelCatalog {
     pool: Pool,
@@ -327,6 +336,83 @@ impl ModelCatalog {
             .rows_affected(),
         };
         Ok(rows_affected > 0)
+    }
+
+    pub async fn get_pricing_status(&self) -> Result<PricingReloadStatus, sqlx::Error> {
+        match &self.pool {
+            Pool::Sqlite(pool) => {
+                let row = sqlx::query("SELECT source_url, last_reload_ms, models_count, periodic_schedule FROM pricing_reload_status WHERE id = 1")
+                    .fetch_one(pool)
+                    .await?;
+                Ok(PricingReloadStatus {
+                    source_url: row.try_get("source_url")?,
+                    last_reload_ms: row.try_get("last_reload_ms").ok(),
+                    models_count: row.try_get::<i64, _>("models_count")? as i32,
+                    periodic_schedule: row.try_get("periodic_schedule").ok(),
+                })
+            }
+            Pool::Postgres(pool) => {
+                let row = sqlx::query("SELECT source_url, last_reload_ms, models_count, periodic_schedule FROM pricing_reload_status WHERE id = 1")
+                    .fetch_one(pool)
+                    .await?;
+                Ok(PricingReloadStatus {
+                    source_url: row.try_get("source_url")?,
+                    last_reload_ms: row.try_get("last_reload_ms").ok(),
+                    models_count: row.try_get::<i32, _>("models_count")?,
+                    periodic_schedule: row.try_get("periodic_schedule").ok(),
+                })
+            }
+        }
+    }
+
+    pub async fn update_pricing_status(
+        &self,
+        source_url: &str,
+        last_reload_ms: Option<i64>,
+        models_count: i32,
+        periodic_schedule: Option<&str>,
+    ) -> Result<(), sqlx::Error> {
+        match &self.pool {
+            Pool::Sqlite(pool) => {
+                sqlx::query(
+                    r#"
+                    INSERT INTO pricing_reload_status (id, source_url, last_reload_ms, models_count, periodic_schedule)
+                    VALUES (1, $1, $2, $3, $4)
+                    ON CONFLICT(id) DO UPDATE SET
+                        source_url = excluded.source_url,
+                        last_reload_ms = excluded.last_reload_ms,
+                        models_count = excluded.models_count,
+                        periodic_schedule = excluded.periodic_schedule
+                    "#,
+                )
+                .bind(source_url)
+                .bind(last_reload_ms)
+                .bind(models_count as i64)
+                .bind(periodic_schedule)
+                .execute(pool)
+                .await?;
+            }
+            Pool::Postgres(pool) => {
+                sqlx::query(
+                    r#"
+                    INSERT INTO pricing_reload_status (id, source_url, last_reload_ms, models_count, periodic_schedule)
+                    VALUES (1, $1, $2, $3, $4)
+                    ON CONFLICT(id) DO UPDATE SET
+                        source_url = excluded.source_url,
+                        last_reload_ms = excluded.last_reload_ms,
+                        models_count = excluded.models_count,
+                        periodic_schedule = excluded.periodic_schedule
+                    "#,
+                )
+                .bind(source_url)
+                .bind(last_reload_ms)
+                .bind(models_count)
+                .bind(periodic_schedule)
+                .execute(pool)
+                .await?;
+            }
+        }
+        Ok(())
     }
 }
 

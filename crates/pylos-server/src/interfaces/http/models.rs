@@ -523,3 +523,186 @@ pub async fn pull_provider_models(
     }))
     .into_response()
 }
+
+pub async fn get_pricing_status(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    match state.model_catalog.get_pricing_status().await {
+        Ok(status) => Json(status).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SchedulePricingRequest {
+    pub schedule: Option<String>,
+}
+
+pub async fn schedule_pricing_reload(
+    State(state): State<AppState>,
+    Json(req): Json<SchedulePricingRequest>,
+) -> impl IntoResponse {
+    let mut current_status = match state.model_catalog.get_pricing_status().await {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+    current_status.periodic_schedule = req.schedule.clone();
+    match state
+        .model_catalog
+        .update_pricing_status(
+            &current_status.source_url,
+            current_status.last_reload_ms,
+            current_status.models_count,
+            current_status.periodic_schedule.as_deref(),
+        )
+        .await
+    {
+        Ok(()) => Json(json!({ "success": true, "status": current_status })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn reload_pricing_data(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let mut current_status = match state.model_catalog.get_pricing_status().await {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
+
+    let resp = match client.get(&current_status.source_url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": format!("Failed to fetch pricing data: {}", e) })),
+            )
+                .into_response();
+        }
+    };
+
+    let body = match resp.json::<serde_json::Value>().await {
+        Ok(b) => b,
+        Err(e) => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({ "error": format!("Failed to parse JSON body: {}", e) })),
+            )
+                .into_response();
+        }
+    };
+
+    let obj = match body.as_object() {
+        Some(o) => o,
+        None => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({ "error": "JSON root is not an object" })),
+            )
+                .into_response();
+        }
+    };
+
+    let mut upserted_count = 0;
+
+    for (key, val) in obj {
+        if key == "sample_spec" {
+            continue;
+        }
+        let litellm_provider = val["litellm_provider"].as_str().unwrap_or("unknown").to_string();
+        
+        let model_id = if key.starts_with(&format!("{}/", litellm_provider)) {
+            key.strip_prefix(&format!("{}/", litellm_provider)).unwrap().to_string()
+        } else {
+            key.to_string()
+        };
+
+        let id = format!("{}/{}", litellm_provider, model_id);
+        
+        let mode = val["mode"].as_str().unwrap_or("chat");
+        let is_embed = mode == "embedding";
+        
+        let input_cost = val["input_cost_per_token"].as_f64().unwrap_or(0.0) * 1_000_000.0;
+        let output_cost = val["output_cost_per_token"].as_f64().unwrap_or(0.0) * 1_000_000.0;
+
+        let max_input_tokens = val["max_input_tokens"].as_u64()
+            .or_else(|| val["max_tokens"].as_u64())
+            .unwrap_or(0) as u32;
+
+        let max_output_tokens = val["max_output_tokens"].as_u64()
+            .or_else(|| val["max_tokens"].as_u64())
+            .unwrap_or(0) as u32;
+
+        let supports_vision = val["supports_vision"].as_bool().unwrap_or(false);
+        let supports_tools = val["supports_function_calling"].as_bool()
+            .or_else(|| val["supports_parallel_function_calling"].as_bool())
+            .unwrap_or(!is_embed);
+
+        let info = ModelInfo {
+            id,
+            provider: litellm_provider,
+            model_id: model_id.clone(),
+            display_name: Some(model_id),
+            context_window: max_input_tokens,
+            max_output_tokens,
+            input_price_per_1m_usd: input_cost,
+            output_price_per_1m_usd: output_cost,
+            supports_vision,
+            supports_tools,
+            supports_streaming: !is_embed,
+            supports_embeddings: is_embed,
+            is_deprecated: false,
+            enabled: true,
+        };
+
+        if state.model_catalog.upsert_model(&info).await.is_ok() {
+            upserted_count += 1;
+        }
+    }
+
+    let now = pylos_application::log_store::now_ms();
+    current_status.last_reload_ms = Some(now);
+    current_status.models_count = upserted_count;
+
+    let _ = state
+        .model_catalog
+        .update_pricing_status(
+            &current_status.source_url,
+            current_status.last_reload_ms,
+            current_status.models_count,
+            current_status.periodic_schedule.as_deref(),
+        )
+        .await;
+
+    Json(json!({
+        "success": true,
+        "message": format!("Successfully loaded {} models.", upserted_count),
+        "status": current_status
+    }))
+    .into_response()
+}

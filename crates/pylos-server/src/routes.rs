@@ -50,6 +50,18 @@ pub fn create_router(state: AppState) -> Router {
             "/v1/models/catalog/:provider/:model_id",
             delete(models::delete_catalog_model),
         )
+        .route(
+            "/v1/models/pricing/status",
+            get(models::get_pricing_status),
+        )
+        .route(
+            "/v1/models/pricing/reload",
+            post(models::reload_pricing_data),
+        )
+        .route(
+            "/v1/models/pricing/schedule",
+            post(models::schedule_pricing_reload),
+        )
         // Provider management routes (protected)
         .route("/providers", get(config::list_providers))
         .route("/providers", post(config::create_provider))

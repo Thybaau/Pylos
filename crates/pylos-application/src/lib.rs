@@ -36,7 +36,7 @@ pub use log_store::{
     build_log_entry, generate_log_id, now_ms, LogEntry, LogFilter, LogStats, LogStatus, LogStore,
 };
 pub use memory_plugin::MemoryPlugin;
-pub use model_catalog::{ModelCatalog, ModelInfo};
+pub use model_catalog::{ModelCatalog, ModelInfo, PricingReloadStatus};
 pub use otel_plugin::{OtelConfig, OtelPlugin};
 pub use pg_log_store::PgLogStore;
 pub use prefix_cache::PrefixCachePlugin;
