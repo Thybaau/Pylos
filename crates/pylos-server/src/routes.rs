@@ -60,8 +60,14 @@ pub fn create_router(state: AppState) -> Router {
             post(models::schedule_pricing_reload),
         )
         .route("/v1/models/health", get(models::list_models_health))
-        .route("/v1/models/health/check", post(models::run_model_health_check))
-        .route("/v1/models/health/check_all", post(models::run_all_models_health_check))
+        .route(
+            "/v1/models/health/check",
+            post(models::run_model_health_check),
+        )
+        .route(
+            "/v1/models/health/check_all",
+            post(models::run_all_models_health_check),
+        )
         // Provider management routes (protected)
         .route("/providers", get(config::list_providers))
         .route("/providers", post(config::create_provider))

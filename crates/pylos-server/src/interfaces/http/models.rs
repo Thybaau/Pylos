@@ -7,9 +7,9 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-use pylos_application::{ModelInfo, ModelHealth};
-use pylos_core::domain::openai::{ChatCompletionRequest, ChatCompletionMessage, MessageRole};
+use pylos_application::{ModelHealth, ModelInfo};
 use pylos_core::domain::embedding::EmbeddingRequest;
+use pylos_core::domain::openai::{ChatCompletionMessage, ChatCompletionRequest, MessageRole};
 use pylos_core::domain::request::PylosRequest;
 
 use crate::state::AppState;
@@ -757,12 +757,19 @@ pub async fn run_all_models_health_check(State(state): State<AppState>) -> impl 
     Json(results).into_response()
 }
 
-async fn execute_single_health_check(state: &AppState, provider_name: &str, model_id: &str) -> ModelHealth {
+async fn execute_single_health_check(
+    state: &AppState,
+    provider_name: &str,
+    model_id: &str,
+) -> ModelHealth {
     let now = pylos_application::log_store::now_ms();
     let id = format!("{}/{}", provider_name, model_id);
 
-    let providers = state.orchestrator.providers.read().await;
-    let found = providers.iter().find(|(provider, _)| provider.name() == provider_name);
+    let providers_arc = state.orchestrator.providers();
+    let providers = providers_arc.read().await;
+    let found = providers
+        .iter()
+        .find(|(provider, _)| provider.name() == provider_name);
 
     let (provider, config) = match found {
         Some((p, c)) => (p, c),
@@ -772,7 +779,10 @@ async fn execute_single_health_check(state: &AppState, provider_name: &str, mode
                 provider: provider_name.to_string(),
                 model_id: model_id.to_string(),
                 health_status: "unhealthy".to_string(),
-                error_details: Some(format!("Provider '{}' not configured or active", provider_name)),
+                error_details: Some(format!(
+                    "Provider '{}' not configured or active",
+                    provider_name
+                )),
                 last_check_ms: Some(now),
                 last_success_ms: None,
             };
@@ -783,7 +793,7 @@ async fn execute_single_health_check(state: &AppState, provider_name: &str, mode
     let res = if is_embed {
         let req = EmbeddingRequest {
             model: model_id.to_string(),
-            input: pylos_core::domain::embedding::EmbeddingInput::String("ping".to_string()),
+            input: pylos_core::domain::embedding::EmbeddingInput::Single("ping".to_string()),
             dimensions: None,
             user: None,
             encoding_format: None,
@@ -795,27 +805,44 @@ async fn execute_single_health_check(state: &AppState, provider_name: &str, mode
             messages: vec![ChatCompletionMessage {
                 role: MessageRole::User,
                 content: Some("ping".to_string()),
-                ..Default::default()
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+                reasoning_content: None,
             }],
             max_tokens: Some(5),
-            ..Default::default()
+            temperature: None,
+            top_p: None,
+            n: None,
+            stream: None,
+            stop: None,
+            presence_penalty: None,
+            frequency_penalty: None,
+            logit_bias: None,
+            user: None,
+            tools: None,
+            tool_choice: None,
+            response_format: None,
+            seed: None,
+            top_k: None,
+            min_p: None,
+            repetition_penalty: None,
+            max_completion_tokens: None,
         };
         let request = PylosRequest::ChatCompletion(req);
         provider.complete(&request, config).await.map(|_| ())
     };
 
     match res {
-        Ok(()) => {
-            ModelHealth {
-                id,
-                provider: provider_name.to_string(),
-                model_id: model_id.to_string(),
-                health_status: "healthy".to_string(),
-                error_details: None,
-                last_check_ms: Some(now),
-                last_success_ms: Some(now),
-            }
-        }
+        Ok(()) => ModelHealth {
+            id,
+            provider: provider_name.to_string(),
+            model_id: model_id.to_string(),
+            health_status: "healthy".to_string(),
+            error_details: None,
+            last_check_ms: Some(now),
+            last_success_ms: Some(now),
+        },
         Err(e) => {
             let mut last_success = None;
             if let Ok(health_list) = state.model_catalog.list_model_health().await {

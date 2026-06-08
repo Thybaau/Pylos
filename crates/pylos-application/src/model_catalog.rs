@@ -56,7 +56,6 @@ pub struct ModelHealth {
     pub last_success_ms: Option<i64>,
 }
 
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PricingReloadStatus {
     pub source_url: String,
@@ -439,32 +438,42 @@ impl ModelCatalog {
         let sql = "SELECT id, provider, model_id, health_status, error_details, last_check_ms, last_success_ms FROM model_health";
         match &self.pool {
             Pool::Sqlite(pool) => {
-                let rows = sqlx::query(sql)
-                    .fetch_all(pool)
-                    .await?;
-                Ok(rows.iter().map(|r| ModelHealth {
-                    id: r.try_get("id").unwrap_or_default(),
-                    provider: r.try_get("provider").unwrap_or_default(),
-                    model_id: r.try_get("model_id").unwrap_or_default(),
-                    health_status: r.try_get("health_status").unwrap_or_else(|_| "none".to_string()),
-                    error_details: r.try_get("error_details").ok(),
-                    last_check_ms: r.try_get::<Option<i64>, _>("last_check_ms").unwrap_or(None),
-                    last_success_ms: r.try_get::<Option<i64>, _>("last_success_ms").unwrap_or(None),
-                }).collect())
+                let rows = sqlx::query(sql).fetch_all(pool).await?;
+                Ok(rows
+                    .iter()
+                    .map(|r| ModelHealth {
+                        id: r.try_get("id").unwrap_or_default(),
+                        provider: r.try_get("provider").unwrap_or_default(),
+                        model_id: r.try_get("model_id").unwrap_or_default(),
+                        health_status: r
+                            .try_get("health_status")
+                            .unwrap_or_else(|_| "none".to_string()),
+                        error_details: r.try_get("error_details").ok(),
+                        last_check_ms: r.try_get::<Option<i64>, _>("last_check_ms").unwrap_or(None),
+                        last_success_ms: r
+                            .try_get::<Option<i64>, _>("last_success_ms")
+                            .unwrap_or(None),
+                    })
+                    .collect())
             }
             Pool::Postgres(pool) => {
-                let rows = sqlx::query::<sqlx::Postgres>(sql)
-                    .fetch_all(pool)
-                    .await?;
-                Ok(rows.iter().map(|r| ModelHealth {
-                    id: r.try_get("id").unwrap_or_default(),
-                    provider: r.try_get("provider").unwrap_or_default(),
-                    model_id: r.try_get("model_id").unwrap_or_default(),
-                    health_status: r.try_get("health_status").unwrap_or_else(|_| "none".to_string()),
-                    error_details: r.try_get("error_details").ok(),
-                    last_check_ms: r.try_get::<Option<i64>, _>("last_check_ms").unwrap_or(None),
-                    last_success_ms: r.try_get::<Option<i64>, _>("last_success_ms").unwrap_or(None),
-                }).collect())
+                let rows = sqlx::query::<sqlx::Postgres>(sql).fetch_all(pool).await?;
+                Ok(rows
+                    .iter()
+                    .map(|r| ModelHealth {
+                        id: r.try_get("id").unwrap_or_default(),
+                        provider: r.try_get("provider").unwrap_or_default(),
+                        model_id: r.try_get("model_id").unwrap_or_default(),
+                        health_status: r
+                            .try_get("health_status")
+                            .unwrap_or_else(|_| "none".to_string()),
+                        error_details: r.try_get("error_details").ok(),
+                        last_check_ms: r.try_get::<Option<i64>, _>("last_check_ms").unwrap_or(None),
+                        last_success_ms: r
+                            .try_get::<Option<i64>, _>("last_success_ms")
+                            .unwrap_or(None),
+                    })
+                    .collect())
             }
         }
     }

@@ -37,6 +37,11 @@ pub struct InferenceOrchestrator {
 }
 
 impl InferenceOrchestrator {
+    pub fn new(providers: ProviderList, plugins: Vec<Arc<dyn LlmPlugin>>) -> Self {
+        Self {
+            providers: Arc::new(RwLock::new(providers)),
+            plugins,
+            circuit_breakers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
