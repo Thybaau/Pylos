@@ -53,7 +53,6 @@ pub struct PricingReloadStatus {
     pub periodic_schedule: Option<String>,
 }
 
-
 #[derive(Clone)]
 pub struct ModelCatalog {
     pool: Pool,

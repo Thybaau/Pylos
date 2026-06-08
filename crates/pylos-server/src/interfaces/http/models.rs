@@ -524,9 +524,7 @@ pub async fn pull_provider_models(
     .into_response()
 }
 
-pub async fn get_pricing_status(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn get_pricing_status(State(state): State<AppState>) -> impl IntoResponse {
     match state.model_catalog.get_pricing_status().await {
         Ok(status) => Json(status).into_response(),
         Err(e) => (
@@ -576,9 +574,7 @@ pub async fn schedule_pricing_reload(
     }
 }
 
-pub async fn reload_pricing_data(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn reload_pricing_data(State(state): State<AppState>) -> impl IntoResponse {
     let mut current_status = match state.model_catalog.get_pricing_status().await {
         Ok(s) => s,
         Err(e) => {
@@ -634,32 +630,40 @@ pub async fn reload_pricing_data(
         if key == "sample_spec" {
             continue;
         }
-        let litellm_provider = val["litellm_provider"].as_str().unwrap_or("unknown").to_string();
-        
+        let litellm_provider = val["litellm_provider"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string();
+
         let model_id = if key.starts_with(&format!("{}/", litellm_provider)) {
-            key.strip_prefix(&format!("{}/", litellm_provider)).unwrap().to_string()
+            key.strip_prefix(&format!("{}/", litellm_provider))
+                .unwrap()
+                .to_string()
         } else {
             key.to_string()
         };
 
         let id = format!("{}/{}", litellm_provider, model_id);
-        
+
         let mode = val["mode"].as_str().unwrap_or("chat");
         let is_embed = mode == "embedding";
-        
+
         let input_cost = val["input_cost_per_token"].as_f64().unwrap_or(0.0) * 1_000_000.0;
         let output_cost = val["output_cost_per_token"].as_f64().unwrap_or(0.0) * 1_000_000.0;
 
-        let max_input_tokens = val["max_input_tokens"].as_u64()
+        let max_input_tokens = val["max_input_tokens"]
+            .as_u64()
             .or_else(|| val["max_tokens"].as_u64())
             .unwrap_or(0) as u32;
 
-        let max_output_tokens = val["max_output_tokens"].as_u64()
+        let max_output_tokens = val["max_output_tokens"]
+            .as_u64()
             .or_else(|| val["max_tokens"].as_u64())
             .unwrap_or(0) as u32;
 
         let supports_vision = val["supports_vision"].as_bool().unwrap_or(false);
-        let supports_tools = val["supports_function_calling"].as_bool()
+        let supports_tools = val["supports_function_calling"]
+            .as_bool()
             .or_else(|| val["supports_parallel_function_calling"].as_bool())
             .unwrap_or(!is_embed);
 
