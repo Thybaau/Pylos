@@ -1,9 +1,5 @@
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard,
-  ScrollText,
-  Server,
-  KeyRound,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -24,32 +20,37 @@ import {
   Database,
   ShieldCheck,
   LogOut,
+  KeyRound,
+  Server,
+  Bot,
+  Cpu,
+  ShieldAlert,
+  Code2,
+  LayoutGrid,
+  HardDrive,
+  Terminal,
+  Tag,
+  Puzzle,
+  History,
+  Sliders,
+  Bell,
+  Settings,
+  DollarSign,
+  Palette,
+  ScrollText,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { healthApi, authApi } from '../lib/api'
 
-const NAV_MAIN = [
-  { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/analytics',  icon: BarChart2,       label: 'RUM Analytics' },
-  { to: '/playground', icon: FlaskConical,    label: 'Playground' },
-  { to: '/logs',       icon: ScrollText,      label: 'Logs' },
-  { to: '/providers',  icon: Server,          label: 'Providers' },
+const AI_GATEWAY = [
   { to: '/keys',       icon: KeyRound,        label: 'Virtual Keys' },
-  { to: '/models',     icon: BookOpen,        label: 'Models' },
+  { to: '/playground', icon: FlaskConical,    label: 'Playground' },
+  { to: '/models',     icon: Server,          label: 'Models + Endpoints' },
+  { to: '/agents',     icon: Bot,             label: 'Agents' },
+  { to: '/mcp-servers',icon: Cpu,             label: 'MCP Servers' },
   { to: '/guardrails', icon: Shield,          label: 'Guardrails' },
-]
-
-const NAV_ACCESS = [
-  { to: '/teams',          icon: Users,          label: 'Teams' },
-  { to: '/users',          icon: User,           label: 'Internal Users' },
-  { to: '/organizations',  icon: Landmark,       label: 'Organizations' },
-  { to: '/access-groups',  icon: Layers,         label: 'Access Groups' },
-  { to: '/budgets',        icon: CreditCard,     label: 'Budgets' },
-]
-
-const NAV_POLICIES = [
-  { to: '/policies', icon: FileBadge, label: 'Policies' },
+  { to: '/policies',   icon: FileBadge,       label: 'Policies' },
 ]
 
 const NAV_TOOLS = [
@@ -58,9 +59,48 @@ const NAV_TOOLS = [
   { to: '/tools/policies', icon: ShieldCheck, label: 'Tool Policies' },
 ]
 
+const OBSERVABILITY = [
+  { to: '/analytics',  icon: BarChart2,       label: 'Usage' },
+  { to: '/logs',       icon: ScrollText,      label: 'Logs' },
+  { to: '/guardrails-monitor', icon: ShieldAlert, label: 'Guardrails Monitor' },
+]
+
+const ACCESS_CONTROL = [
+  { to: '/teams',          icon: Users,          label: 'Teams' },
+  { to: '/users',          icon: User,           label: 'Internal Users' },
+  { to: '/organizations',  icon: Landmark,       label: 'Organizations' },
+  { to: '/access-groups',  icon: Layers,         label: 'Access Groups' },
+  { to: '/budgets',        icon: CreditCard,     label: 'Budgets' },
+]
+
+const DEVELOPER_TOOLS = [
+  { to: '/api-reference',     icon: Code2,          label: 'API Reference' },
+  { to: '/ai-hub',            icon: LayoutGrid,     label: 'AI Hub' },
+  { to: '/learning-resources',icon: BookOpen,       label: 'Learning Resources' },
+]
+
+const EXPERIMENTAL = [
+  { to: '/experimental/caching',        icon: HardDrive,  label: 'Caching' },
+  { to: '/experimental/prompts',        icon: Terminal,   label: 'Prompts' },
+  { to: '/experimental/api-playground', icon: FlaskConical,label: 'API Playground' },
+  { to: '/experimental/tag-management', icon: Tag,        label: 'Tag Management' },
+  { to: '/experimental/claude-plugins', icon: Puzzle,     label: 'Claude Code Plugins' },
+  { to: '/experimental/old-usage',      icon: History,    label: 'Old Usage' },
+]
+
+const SETTINGS_SUB = [
+  { to: '/settings/router',         icon: Sliders,    label: 'Router Settings' },
+  { to: '/settings/logging-alerts', icon: Bell,       label: 'Logging & Alerts' },
+  { to: '/settings/admin',          icon: Settings,   label: 'Admin Settings', hasDot: true },
+  { to: '/settings/cost-tracking',  icon: DollarSign, label: 'Cost Tracking' },
+  { to: '/settings/ui-theme',       icon: Palette,    label: 'UI Theme' },
+]
+
 export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
   const [collapsed, setCollapsed] = useState(false)
   const [toolsExpanded, setToolsExpanded] = useState(true)
+  const [experimentalExpanded, setExperimentalExpanded] = useState(true)
+  const [settingsExpanded, setSettingsExpanded] = useState(true)
 
   const userJson = typeof window !== 'undefined' ? sessionStorage.getItem('pylos_user') : null;
   const user = userJson ? JSON.parse(userJson) : null;
@@ -112,7 +152,17 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
 
         {/* Nav */}
         <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-          {NAV_MAIN.map(({ to, icon: Icon, label }) => (
+          
+          {/* AI GATEWAY SECTION */}
+          {(!collapsed || isOpen) ? (
+            <div className="px-3 pt-2 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+              AI Gateway
+            </div>
+          ) : (
+            <div className="mx-3 mt-2 mb-2 border-t border-zinc-800/50" />
+          )}
+
+          {AI_GATEWAY.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
@@ -135,29 +185,7 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
             </NavLink>
           ))}
 
-          {NAV_POLICIES.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              onClick={onClose}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
-                ${isActive
-                  ? 'bg-zinc-800 text-white'
-                  : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0" />}
-                  <Icon size={18} className="flex-shrink-0" />
-                  {(!collapsed || isOpen) && <span>{label}</span>}
-                </>
-              )}
-            </NavLink>
-          ))}
-
+          {/* Tools Dropdown */}
           <div className="flex flex-col mt-1">
             <button
               onClick={() => {
@@ -202,15 +230,16 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
             )}
           </div>
 
+          {/* OBSERVABILITY SECTION */}
           {(!collapsed || isOpen) ? (
             <div className="px-3 pt-6 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-              Access Control
+              Observability
             </div>
           ) : (
             <div className="mx-3 mt-6 mb-2 border-t border-zinc-800/50" />
           )}
 
-          {NAV_ACCESS.map(({ to, icon: Icon, label }) => (
+          {OBSERVABILITY.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
@@ -232,6 +261,176 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
               )}
             </NavLink>
           ))}
+
+          {/* ACCESS CONTROL SECTION */}
+          {(!collapsed || isOpen) ? (
+            <div className="px-3 pt-6 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+              Access Control
+            </div>
+          ) : (
+            <div className="mx-3 mt-6 mb-2 border-t border-zinc-800/50" />
+          )}
+
+          {ACCESS_CONTROL.map(({ to, icon: Icon, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              onClick={onClose}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
+                ${isActive
+                  ? 'bg-zinc-800 text-white'
+                  : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0" />}
+                  <Icon size={18} className="flex-shrink-0" />
+                  {(!collapsed || isOpen) && <span>{label}</span>}
+                </>
+              )}
+            </NavLink>
+          ))}
+
+          {/* DEVELOPER TOOLS SECTION */}
+          {(!collapsed || isOpen) ? (
+            <div className="px-3 pt-6 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+              Developer Tools
+            </div>
+          ) : (
+            <div className="mx-3 mt-6 mb-2 border-t border-zinc-800/50" />
+          )}
+
+          {DEVELOPER_TOOLS.map(({ to, icon: Icon, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              onClick={onClose}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
+                ${isActive
+                  ? 'bg-zinc-800 text-white'
+                  : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0" />}
+                  <Icon size={18} className="flex-shrink-0" />
+                  {(!collapsed || isOpen) && <span>{label}</span>}
+                </>
+              )}
+            </NavLink>
+          ))}
+
+          {/* Experimental Dropdown */}
+          <div className="flex flex-col mt-1">
+            <button
+              onClick={() => {
+                if (collapsed) setCollapsed(false);
+                setExperimentalExpanded(!experimentalExpanded);
+              }}
+              className="flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100 w-full"
+            >
+              <div className="flex items-center gap-3">
+                <FlaskConical size={18} className="flex-shrink-0" />
+                {(!collapsed || isOpen) && <span>Experimental</span>}
+              </div>
+              {(!collapsed || isOpen) && (
+                experimentalExpanded ? <ChevronUp size={16} className="opacity-70" /> : <ChevronDown size={16} className="opacity-70" />
+              )}
+            </button>
+            {experimentalExpanded && (!collapsed || isOpen) && (
+              <div className="flex flex-col mt-1 ml-4 space-y-1 border-l border-zinc-800/50 pl-2">
+                {EXPERIMENTAL.map(({ to, icon: Icon, label }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    onClick={onClose}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
+                      ${isActive
+                        ? 'bg-zinc-800 text-white'
+                        : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
+                      }`
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0 absolute -ml-4" />}
+                        <Icon size={16} className="flex-shrink-0" />
+                        <span>{label}</span>
+                      </>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* SETTINGS SECTION */}
+          {(!collapsed || isOpen) ? (
+            <div className="px-3 pt-6 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+              Settings
+            </div>
+          ) : (
+            <div className="mx-3 mt-6 mb-2 border-t border-zinc-800/50" />
+          )}
+
+          {/* Settings Dropdown with Badge */}
+          <div className="flex flex-col mt-1">
+            <button
+              onClick={() => {
+                if (collapsed) setCollapsed(false);
+                setSettingsExpanded(!settingsExpanded);
+              }}
+              className="flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100 w-full"
+            >
+              <div className="flex items-center gap-3">
+                <Settings size={18} className="flex-shrink-0" />
+                {(!collapsed || isOpen) && (
+                  <span className="flex items-center">
+                    Settings
+                    <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-semibold ml-2">New</span>
+                  </span>
+                )}
+              </div>
+              {(!collapsed || isOpen) && (
+                settingsExpanded ? <ChevronUp size={16} className="opacity-70" /> : <ChevronDown size={16} className="opacity-70" />
+              )}
+            </button>
+            {settingsExpanded && (!collapsed || isOpen) && (
+              <div className="flex flex-col mt-1 ml-4 space-y-1 border-l border-zinc-800/50 pl-2">
+                {SETTINGS_SUB.map(({ to, icon: Icon, label, hasDot }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    onClick={onClose}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
+                      ${isActive
+                        ? 'bg-zinc-800 text-white'
+                        : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
+                      }`
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0 absolute -ml-4" />}
+                        <Icon size={16} className="flex-shrink-0" />
+                        <span className="flex-1 truncate">{label}</span>
+                        {hasDot && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0 ml-1 animate-pulse" />}
+                      </>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
+
         </nav>
 
         {/* Status indicator */}
