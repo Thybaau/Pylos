@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { modelsApi, type ModelInfo } from '../lib/api'
 import {
   ChevronDown, Pencil, Trash2, X, Check,
-  AlertTriangle, RotateCcw, AlertCircle, Search, Filter, Info, RefreshCw
+  AlertTriangle, RotateCcw, AlertCircle, Search, Filter, Info, RefreshCw, Plus
 } from 'lucide-react'
 
 const PROVIDERS = ['all', 'openai', 'anthropic', 'gemini', 'cohere', 'groq', 'mistral', 'xai', 'deepseek', 'bedrock', 'ollama-jo3', 'lemonade-jo3', 'lemonade-optimus']
@@ -447,6 +447,161 @@ function PriceDataManagementTab() {
   )
 }
 
+interface AliasEntry {
+  alias_name: string;
+  target_model: string;
+}
+
+function ModelGroupAliasTab() {
+  const [aliases, setAliases] = useState<AliasEntry[]>(() => {
+    const saved = localStorage.getItem('pylos_model_group_aliases')
+    return saved ? JSON.parse(saved) : []
+  })
+
+  const [aliasName, setAliasName] = useState('')
+  const [targetModel, setTargetModel] = useState('')
+
+  const saveAliases = (newAliases: AliasEntry[]) => {
+    setAliases(newAliases)
+    localStorage.setItem('pylos_model_group_aliases', JSON.stringify(newAliases))
+  }
+
+  const handleAdd = () => {
+    if (!aliasName.trim() || !targetModel.trim()) return
+    if (aliases.some(a => a.alias_name.toLowerCase() === aliasName.trim().toLowerCase())) {
+      alert("This alias already exists.")
+      return
+    }
+    const newAliases = [...aliases, { alias_name: aliasName.trim(), target_model: targetModel.trim() }]
+    saveAliases(newAliases)
+    setAliasName('')
+    setTargetModel('')
+  }
+
+  const handleDelete = (name: string) => {
+    const newAliases = aliases.filter(a => a.alias_name !== name)
+    saveAliases(newAliases)
+  }
+
+  const generateYaml = () => {
+    if (aliases.length === 0) {
+      return `router_settings:
+  model_group_alias:
+    # no aliases configured yet`
+    }
+    
+    const aliasLines = aliases.map(
+      a => `    - model_alias: ${a.alias_name}
+      target_model: ${a.target_model}`
+    ).join('\n')
+
+    return `router_settings:
+  model_group_alias:
+${aliasLines}`
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-white">Model Group Alias Settings</h2>
+        <p className="text-xs text-zinc-400 mt-1">
+          Create aliases for your model groups to simplify API calls. For example, you can create an alias 'gpt-4o' that points to 'gpt-4o-mini-openai' model group.
+        </p>
+      </div>
+
+      <div className="border border-zinc-800/80 rounded-2xl bg-zinc-900/20 p-6 space-y-4 shadow-2xl">
+        <h3 className="text-sm font-semibold text-white">Add New Alias</h3>
+        <div className="flex items-end gap-3 flex-wrap md:flex-nowrap">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5 ml-1">Alias Name</label>
+            <input
+              type="text"
+              value={aliasName}
+              onChange={e => setAliasName(e.target.value)}
+              placeholder="e.g., gpt-4o"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20"
+            />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5 ml-1">Target Model Group</label>
+            <input
+              type="text"
+              value={targetModel}
+              onChange={e => setTargetModel(e.target.value)}
+              placeholder="e.g., gpt-4o-mini-openai"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20"
+            />
+          </div>
+          <button
+            onClick={handleAdd}
+            disabled={!aliasName.trim() || !targetModel.trim()}
+            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all active:scale-[0.98] h-[38px] shrink-0"
+          >
+            <Plus size={14} />
+            Add Alias
+          </button>
+        </div>
+      </div>
+
+      <div className="border border-zinc-800/80 rounded-2xl bg-zinc-900/20 overflow-hidden shadow-2xl">
+        <div className="px-6 py-4 border-b border-zinc-800/80">
+          <h3 className="text-sm font-semibold text-white">Manage Existing Aliases</h3>
+        </div>
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-zinc-900/40 border-b border-zinc-800/80">
+              <th className="px-6 py-3.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest w-[40%]">Alias Name</th>
+              <th className="px-6 py-3.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest w-[40%]">Target Model Group</th>
+              <th className="px-6 py-3.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-800/50">
+            {aliases.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="px-6 py-12 text-center text-xs text-zinc-500 font-medium">
+                  No aliases added yet. Add a new alias above.
+                </td>
+              </tr>
+            ) : (
+              aliases.map(a => (
+                <tr key={a.alias_name} className="hover:bg-zinc-900/20 transition-colors">
+                  <td className="px-6 py-4 text-xs font-mono text-indigo-400 font-semibold">
+                    {a.alias_name}
+                  </td>
+                  <td className="px-6 py-4 text-xs font-mono text-zinc-300">
+                    {a.target_model}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <button
+                      onClick={() => handleDelete(a.alias_name)}
+                      className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                      title="Delete Alias"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="border border-zinc-800/80 rounded-2xl bg-zinc-900/20 p-6 space-y-4 shadow-2xl">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Configuration Example</h3>
+          <p className="text-xs text-zinc-500 mt-1">
+            Here's how your current aliases would look in the config.yaml:
+          </p>
+        </div>
+        <pre className="bg-zinc-950/80 rounded-xl p-4 border border-zinc-800/80 font-mono text-xs text-emerald-400 overflow-x-auto leading-relaxed">
+          {generateYaml()}
+        </pre>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ModelCatalog() {
@@ -575,6 +730,8 @@ export default function ModelCatalog() {
 
       {activeTab === 'reload' ? (
         <PriceDataManagementTab />
+      ) : activeTab === 'alias' ? (
+        <ModelGroupAliasTab />
       ) : (
         <>
           {/* Dropdown Filters (Current Team & View) */}
