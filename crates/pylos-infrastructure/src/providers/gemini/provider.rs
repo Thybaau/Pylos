@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
-use prometheus::{IntCounter, IntGaugeVec, Opts};
+use prometheus::{CounterVec, IntCounter, IntGaugeVec, Opts};
 use reqwest::Client;
 use std::sync::{Mutex, OnceLock};
 use tracing::{debug, warn};
@@ -22,6 +22,7 @@ const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta
 // Prometheus metrics for the Gemini API Key pool
 static KEY_SWITCHES: OnceLock<IntCounter> = OnceLock::new();
 static PROJECT_STATUS: OnceLock<IntGaugeVec> = OnceLock::new();
+static PROJECT_REQUESTS: OnceLock<CounterVec> = OnceLock::new();
 
 fn get_key_switches_metric() -> &'static IntCounter {
     KEY_SWITCHES.get_or_init(|| {
@@ -47,6 +48,21 @@ fn get_project_status_metric() -> &'static IntGaugeVec {
         .unwrap();
         prometheus::register(Box::new(gauge.clone())).ok();
         gauge
+    })
+}
+
+fn get_project_requests_metric() -> &'static CounterVec {
+    PROJECT_REQUESTS.get_or_init(|| {
+        let counter = CounterVec::new(
+            Opts::new(
+                "pylos_gemini_requests_total",
+                "Total number of Gemini requests distributed by project",
+            ),
+            &["project_number"],
+        )
+        .unwrap();
+        prometheus::register(Box::new(counter.clone())).ok();
+        counter
     })
 }
 
@@ -168,10 +184,25 @@ impl GeminiProvider {
         }
 
         // Find the first key that is not in cooldown
-        for key in pool.iter() {
+        let mut selected_idx = None;
+        for (idx, key) in pool.iter().enumerate() {
             if key.quota_exhausted_until.is_none() {
-                return Ok(Some(key.clone()));
+                selected_idx = Some(idx);
+                break;
             }
+        }
+
+        if let Some(idx) = selected_idx {
+            let key = pool[idx].clone();
+            // Increment requests counter for this project
+            get_project_requests_metric()
+                .with_label_values(&[&key.project_number])
+                .inc();
+
+            // Rotate the pool so that the element after idx becomes the first one to check
+            let rotate_amount = (idx + 1) % pool.len();
+            pool.rotate_left(rotate_amount);
+            return Ok(Some(key));
         }
 
         // All keys are exhausted
