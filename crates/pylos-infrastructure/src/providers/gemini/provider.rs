@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
+use prometheus::{IntCounter, IntGaugeVec, Opts};
 use reqwest::Client;
 use std::sync::{Mutex, OnceLock};
 use tracing::{debug, warn};
-use prometheus::{IntCounter, IntGaugeVec, Opts};
 
 use pylos_core::domain::embedding::{EmbeddingRequest, EmbeddingResponse};
 use pylos_core::domain::provider::ProviderConfig;
@@ -27,8 +27,9 @@ fn get_key_switches_metric() -> &'static IntCounter {
     KEY_SWITCHES.get_or_init(|| {
         let counter = IntCounter::new(
             "pylos_gemini_key_switches_total",
-            "Total number of API key switches in the Gemini pool"
-        ).unwrap();
+            "Total number of API key switches in the Gemini pool",
+        )
+        .unwrap();
         prometheus::register(Box::new(counter.clone())).ok();
         counter
     })
@@ -37,9 +38,13 @@ fn get_key_switches_metric() -> &'static IntCounter {
 fn get_project_status_metric() -> &'static IntGaugeVec {
     PROJECT_STATUS.get_or_init(|| {
         let gauge = IntGaugeVec::new(
-            Opts::new("pylos_gemini_project_status", "Status of each Gemini project API key (1 = Active, 0 = Quota Expired)"),
-            &["project_number"]
-        ).unwrap();
+            Opts::new(
+                "pylos_gemini_project_status",
+                "Status of each Gemini project API key (1 = Active, 0 = Quota Expired)",
+            ),
+            &["project_number"],
+        )
+        .unwrap();
         prometheus::register(Box::new(gauge.clone())).ok();
         gauge
     })
@@ -81,7 +86,8 @@ impl GeminiProvider {
 
             if let Ok(api_key) = std::env::var(&api_key_var) {
                 if !api_key.is_empty() {
-                    let name = std::env::var(&name_var).unwrap_or_else(|_| format!("Gemini Key {}", suffix));
+                    let name = std::env::var(&name_var)
+                        .unwrap_or_else(|_| format!("Gemini Key {}", suffix));
                     let project_name = std::env::var(&project_name_var).unwrap_or_default();
                     let project_number = std::env::var(&project_number_var).unwrap_or_default();
                     keys.push(GeminiKeyInfo {
@@ -170,7 +176,7 @@ impl GeminiProvider {
 
         // All keys are exhausted
         Err(PylosError::RateLimitExceeded(
-            "All Gemini API keys in the pool have exhausted their quota".into()
+            "All Gemini API keys in the pool have exhausted their quota".into(),
         ))
     }
 
@@ -259,7 +265,8 @@ impl Provider for GeminiProvider {
                             Some(k) => k,
                             None => {
                                 return Err(PylosError::RateLimitExceeded(
-                                    "All Gemini API keys in the pool have exhausted their quota".into()
+                                    "All Gemini API keys in the pool have exhausted their quota"
+                                        .into(),
                                 ));
                             }
                         };
@@ -308,9 +315,9 @@ impl Provider for GeminiProvider {
                         return Ok(from_gemini_response(gemini_resp, model));
                     }
                 } else {
-                    let api_key = self
-                        .select_key(config)
-                        .ok_or_else(|| PylosError::InvalidRequest("No API key configured for Gemini".into()))?;
+                    let api_key = self.select_key(config).ok_or_else(|| {
+                        PylosError::InvalidRequest("No API key configured for Gemini".into())
+                    })?;
 
                     debug!(provider = "gemini", model = %model, url = %url, "Sending Gemini generateContent");
 
@@ -383,7 +390,8 @@ impl Provider for GeminiProvider {
                             Some(k) => k,
                             None => {
                                 return Err(PylosError::RateLimitExceeded(
-                                    "All Gemini API keys in the pool have exhausted their quota".into()
+                                    "All Gemini API keys in the pool have exhausted their quota"
+                                        .into(),
                                 ));
                             }
                         };
@@ -424,37 +432,41 @@ impl Provider for GeminiProvider {
                         }
 
                         let model_clone = model.clone();
-                        let stream = response
-                            .bytes_stream()
-                            .eventsource()
-                            .filter_map(move |event| {
-                                let m = model_clone.clone();
-                                async move {
-                                    match event {
-                                        Ok(e) => {
-                                            let data = e.data.trim().to_string();
-                                            if data.is_empty() {
-                                                return None;
+                        let stream =
+                            response
+                                .bytes_stream()
+                                .eventsource()
+                                .filter_map(move |event| {
+                                    let m = model_clone.clone();
+                                    async move {
+                                        match event {
+                                            Ok(e) => {
+                                                let data = e.data.trim().to_string();
+                                                if data.is_empty() {
+                                                    return None;
+                                                }
+                                                match serde_json::from_str::<GeminiResponse>(&data)
+                                                {
+                                                    Ok(chunk) => {
+                                                        from_gemini_stream_chunk(chunk, &m).map(Ok)
+                                                    }
+                                                    Err(_) => None,
+                                                }
                                             }
-                                            match serde_json::from_str::<GeminiResponse>(&data) {
-                                                Ok(chunk) => from_gemini_stream_chunk(chunk, &m).map(Ok),
-                                                Err(_) => None,
-                                            }
+                                            Err(e) => Some(Err(PylosError::ProviderError {
+                                                provider: "gemini".into(),
+                                                message: e.to_string(),
+                                            })),
                                         }
-                                        Err(e) => Some(Err(PylosError::ProviderError {
-                                            provider: "gemini".into(),
-                                            message: e.to_string(),
-                                        })),
                                     }
-                                }
-                            });
+                                });
 
                         return Ok(Box::pin(stream));
                     }
                 } else {
-                    let api_key = self
-                        .select_key(config)
-                        .ok_or_else(|| PylosError::InvalidRequest("No API key configured for Gemini".into()))?;
+                    let api_key = self.select_key(config).ok_or_else(|| {
+                        PylosError::InvalidRequest("No API key configured for Gemini".into())
+                    })?;
 
                     debug!(provider = "gemini", model = %model, url = %url, "Sending Gemini streaming request");
 
@@ -496,7 +508,9 @@ impl Provider for GeminiProvider {
                                             return None;
                                         }
                                         match serde_json::from_str::<GeminiResponse>(&data) {
-                                            Ok(chunk) => from_gemini_stream_chunk(chunk, &m).map(Ok),
+                                            Ok(chunk) => {
+                                                from_gemini_stream_chunk(chunk, &m).map(Ok)
+                                            }
                                             Err(_) => None,
                                         }
                                     }
@@ -543,7 +557,7 @@ impl Provider for GeminiProvider {
                     Some(k) => k,
                     None => {
                         return Err(PylosError::RateLimitExceeded(
-                            "All Gemini API keys in the pool have exhausted their quota".into()
+                            "All Gemini API keys in the pool have exhausted their quota".into(),
                         ));
                     }
                 };
@@ -584,9 +598,9 @@ impl Provider for GeminiProvider {
                 return Ok(from_gemini_embed_response(gemini_resp, model));
             }
         } else {
-            let api_key = self
-                .select_key(config)
-                .ok_or_else(|| PylosError::InvalidRequest("No API key configured for Gemini".into()))?;
+            let api_key = self.select_key(config).ok_or_else(|| {
+                PylosError::InvalidRequest("No API key configured for Gemini".into())
+            })?;
 
             debug!(provider = "gemini", model = %model, url = %url, "Sending Gemini batchEmbedContents");
 
@@ -632,7 +646,7 @@ impl Provider for GeminiProvider {
                     Some(k) => k,
                     None => {
                         return Err(PylosError::RateLimitExceeded(
-                            "All Gemini API keys in the pool have exhausted their quota".into()
+                            "All Gemini API keys in the pool have exhausted their quota".into(),
                         ));
                     }
                 };
@@ -669,9 +683,9 @@ impl Provider for GeminiProvider {
                 return Ok(());
             }
         } else {
-            let api_key = self
-                .select_key(config)
-                .ok_or_else(|| PylosError::InvalidRequest("No API key configured for Gemini".into()))?;
+            let api_key = self.select_key(config).ok_or_else(|| {
+                PylosError::InvalidRequest("No API key configured for Gemini".into())
+            })?;
 
             debug!(provider = "gemini", url = %url, "Testing provider connectivity");
 
@@ -727,7 +741,7 @@ mod tests {
         std::env::set_var("AI2_PROJECT_NUMBER", "222");
 
         let p = GeminiProvider::new();
-        
+
         let k1 = p.get_active_key().unwrap().unwrap();
         assert_eq!(k1.api_key, "key1");
         assert_eq!(k1.name, "Gemini Key 1");
