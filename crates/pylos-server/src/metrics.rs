@@ -206,7 +206,8 @@ impl Metrics {
     /// Sérialise les métriques au format texte Prometheus
     pub fn export(&self) -> String {
         let encoder = TextEncoder::new();
-        let metric_families = self.registry.gather();
+        let mut metric_families = self.registry.gather();
+        metric_families.extend(prometheus::gather());
         let mut buffer = Vec::new();
         encoder
             .encode(&metric_families, &mut buffer)

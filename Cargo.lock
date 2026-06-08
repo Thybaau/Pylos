@@ -3127,6 +3127,7 @@ dependencies = [
  "eventsource-stream",
  "fastrand",
  "futures",
+ "prometheus",
  "pylos-core",
  "reqwest 0.11.27",
  "serde",

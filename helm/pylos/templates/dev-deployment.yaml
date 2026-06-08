@@ -66,6 +66,68 @@ spec:
                   key: {{ .Values.database.existingSecretKey }}
               {{- end }}
             {{- end }}
+            {{- if .Values.secretStore.enabled }}
+            - name: AI1_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai1-secret
+                  key: API_KEY
+            - name: AI1_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai1-secret
+                  key: NAME
+            - name: AI1_PROJECT_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai1-secret
+                  key: PROJECT_NAME
+            - name: AI1_PROJECT_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai1-secret
+                  key: PROJECT_NUMBER
+            - name: AI2_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai2-secret
+                  key: API_KEY
+            - name: AI2_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai2-secret
+                  key: NAME
+            - name: AI2_PROJECT_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai2-secret
+                  key: PROJECT_NAME
+            - name: AI2_PROJECT_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai2-secret
+                  key: PROJECT_NUMBER
+            - name: AI3_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai3-secret
+                  key: API_KEY
+            - name: AI3_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai3-secret
+                  key: NAME
+            - name: AI3_PROJECT_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai3-secret
+                  key: PROJECT_NAME
+            - name: AI3_PROJECT_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: pylos-ai3-secret
+                  key: PROJECT_NUMBER
+            {{- end }}
           volumeMounts:
             - name: config
               mountPath: /app/pylos.json
