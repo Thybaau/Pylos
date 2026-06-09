@@ -267,6 +267,16 @@ export interface ModelInfo {
   enabled: boolean
 }
 
+export interface ModelHealthEntry {
+  id: string
+  provider: string
+  model_id: string
+  health_status: string
+  error_details: string | null
+  last_check_ms: number | null
+  last_success_ms: number | null
+}
+
 export interface ModelListResponse {
   object: string
   data: Array<{
@@ -359,37 +369,13 @@ export const modelsApi = {
     api.post<{ success: boolean; status: any }>('/v1/models/pricing/schedule', { schedule }).then(r => r.data),
 
   getHealth: () =>
-    api.get<Array<{
-      id: string
-      provider: string
-      model_id: string
-      health_status: string
-      error_details: string | null
-      last_check_ms: number | null
-      last_success_ms: number | null
-    }>>('/v1/models/health').then(r => r.data),
+    api.get<ModelHealthEntry[]>('/v1/models/health').then(r => r.data),
 
   runHealthCheck: (provider: string, model_id: string) =>
-    api.post<{
-      id: string
-      provider: string
-      model_id: string
-      health_status: string
-      error_details: string | null
-      last_check_ms: number | null
-      last_success_ms: number | null
-    }>('/v1/models/health/check', { provider, model_id }).then(r => r.data),
+    api.post<ModelHealthEntry>('/v1/models/health/check', { provider, model_id }).then(r => r.data),
 
   runAllHealthChecks: () =>
-    api.post<Array<{
-      id: string
-      provider: string
-      model_id: string
-      health_status: string
-      error_details: string | null
-      last_check_ms: number | null
-      last_success_ms: number | null
-    }>>('/v1/models/health/check_all').then(r => r.data),
+    api.post<ModelHealthEntry[]>('/v1/models/health/check_all').then(r => r.data),
 }
 
 export const healthApi = {
