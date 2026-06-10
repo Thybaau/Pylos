@@ -376,11 +376,17 @@ pub struct CreateUserRequest {
     pub name: String,
     #[serde(default = "default_member_role")]
     pub role: String,
+    #[serde(default = "default_group")]
+    pub group: String,
     pub organization_id: Option<String>,
     #[serde(default)]
     pub team_ids: Vec<String>,
     #[serde(default = "default_true")]
     pub is_active: bool,
+}
+
+fn default_group() -> String {
+    "default".to_string()
 }
 
 fn default_member_role() -> String {
@@ -392,6 +398,7 @@ pub struct UpdateUserRequest {
     pub email: Option<String>,
     pub name: Option<String>,
     pub role: Option<String>,
+    pub group: Option<String>,
     pub organization_id: Option<String>,
     pub team_ids: Option<Vec<String>>,
     pub is_active: Option<bool>,
@@ -445,6 +452,7 @@ pub async fn create_user(
         email: req.email,
         name: req.name,
         role: req.role,
+        group: req.group,
         organization_id: req.organization_id,
         team_ids: req.team_ids,
         is_active: req.is_active,
@@ -491,6 +499,9 @@ pub async fn update_user(
     }
     if let Some(role) = req.role {
         user.role = role;
+    }
+    if let Some(group) = req.group {
+        user.group = group;
     }
     if let Some(oid) = req.organization_id {
         user.organization_id = Some(oid);

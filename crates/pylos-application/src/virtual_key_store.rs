@@ -1,11 +1,14 @@
 use std::path::Path;
 
+use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tracing::info;
 
 use crate::db_pool::DbPool;
 use pylos_core::domain::config::{EnvVar, VirtualKeyConfig, VkProviderConfig};
 use pylos_core::error::PylosError;
+use pylos_core::key_decrypt;
+use pylos_core::key_encrypt;
 
 #[derive(Clone)]
 pub struct VirtualKeyStore {
@@ -39,7 +42,8 @@ impl VirtualKeyStore {
                     id                TEXT PRIMARY KEY,
                     name              TEXT NOT NULL,
                     description       TEXT,
-                    value             TEXT NOT NULL UNIQUE,
+                    value             TEXT NOT NULL,
+                    value_hash        TEXT,
                     is_active         INTEGER NOT NULL DEFAULT 1,
                     rate_limit_id     TEXT,
                     provider_configs  TEXT,
@@ -93,10 +97,13 @@ impl VirtualKeyStore {
         &self,
         value: &str,
     ) -> Result<Option<VirtualKeyConfig>, PylosError> {
+        let mut hasher = Sha256::new();
+        hasher.update(value.as_bytes());
+        let value_hash = format!("{:x}", hasher.finalize());
         match &self.pool {
             DbPool::Sqlite(pool) => {
-                let row = sqlx::query("SELECT * FROM virtual_keys WHERE value = $1")
-                    .bind(value)
+                let row = sqlx::query("SELECT * FROM virtual_keys WHERE value_hash = $1")
+                    .bind(&value_hash)
                     .fetch_optional(pool)
                     .await
                     .map_err(|e| {
@@ -106,17 +113,37 @@ impl VirtualKeyStore {
                 Ok(row.as_ref().map(row_to_vk_config_sqlite))
             }
             DbPool::Postgres(pool) => {
-                let row =
-                    sqlx::query::<sqlx::Postgres>("SELECT * FROM virtual_keys WHERE value = $1")
-                        .bind(value)
-                        .fetch_optional(pool)
-                        .await
-                        .map_err(|e| {
-                            PylosError::Internal(format!("Failed to get virtual key: {}", e))
-                        })?;
+                let row = sqlx::query::<sqlx::Postgres>(
+                    "SELECT * FROM virtual_keys WHERE value_hash = $1",
+                )
+                .bind(&value_hash)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| PylosError::Internal(format!("Failed to get virtual key: {}", e)))?;
 
                 Ok(row.as_ref().map(row_to_vk_config_pg))
             }
+        }
+    }
+
+    /// Decrypt and reveal the raw key value for a given key (RBAC must be enforced by caller).
+    pub async fn reveal_key_value(&self, id: &str) -> Result<Option<String>, PylosError> {
+        let config = self.get_key_by_id(id).await?;
+        match config {
+            Some(vk) => {
+                let encrypted = vk
+                    .value
+                    .as_ref()
+                    .and_then(|v| v.resolve())
+                    .unwrap_or_default();
+                match key_decrypt(&encrypted) {
+                    Some(plaintext) => Ok(Some(plaintext)),
+                    None => Err(PylosError::Internal(
+                        "Failed to decrypt key value — encryption key may have changed".into(),
+                    )),
+                }
+            }
+            None => Ok(None),
         }
     }
 
@@ -148,10 +175,17 @@ impl VirtualKeyStore {
     }
 
     pub async fn upsert_key(&self, vk: &VirtualKeyConfig) -> Result<(), PylosError> {
-        let key_value =
+        let raw_value =
             vk.value.as_ref().and_then(|v| v.resolve()).ok_or_else(|| {
                 PylosError::InvalidRequest("Virtual key must have a value".into())
             })?;
+
+        let encrypted_value = key_encrypt(&raw_value);
+        let value_hash = {
+            let mut hasher = Sha256::new();
+            hasher.update(raw_value.as_bytes());
+            format!("{:x}", hasher.finalize())
+        };
 
         let provider_configs_json =
             serde_json::to_string(&vk.provider_configs).unwrap_or_else(|_| "[]".to_string());
@@ -163,16 +197,17 @@ impl VirtualKeyStore {
                 sqlx::query(
                     r#"
                     INSERT INTO virtual_keys
-                        (id, name, description, value, is_active, rate_limit_id, provider_configs,
+                        (id, name, description, value, value_hash, is_active, rate_limit_id, provider_configs,
                          team_alias, team_id, organization_id, access_group_id, user_email, user_id,
                          created_at, created_by, updated_at, last_active, expires_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7,
-                            $8, $9, $10, $11, $12, $13,
-                            COALESCE($14, ?), $15, COALESCE($16, ?), $17, $18)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+                            $9, $10, $11, $12, $13, $14,
+                            COALESCE($15, ?), $16, COALESCE($17, ?), $18, $19)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         description = excluded.description,
                         value = excluded.value,
+                        value_hash = excluded.value_hash,
                         is_active = excluded.is_active,
                         rate_limit_id = excluded.rate_limit_id,
                         provider_configs = excluded.provider_configs,
@@ -191,7 +226,8 @@ impl VirtualKeyStore {
                 .bind(&vk.id)
                 .bind(&vk.name)
                 .bind(&vk.description)
-                .bind(&key_value)
+                .bind(&encrypted_value)
+                .bind(&value_hash)
                 .bind(if vk.is_active { 1 } else { 0 })
                 .bind(&vk.rate_limit_id)
                 .bind(&provider_configs_json)
@@ -222,16 +258,17 @@ impl VirtualKeyStore {
                 sqlx::query::<sqlx::Postgres>(
                     r#"
                     INSERT INTO virtual_keys
-                        (id, name, description, value, is_active, rate_limit_id, provider_configs,
+                        (id, name, description, value, value_hash, is_active, rate_limit_id, provider_configs,
                          team_alias, team_id, organization_id, access_group_id, user_email, user_id,
                          created_at, created_by, updated_at, last_active, expires_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7,
-                            $8, $9, $10, $11, $12, $13,
-                            COALESCE($14, $19), $15, COALESCE($16, $20), $17, $18)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+                            $9, $10, $11, $12, $13, $14,
+                            COALESCE($15, $20), $16, COALESCE($17, $21), $18, $19)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         description = excluded.description,
                         value = excluded.value,
+                        value_hash = excluded.value_hash,
                         is_active = excluded.is_active,
                         rate_limit_id = excluded.rate_limit_id,
                         provider_configs = excluded.provider_configs,
@@ -250,7 +287,8 @@ impl VirtualKeyStore {
                 .bind(&vk.id)
                 .bind(&vk.name)
                 .bind(&vk.description)
-                .bind(&key_value)
+                .bind(&encrypted_value)
+                .bind(&value_hash)
                 .bind(vk.is_active)
                 .bind(&vk.rate_limit_id)
                 .bind(&provider_configs_val)

@@ -570,7 +570,32 @@ pub async fn get_virtual_key_budget(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// GET /virtual-keys/:id/value — révèle la valeur claire d'une clé (RBAC)
+// Protégé par management_auth_middleware (admin key ou JWT admin)
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn reveal_virtual_key_value(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.vk_store.reveal_key_value(&id).await {
+        Ok(Some(plaintext)) => Json(json!({
+            "id": id,
+            "value": plaintext,
+        }))
+        .into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Virtual key not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn redact_config(cfg: &pylos_core::domain::config::PylosConfig) -> serde_json::Value {

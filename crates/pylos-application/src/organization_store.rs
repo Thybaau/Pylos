@@ -65,6 +65,7 @@ impl OrganizationStore {
                     email           TEXT NOT NULL UNIQUE,
                     name            TEXT NOT NULL,
                     role            TEXT NOT NULL DEFAULT 'member',
+                    usr_group       TEXT NOT NULL DEFAULT 'default',
                     organization_id TEXT,
                     team_ids        TEXT NOT NULL DEFAULT '[]',
                     is_active       INTEGER NOT NULL DEFAULT 1,
@@ -528,12 +529,13 @@ impl OrganizationStore {
         match &self.pool {
             DbPool::Sqlite(pool) => {
                 sqlx::query(
-                    r#"INSERT INTO internal_users (id, email, name, role, organization_id, team_ids, is_active, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    r#"INSERT INTO internal_users (id, email, name, role, usr_group, organization_id, team_ids, is_active, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     ON CONFLICT(id) DO UPDATE SET
                         email = excluded.email,
                         name = excluded.name,
                         role = excluded.role,
+                        usr_group = excluded.usr_group,
                         organization_id = excluded.organization_id,
                         team_ids = excluded.team_ids,
                         is_active = excluded.is_active,
@@ -543,6 +545,7 @@ impl OrganizationStore {
                 .bind(&user.email)
                 .bind(&user.name)
                 .bind(&user.role)
+                .bind(&user.group)
                 .bind(&user.organization_id)
                 .bind(&team_ids_json)
                 .bind(if user.is_active { 1 } else { 0 })
@@ -556,12 +559,13 @@ impl OrganizationStore {
                 let team_ids_val: serde_json::Value = serde_json::from_str(&team_ids_json)
                     .unwrap_or(serde_json::Value::Array(vec![]));
                 sqlx::query::<sqlx::Postgres>(
-                    r#"INSERT INTO internal_users (id, email, name, role, organization_id, team_ids, is_active, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    r#"INSERT INTO internal_users (id, email, name, role, usr_group, organization_id, team_ids, is_active, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     ON CONFLICT(id) DO UPDATE SET
                         email = excluded.email,
                         name = excluded.name,
                         role = excluded.role,
+                        usr_group = excluded.usr_group,
                         organization_id = excluded.organization_id,
                         team_ids = excluded.team_ids,
                         is_active = excluded.is_active,
@@ -571,6 +575,7 @@ impl OrganizationStore {
                 .bind(&user.email)
                 .bind(&user.name)
                 .bind(&user.role)
+                .bind(&user.group)
                 .bind(&user.organization_id)
                 .bind(&team_ids_val)
                 .bind(user.is_active)
@@ -1050,6 +1055,9 @@ fn row_to_user_sqlite(row: &sqlx::sqlite::SqliteRow) -> InternalUser {
         email: row.try_get("email").unwrap_or_default(),
         name: row.try_get("name").unwrap_or_default(),
         role: row.try_get("role").unwrap_or_default(),
+        group: row
+            .try_get("usr_group")
+            .unwrap_or_else(|_| "default".to_string()),
         organization_id: row.try_get("organization_id").ok(),
         team_ids,
         is_active: row.try_get::<i64, _>("is_active").unwrap_or(1) != 0,
@@ -1165,6 +1173,9 @@ fn row_to_user_pg(row: &sqlx::postgres::PgRow) -> InternalUser {
         email: row.try_get("email").unwrap_or_default(),
         name: row.try_get("name").unwrap_or_default(),
         role: row.try_get("role").unwrap_or_default(),
+        group: row
+            .try_get("usr_group")
+            .unwrap_or_else(|_| "default".to_string()),
         organization_id: row.try_get("organization_id").ok(),
         team_ids,
         is_active: row.try_get::<bool, _>("is_active").unwrap_or(true),

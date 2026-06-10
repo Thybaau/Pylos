@@ -11,6 +11,7 @@ pub use domain::config::{
     PluginConfig, ProviderConfig, ProviderKeyConfig, PylosConfig, RateLimitConfig,
     RoutingRuleConfig, ServerConfig, VirtualKeyConfig,
 };
+pub use domain::encryption::{decrypt as key_decrypt, encrypt as key_encrypt};
 pub use domain::provider::ProviderConfig as RuntimeProviderConfig;
 pub use domain::provider::{ProviderKey, ProviderKind, RoutingTarget};
 pub use domain::request::{PylosRequest, PylosResponse, RequestContext, StreamChunk};

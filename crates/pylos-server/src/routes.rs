@@ -2,7 +2,10 @@ use crate::interfaces::http::{
     access_control, auth, completions, config, embeddings, health, images, inference, logs,
     metrics, models, vector_stores,
 };
-use crate::middleware::{management_auth_middleware, queuing_middleware, virtual_key_middleware};
+use crate::middleware::{
+    admin_guard_middleware, management_auth_middleware, playgroup_check_middleware,
+    queuing_middleware, virtual_key_middleware,
+};
 use crate::state::AppState;
 use axum::{
     extract::DefaultBodyLimit,
@@ -15,7 +18,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 pub fn create_router(state: AppState) -> Router {
-    // Routes d'inférence — protégées par le middleware Virtual Key
+    // Routes d'inférence — protégées par le middleware Virtual Key + Playgroup
     let inference_routes = Router::new()
         .route("/v1/chat/completions", post(inference::chat_completions))
         .route("/v1/completions", post(completions::text_completions))
@@ -25,6 +28,10 @@ pub fn create_router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             queuing_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            playgroup_check_middleware,
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -83,10 +90,13 @@ pub fn create_router(state: AppState) -> Router {
             "/virtual-keys/:id/budget",
             get(config::get_virtual_key_budget),
         )
+        .route(
+            "/virtual-keys/:id/value",
+            get(config::reveal_virtual_key_value),
+        )
         // Config management routes
         .route("/config", get(config::get_config))
         .route("/config/reload", post(config::reload_config))
-        .route("/config/guardrails", put(config::update_guardrails))
         .route("/api/github/promote", post(config::promote_to_prod_handler))
         // Access Control routes
         .route(
@@ -199,6 +209,13 @@ pub fn create_router(state: AppState) -> Router {
             management_auth_middleware,
         ));
 
+    let guardrails_admin_routes = Router::new()
+        .route("/config/guardrails", put(config::update_guardrails))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            admin_guard_middleware,
+        ));
+
     let auth_routes = Router::new()
         .route("/api/auth/config", get(auth::get_auth_config))
         .route("/api/auth/google/callback", post(auth::google_callback))
@@ -212,6 +229,7 @@ pub fn create_router(state: AppState) -> Router {
         // Inférence
         .merge(inference_routes)
         .merge(management_routes)
+        .merge(guardrails_admin_routes)
         // Middleware global
         .layer(TraceLayer::new_for_http())
         .layer(build_cors(&state))

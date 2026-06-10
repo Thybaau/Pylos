@@ -353,6 +353,9 @@ export const virtualKeysApi = {
 
   getBudget: (id: string) =>
     api.get<VkBudgetResponse>(`/virtual-keys/${id}/budget`).then(r => r.data),
+
+  revealValue: (id: string) =>
+    api.get<{ id: string; value: string }>(`/virtual-keys/${id}/value`).then(r => r.data),
 }
 
 export const modelsApi = {

@@ -6,6 +6,7 @@ import {
   KeyRound, CheckCircle, XCircle, Shield, TrendingUp,
   ChevronDown, ChevronUp, Plus, Pencil, Trash2, X, Check,
   AlertTriangle, RotateCcw, Copy, RotateCw, Search, Filter,
+  Eye, EyeOff,
 } from 'lucide-react'
 import { ProviderIcon } from '../components/ProviderIcon'
 
@@ -542,6 +543,7 @@ export default function VirtualKeys() {
   const [search, setSearch] = useState('')
   const [filterField, setFilterField] = useState('all')
   const [showFilters, setShowFilters] = useState(false)
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({})
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['virtual-keys'],
@@ -686,7 +688,46 @@ export default function VirtualKeys() {
                         </div>
                       </td>
                       <td className="px-3 py-3 font-mono text-[10px] text-zinc-500 truncate max-w-[160px]" title={vk.id}>{vk.id}</td>
-                      <td className="px-3 py-3 font-mono text-[10px] text-zinc-400">{vk.value}</td>
+                      <td className="px-3 py-3 font-mono text-[10px] text-zinc-400">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate max-w-[120px]">
+                            {revealedKeys[vk.id] || vk.value.substring(0, 12) + '...'}
+                          </span>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              if (revealedKeys[vk.id]) {
+                                const next = { ...revealedKeys }
+                                delete next[vk.id]
+                                setRevealedKeys(next)
+                              } else {
+                                try {
+                                  const res = await virtualKeysApi.revealValue(vk.id)
+                                  setRevealedKeys(prev => ({ ...prev, [vk.id]: res.value }))
+                                } catch (err: any) {
+                                  alert('Failed to reveal key: ' + (err.response?.data?.error || err.message))
+                                }
+                              }
+                            }}
+                            className="text-zinc-600 hover:text-indigo-400 transition-colors p-0.5"
+                            title={revealedKeys[vk.id] ? 'Hide key' : 'Reveal key'}
+                          >
+                            {revealedKeys[vk.id] ? <EyeOff size={12} /> : <Eye size={12} />}
+                          </button>
+                          {revealedKeys[vk.id] && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(revealedKeys[vk.id])
+                              }}
+                              className="text-zinc-600 hover:text-emerald-400 transition-colors p-0.5"
+                              title="Copy key"
+                            >
+                              <Copy size={11} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-3 py-3 text-[11px] text-zinc-300">{fmtVal(vk.team_alias)}</td>
                       <td className="px-3 py-3 text-[11px] text-zinc-500">{fmtVal(vk.team_id)}</td>
                       <td className="px-3 py-3 text-[11px] text-zinc-500">{fmtVal(vk.organization_id)}</td>

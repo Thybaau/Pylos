@@ -29,11 +29,18 @@ pub struct InternalUser {
     pub email: String,
     pub name: String,
     pub role: String,
+    /// Groupe d'accès : "playgroup" (quarantaine) ou "default" (accès normal)
+    #[serde(default = "default_group")]
+    pub group: String,
     pub organization_id: Option<String>,
     pub team_ids: Vec<String>,
     pub is_active: bool,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+fn default_group() -> String {
+    "default".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

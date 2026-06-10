@@ -43,14 +43,43 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { healthApi, authApi } from '../lib/api'
 
-const AI_GATEWAY = [
+function isAdmin(): boolean {
+  const userJson = typeof window !== 'undefined' ? sessionStorage.getItem('pylos_user') : null;
+  if (!userJson) {
+    // Fallback: if admin key is set, consider as admin
+    return !!sessionStorage.getItem('pylos_admin_key');
+  }
+  try {
+    const user = JSON.parse(userJson);
+    return user.role === 'admin';
+  } catch {
+    return false;
+  }
+}
+
+function isPlaygroup(): boolean {
+  const userJson = typeof window !== 'undefined' ? sessionStorage.getItem('pylos_user') : null;
+  if (!userJson) return false;
+  try {
+    const user = JSON.parse(userJson);
+    return user.group === 'playgroup';
+  } catch {
+    return false;
+  }
+}
+
+// Admin-only items hidden for non-admin users
+const AI_GATEWAY_CORE = [
   { to: '/keys',       icon: KeyRound,        label: 'Virtual Keys' },
   { to: '/playground', icon: FlaskConical,    label: 'Playground' },
   { to: '/models',     icon: Server,          label: 'Models + Endpoints' },
   { to: '/agents',     icon: Bot,             label: 'Agents' },
   { to: '/mcp-servers',icon: Cpu,             label: 'MCP Servers' },
-  { to: '/guardrails', icon: Shield,          label: 'Guardrails' },
   { to: '/policies',   icon: FileBadge,       label: 'Policies' },
+]
+
+const AI_GATEWAY_ADMIN = [
+  { to: '/guardrails', icon: Shield,          label: 'Guardrails' },
 ]
 
 const NAV_TOOLS = [
@@ -162,7 +191,7 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
             <div className="mx-3 mt-2 mb-2 border-t border-zinc-800/50" />
           )}
 
-          {AI_GATEWAY.map(({ to, icon: Icon, label }) => (
+          {[...AI_GATEWAY_CORE, ...(isAdmin() ? AI_GATEWAY_ADMIN : [])].map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
@@ -482,6 +511,12 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
         {/* User profile card */}
         {user ? (
           <div className="px-4 py-3 border-t border-zinc-800/50 flex flex-col gap-2">
+            {isPlaygroup() && (!collapsed || isOpen) && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-800/30 text-amber-400 text-[10px] font-semibold mb-1">
+                <ShieldAlert size={12} />
+                <span>Quarantine — Contact admin to activate access</span>
+              </div>
+            )}
             {(!collapsed || isOpen) ? (
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center font-bold text-indigo-400 text-sm">
@@ -490,11 +525,12 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-white truncate">{user.name}</p>
                   <p className="text-xs text-zinc-500 truncate">{user.email}</p>
+                  {user.group && <p className="text-[9px] text-zinc-600 mt-0.5">group: {user.group}</p>}
                 </div>
               </div>
             ) : (
               <div className="flex justify-center">
-                <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center font-bold text-indigo-400 text-sm" title={user.name}>
+                <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center font-bold text-indigo-400 text-sm" title={`${user.name} (${user.group || 'default'})`}>
                   {user.name ? user.name.substring(0, 2).toUpperCase() : 'U'}
                 </div>
               </div>

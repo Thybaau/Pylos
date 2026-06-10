@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod config;
 pub mod embedding;
+pub mod encryption;
 pub mod image;
 pub mod openai;
 pub mod organization;

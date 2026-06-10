@@ -44,6 +44,12 @@ pub struct PylosSessionClaims {
     pub exp: usize,  // expiration timestamp (seconds)
     pub role: String,
     pub name: String,
+    #[serde(default = "default_group")]
+    pub group: String,
+}
+
+fn default_group() -> String {
+    "default".to_string()
 }
 
 pub async fn google_callback(
@@ -181,7 +187,7 @@ pub async fn google_callback(
         .iter()
         .find(|u| u.email.to_lowercase() == google_user.email.to_lowercase());
 
-    let user_role = match matched_user {
+    let (user_role, user_group) = match matched_user {
         Some(user) => {
             if !user.is_active {
                 return (
@@ -190,10 +196,15 @@ pub async fn google_callback(
                 )
                     .into_response();
             }
-            user.role.clone()
+            (user.role.clone(), user.group.clone())
         }
         None => {
             let role = if users.is_empty() { "admin" } else { "member" };
+            let group = if users.is_empty() {
+                "default"
+            } else {
+                "playgroup"
+            };
             // Generate a random ID using fastrand
             let random_id = (0..16)
                 .map(|_| fastrand::alphanumeric())
@@ -206,6 +217,7 @@ pub async fn google_callback(
                     .clone()
                     .unwrap_or_else(|| google_user.email.clone()),
                 role: role.to_string(),
+                group: group.to_string(),
                 organization_id: None,
                 team_ids: vec![],
                 is_active: true,
@@ -277,7 +289,7 @@ pub async fn google_callback(
                 tracing::error!(error = %e, "Failed to create default budget for new user VK");
             }
 
-            role.to_string()
+            (role.to_string(), group.to_string())
         }
     };
 
@@ -295,6 +307,7 @@ pub async fn google_callback(
         name: google_user
             .name
             .unwrap_or_else(|| google_user.email.clone()),
+        group: user_group.clone(),
     };
 
     let token = match encode(
@@ -318,6 +331,7 @@ pub async fn google_callback(
             "email": claims.sub,
             "name": claims.name,
             "role": claims.role,
+            "group": claims.group,
         }
     }))
     .into_response()
