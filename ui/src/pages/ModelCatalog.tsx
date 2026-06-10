@@ -1,10 +1,10 @@
 import { useState, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { modelsApi, type ModelInfo } from '../lib/api'
+import { modelsApi, providersApi, type ModelInfo } from '../lib/api'
 import {
   ChevronDown, Pencil, Trash2, X, Check,
   AlertTriangle, RotateCcw, AlertCircle, Search, Filter, Info, RefreshCw, Plus,
-  Activity, Play
+  Activity, Play, Globe, Key, Network, Sliders, Tags, FileJson
 } from 'lucide-react'
 
 const PROVIDERS = ['all', 'openai', 'anthropic', 'gemini', 'cohere', 'groq', 'mistral', 'xai', 'deepseek', 'bedrock', 'ollama-jo3', 'lemonade-jo3', 'lemonade-optimus']
@@ -55,6 +55,17 @@ interface ModelFormState {
   supports_embeddings: boolean
   is_deprecated: boolean
   enabled: boolean
+  api_base: string
+  tpm: string
+  rpm: string
+  max_retries: string
+  timeout_secs: string
+  stream_timeout_secs: string
+  model_access_groups: string
+  guardrails: string
+  tags: string
+  provider_params: string
+  organization_id: string
 }
 
 const DEFAULT_FORM: ModelFormState = {
@@ -71,6 +82,17 @@ const DEFAULT_FORM: ModelFormState = {
   supports_embeddings: false,
   is_deprecated: false,
   enabled: true,
+  api_base: '',
+  tpm: '',
+  rpm: '',
+  max_retries: '',
+  timeout_secs: '',
+  stream_timeout_secs: '',
+  model_access_groups: '',
+  guardrails: '',
+  tags: '',
+  provider_params: '',
+  organization_id: '',
 }
 
 function formToPayload(f: ModelFormState) {
@@ -88,6 +110,17 @@ function formToPayload(f: ModelFormState) {
     supports_embeddings: f.supports_embeddings,
     is_deprecated: f.is_deprecated,
     enabled: f.enabled,
+    api_base: f.api_base || null,
+    tpm: f.tpm ? parseInt(f.tpm) : null,
+    rpm: f.rpm ? parseInt(f.rpm) : null,
+    max_retries: f.max_retries ? parseInt(f.max_retries) : null,
+    timeout_secs: f.timeout_secs ? parseInt(f.timeout_secs) : null,
+    stream_timeout_secs: f.stream_timeout_secs ? parseInt(f.stream_timeout_secs) : null,
+    model_access_groups: f.model_access_groups ? f.model_access_groups.split(',').map(s => s.trim()).filter(Boolean) : null,
+    guardrails: f.guardrails ? f.guardrails.split(',').map(s => s.trim()).filter(Boolean) : null,
+    tags: f.tags ? f.tags.split(',').map(s => s.trim()).filter(Boolean) : null,
+    provider_params: f.provider_params ? (() => { try { return JSON.parse(f.provider_params) } catch { return null } })() : null,
+    organization_id: f.organization_id || null,
   }
 }
 
@@ -106,10 +139,21 @@ function pylosToForm(p: ModelInfo): ModelFormState {
     supports_embeddings: p.supports_embeddings,
     is_deprecated: p.is_deprecated,
     enabled: p.enabled,
+    api_base: p.api_base ?? '',
+    tpm: p.tpm?.toString() ?? '',
+    rpm: p.rpm?.toString() ?? '',
+    max_retries: p.max_retries?.toString() ?? '',
+    timeout_secs: p.timeout_secs?.toString() ?? '',
+    stream_timeout_secs: p.stream_timeout_secs?.toString() ?? '',
+    model_access_groups: p.model_access_groups?.join(', ') ?? '',
+    guardrails: p.guardrails?.join(', ') ?? '',
+    tags: p.tags?.join(', ') ?? '',
+    provider_params: p.provider_params ? JSON.stringify(p.provider_params, null, 2) : '',
+    organization_id: p.organization_id ?? '',
   }
 }
 
-// ─── ModelModal ───────────────────────────────────────────────────────────────
+// ─── ModelDetailModal ─── LiteLLM-style unified model detail view ────────────
 
 function ModelModal({
   initial,
@@ -127,6 +171,9 @@ function ModelModal({
   error: string | null
 }) {
   const [form, setForm] = useState<ModelFormState>(initial)
+  const [detailTab, setDetailTab] = useState('overview')
+  const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: providersApi.getAll })
+
   const set = <K extends keyof ModelFormState>(k: K, v: ModelFormState[K]) =>
     setForm(f => ({ ...f, [k]: v }))
 
@@ -140,140 +187,354 @@ function ModelModal({
     </button>
   )
 
+  const selectedProvider = providers?.providers?.find(p => p.name === form.provider)
+
+  const ProviderField = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div>
+      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">{label}</label>
+      {children}
+    </div>
+  )
+
+  const detailTabs = [
+    { id: 'overview', label: 'Overview', icon: null },
+    { id: 'credentials', label: 'Credentials', icon: Key },
+    { id: 'network', label: 'Network', icon: Network },
+    { id: 'capabilities', label: 'Capabilities', icon: Sliders },
+    { id: 'params', label: 'Provider Params', icon: FileJson },
+    { id: 'tags', label: 'Tags', icon: Tags },
+  ]
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-zinc-800/50">
-          <h2 className="text-lg font-semibold text-white">
-            {isEdit ? 'Edit model' : 'Add custom model'}
-          </h2>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-zinc-800/50 shrink-0">
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              {isEdit ? form.display_name || form.model_id : 'Add custom model'}
+            </h2>
+            {isEdit && <p className="text-xs text-zinc-500 font-mono mt-0.5">{form.provider}/{form.model_id}</p>}
+          </div>
           <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={18} /></button>
         </div>
 
-        <div className="p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1.5">Provider *</label>
-              <input
-                value={form.provider}
-                onChange={e => set('provider', e.target.value)}
-                disabled={isEdit}
-                placeholder="openai, ollama…"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
-                  disabled:opacity-50 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1.5">Model ID *</label>
-              <input
-                value={form.model_id}
-                onChange={e => set('model_id', e.target.value)}
-                disabled={isEdit}
-                placeholder="gpt-4o, llama3.2:3b…"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
-                  disabled:opacity-50 font-mono focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20"
-              />
-            </div>
-          </div>
+        {/* Detail tabs */}
+        <div className="flex items-center gap-1 px-5 pt-3 border-b border-zinc-800/50 shrink-0 overflow-x-auto">
+          {detailTabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setDetailTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold whitespace-nowrap border-b-2 -mb-px transition-all
+                ${detailTab === tab.id ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+            >
+              {tab.icon && <tab.icon size={12} />}
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-          <div>
-            <label className="block text-xs text-zinc-400 mb-1.5">Display name</label>
-            <input
-              value={form.display_name}
-              onChange={e => set('display_name', e.target.value)}
-              placeholder="GPT-4o"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
-                focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20"
-            />
-          </div>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1.5">Context window (tokens)</label>
-              <input
-                type="number"
-                value={form.context_window}
-                onChange={e => set('context_window', e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
-                  focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1.5">Max output tokens</label>
-              <input
-                type="number"
-                value={form.max_output_tokens}
-                onChange={e => set('max_output_tokens', e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
-                  focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1.5">Input price / 1M tokens (USD)</label>
-              <input
-                type="number"
-                step="0.001"
-                value={form.input_price_per_1m_usd}
-                onChange={e => set('input_price_per_1m_usd', e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
-                  focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1.5">Output price / 1M tokens (USD)</label>
-              <input
-                type="number"
-                step="0.001"
-                value={form.output_price_per_1m_usd}
-                onChange={e => set('output_price_per_1m_usd', e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
-                  focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2.5">
-            <label className="block text-xs text-zinc-400">Capabilities</label>
-            {(
-              [
-                { k: 'supports_vision', label: 'Vision' },
-                { k: 'supports_tools', label: 'Tool calling' },
-                { k: 'supports_streaming', label: 'Streaming' },
-                { k: 'supports_embeddings', label: 'Embeddings' },
-                { k: 'is_deprecated', label: 'Deprecated' },
-              ] as const
-            ).map(({ k, label }) => (
-              <div key={k} className="flex items-center justify-between">
-                <span className="text-sm text-zinc-300">{label}</span>
-                <Toggle k={k} />
+          {/* ── Overview tab ─────────────────────────────────────────────── */}
+          {detailTab === 'overview' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <ProviderField label="Public Model Name">
+                  <input value={form.display_name} onChange={e => set('display_name', e.target.value)}
+                    placeholder="GPT-4o, Claude Sonnet..."
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                      focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                </ProviderField>
+                <ProviderField label="Provider *">
+                  <div className="relative">
+                    <select value={form.provider} onChange={e => set('provider', e.target.value)}
+                      disabled={isEdit}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                        disabled:opacity-50 appearance-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20">
+                      <option value="">Select provider...</option>
+                      {providers?.providers?.map(p => (
+                        <option key={p.name} value={p.name}>{p.name}</option>
+                      ))}
+                      <option value="__custom__">── Custom ──</option>
+                    </select>
+                    {form.provider && form.provider !== '__custom__' && !providers?.providers?.find(p => p.name === form.provider) && (
+                      <input value={form.provider} onChange={e => set('provider', e.target.value)}
+                        placeholder="custom-provider"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                          focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 mt-1" />
+                    )}
+                  </div>
+                </ProviderField>
               </div>
-            ))}
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-sm text-zinc-300">Enabled</span>
-              <Toggle k="enabled" />
-            </div>
-          </div>
 
-          {error && (
-            <div className="flex items-center gap-2 text-red-400 text-xs bg-red-900/20 border border-red-800/50 rounded-lg px-3 py-2">
-              <AlertTriangle size={13} /> {error}
+              <div className="grid grid-cols-2 gap-4">
+                <ProviderField label="Model ID *">
+                  <input value={form.model_id} onChange={e => set('model_id', e.target.value)}
+                    disabled={isEdit} placeholder="gpt-4o, claude-sonnet-4-5..."
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 disabled:opacity-50 font-mono
+                      focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                </ProviderField>
+                <ProviderField label="Organization ID">
+                  <input value={form.organization_id} onChange={e => set('organization_id', e.target.value)}
+                    placeholder="org-xxx"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 font-mono
+                      focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                </ProviderField>
+              </div>
+
+              {/* Inherited provider info */}
+              {selectedProvider && (
+                <div className="bg-zinc-950/50 border border-zinc-800/50 rounded-xl p-4 space-y-2">
+                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Inherited from provider</div>
+                  <div className="flex items-center gap-2 text-xs text-zinc-400">
+                    <Globe size={12} />
+                    <span className="font-mono">{selectedProvider.network.base_url || 'default URL'}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-zinc-500">
+                    <span>{selectedProvider.network.timeout_secs}s timeout</span>
+                    <span>{selectedProvider.network.max_retries} retries</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-zinc-500">
+                    <Key size={11} />
+                    <span>{selectedProvider.keys_count} key(s) configured</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Pricing */}
+              <div>
+                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Pricing (USD / 1M tokens)</div>
+                <div className="grid grid-cols-2 gap-4">
+                  <ProviderField label="Input">
+                    <input type="number" step="0.001" value={form.input_price_per_1m_usd}
+                      onChange={e => set('input_price_per_1m_usd', e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                        focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                  </ProviderField>
+                  <ProviderField label="Output">
+                    <input type="number" step="0.001" value={form.output_price_per_1m_usd}
+                      onChange={e => set('output_price_per_1m_usd', e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                        focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                  </ProviderField>
+                </div>
+              </div>
+
+              {/* Context window */}
+              <div className="grid grid-cols-2 gap-4">
+                <ProviderField label="Context window (tokens)">
+                  <input type="number" value={form.context_window} onChange={e => set('context_window', e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                      focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                </ProviderField>
+                <ProviderField label="Max output tokens">
+                  <input type="number" value={form.max_output_tokens} onChange={e => set('max_output_tokens', e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                      focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                </ProviderField>
+              </div>
+            </>
+          )}
+
+          {/* ── Credentials tab ──────────────────────────────────────────── */}
+          {detailTab === 'credentials' && (
+            <div className="space-y-4">
+              <div className="text-xs text-zinc-400">
+                This model will use the API keys from the selected provider.
+                Override the API base URL if this model uses a different endpoint.
+              </div>
+              <ProviderField label="API Base URL (override)">
+                <input value={form.api_base} onChange={e => set('api_base', e.target.value)}
+                  placeholder={selectedProvider?.network?.base_url || 'https://api.openai.com/v1'}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 font-mono
+                    focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+              </ProviderField>
+              {selectedProvider && (
+                <div className="border border-zinc-800/50 rounded-xl p-4 space-y-2">
+                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Provider Keys</div>
+                  {selectedProvider.keys.map((k, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-zinc-400">
+                      <Key size={11} className="text-zinc-600 shrink-0" />
+                      <span className="text-zinc-300">{k.name}</span>
+                      <span className="text-zinc-600 font-mono">{k.value}</span>
+                      <span className="ml-auto text-zinc-600">weight: {k.weight}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Network tab ──────────────────────────────────────────────── */}
+          {detailTab === 'network' && (
+            <div className="space-y-4">
+              <div className="text-xs text-zinc-400">
+                Override network settings for this model. Leave empty to inherit from provider config.
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <ProviderField label="Timeout (seconds)">
+                  <input type="number" value={form.timeout_secs} onChange={e => set('timeout_secs', e.target.value)}
+                    placeholder={String(selectedProvider?.network?.timeout_secs ?? 30)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                      focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                </ProviderField>
+                <ProviderField label="Max Retries">
+                  <input type="number" value={form.max_retries} onChange={e => set('max_retries', e.target.value)}
+                    placeholder={String(selectedProvider?.network?.max_retries ?? 3)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                      focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                </ProviderField>
+                <ProviderField label="Stream Timeout (s)">
+                  <input type="number" value={form.stream_timeout_secs} onChange={e => set('stream_timeout_secs', e.target.value)}
+                    placeholder="30"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                      focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                </ProviderField>
+              </div>
+
+              <div className="border border-zinc-800/50 rounded-xl p-4 space-y-3">
+                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Rate Limits</div>
+                <div className="grid grid-cols-2 gap-4">
+                  <ProviderField label="TPM (Tokens per Minute)">
+                    <input type="number" value={form.tpm} onChange={e => set('tpm', e.target.value)}
+                      placeholder="Unlimited"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                        focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                  </ProviderField>
+                  <ProviderField label="RPM (Requests per Minute)">
+                    <input type="number" value={form.rpm} onChange={e => set('rpm', e.target.value)}
+                      placeholder="Unlimited"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                        focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+                  </ProviderField>
+                </div>
+              </div>
+
+              <ProviderField label="Model Access Groups (comma-separated)">
+                <input value={form.model_access_groups} onChange={e => set('model_access_groups', e.target.value)}
+                  placeholder="group-a, group-b"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                    focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+              </ProviderField>
+
+              <ProviderField label="Guardrails (comma-separated)">
+                <input value={form.guardrails} onChange={e => set('guardrails', e.target.value)}
+                  placeholder="guardrail-pii, guardrail-toxicity"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                    focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+              </ProviderField>
+            </div>
+          )}
+
+          {/* ── Capabilities tab ─────────────────────────────────────────── */}
+          {detailTab === 'capabilities' && (
+            <div className="space-y-4">
+              <div className="text-xs text-zinc-400">Toggle model capabilities and status.</div>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { k: 'supports_vision', label: 'Vision' },
+                  { k: 'supports_tools', label: 'Tool calling' },
+                  { k: 'supports_streaming', label: 'Streaming' },
+                  { k: 'supports_embeddings', label: 'Embeddings' },
+                ].map(({ k, label }) => (
+                  <div key={k} className="flex items-center justify-between bg-zinc-950/50 border border-zinc-800/50 rounded-lg px-4 py-3">
+                    <span className="text-sm text-zinc-300">{label}</span>
+                    <Toggle k={k as keyof ModelFormState} />
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between bg-zinc-950/50 border border-zinc-800/50 rounded-lg px-4 py-3">
+                <div>
+                  <span className="text-sm text-zinc-300">Deprecated</span>
+                  <p className="text-[10px] text-zinc-500">Hide from model listings</p>
+                </div>
+                <Toggle k="is_deprecated" />
+              </div>
+              <div className="flex items-center justify-between bg-zinc-950/50 border border-zinc-800/50 rounded-lg px-4 py-3">
+                <div>
+                  <span className="text-sm text-zinc-300">Enabled</span>
+                  <p className="text-[10px] text-zinc-500">Allow inference requests</p>
+                </div>
+                <Toggle k="enabled" />
+              </div>
+            </div>
+          )}
+
+          {/* ── Provider Params tab ──────────────────────────────────────── */}
+          {detailTab === 'params' && (
+            <div className="space-y-4">
+              <div className="text-xs text-zinc-400">
+                Provider-specific parameters as JSON. For example: <code className="text-indigo-400">{'{"aws_region_name": "us-east-1"}'}</code>
+              </div>
+              <ProviderField label="LiteLLM Params JSON">
+                <textarea value={form.provider_params} onChange={e => set('provider_params', e.target.value)}
+                  rows={10} placeholder='{"aws_region_name": "us-east-1"}'
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 font-mono
+                    focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 resize-y" />
+              </ProviderField>
+              <ProviderField label="Model Info JSON (read-only)">
+                <pre className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-emerald-400 font-mono overflow-x-auto max-h-40">
+                  {JSON.stringify({
+                    provider: form.provider,
+                    model_id: form.model_id,
+                    context_window: parseInt(form.context_window) || 0,
+                    max_output_tokens: parseInt(form.max_output_tokens) || 0,
+                    input_cost_per_1m: parseFloat(form.input_price_per_1m_usd) || 0,
+                    output_cost_per_1m: parseFloat(form.output_price_per_1m_usd) || 0,
+                    supports_vision: form.supports_vision,
+                    supports_tools: form.supports_tools,
+                    supports_streaming: form.supports_streaming,
+                    supports_embeddings: form.supports_embeddings,
+                  }, null, 2)}
+                </pre>
+              </ProviderField>
+            </div>
+          )}
+
+          {/* ── Tags tab ─────────────────────────────────────────────────── */}
+          {detailTab === 'tags' && (
+            <div className="space-y-4">
+              <div className="text-xs text-zinc-400">Add tags to organize and filter models.</div>
+              <ProviderField label="Tags (comma-separated)">
+                <input value={form.tags} onChange={e => set('tags', e.target.value)}
+                  placeholder="production, critical, experimental"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200
+                    focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20" />
+              </ProviderField>
+              {form.tags && form.tags.split(',').filter(t => t.trim()).length > 0 && (
+                <div className="flex gap-1.5 flex-wrap">
+                  {form.tags.split(',').filter(t => t.trim()).map((tag, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium
+                      bg-indigo-900/30 text-indigo-400 border border-indigo-800/50">
+                      {tag.trim()}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-3 px-5 py-4 border-t border-zinc-800/50">
+        {/* Error */}
+        {error && (
+          <div className="flex items-center gap-2 text-red-400 text-xs bg-red-900/20 border-t border-red-800/50 px-5 py-3">
+            <AlertTriangle size={13} /> {error}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex justify-between items-center px-5 py-4 border-t border-zinc-800/50 shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-sm text-zinc-400 hover:text-white">Cancel</button>
           <button
             onClick={() => onSave(form)}
-            disabled={isSaving || !form.provider.trim() || !form.model_id.trim()}
+            disabled={isSaving || !form.model_id.trim()}
             className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] disabled:opacity-50
               text-white rounded-lg flex items-center gap-2 transition-colors"
           >
             {isSaving ? <RotateCcw size={14} className="animate-spin" /> : <Check size={14} />}
-            {isEdit ? 'Update' : 'Add'}
+            {isEdit ? 'Update Model' : 'Add Model'}
           </button>
         </div>
       </div>
@@ -321,6 +582,147 @@ function DeleteConfirm({
             Remove
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── LLM Credentials Tab — Re-use credentials from providers ─────────────────
+
+function LlmCredentialsTab() {
+  const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => providersApi.getAll() }) ?? { data: undefined }
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-white">LLM Credentials</h2>
+        <p className="text-xs text-zinc-400 mt-1">Re-use credentials across models. Each model inherits from its provider.</p>
+      </div>
+      {!providers || providers.total === 0 ? (
+        <div className="border border-zinc-800/80 rounded-2xl bg-zinc-900/20 p-12 text-center">
+          <div className="flex flex-col items-center text-zinc-500 gap-3">
+            <Key size={24} className="text-zinc-700" />
+            <div className="text-xs">No providers configured. Add one in the Providers section.</div>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {providers.providers.map(p => (
+            <div key={p.name} className="rounded-xl border border-zinc-800/50 bg-zinc-900/20 p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <Key size={14} className="text-indigo-400" />
+                <span className="font-semibold text-white capitalize">{p.name}</span>
+                <span className="text-[10px] text-zinc-500">{p.keys_count} key(s)</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {p.keys.map((k, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-300 border border-zinc-700/50">
+                    {k.name}: <span className="text-zinc-500 font-mono">{k.value}</span>
+                  </span>
+                ))}
+              </div>
+              <div className="text-[10px] text-zinc-500 font-mono">{p.network.base_url || 'default URL'}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Pass-Through Endpoints Tab ──────────────────────────────────────────────
+
+function PassThroughEndpointsTab() {
+  const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => providersApi.getAll() }) ?? { data: undefined }
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-white">Pass-Through Endpoints</h2>
+        <p className="text-xs text-zinc-400 mt-1">Models can be accessed directly at their provider endpoints via Pylos.</p>
+      </div>
+      {!providers || providers.total === 0 ? (
+        <div className="border border-zinc-800/80 rounded-2xl bg-zinc-900/20 p-12 text-center">
+          <div className="flex flex-col items-center text-zinc-500 gap-3">
+            <Globe size={24} className="text-zinc-700" />
+            <div className="text-xs">No endpoints configured.</div>
+          </div>
+        </div>
+      ) : (
+        <div className="border border-zinc-800/80 rounded-2xl bg-zinc-900/20 overflow-hidden shadow-2xl">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-zinc-900/40 border-b border-zinc-800/80">
+                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Provider</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Endpoint</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Auth</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Statu</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800/50">
+              {providers.providers.map(p => (
+                <tr key={p.name} className="hover:bg-zinc-900/40 transition-colors">
+                  <td className="px-6 py-4">
+                    <span className="text-xs text-zinc-300 font-semibold capitalize">{p.name}</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="font-mono text-xs text-zinc-400">{p.network.base_url || 'default'}</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-[10px] text-zinc-500">{p.keys_count} key(s)</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-900/30 text-emerald-400 border border-emerald-800/50 uppercase tracking-wider">
+                      Active
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Model Retry Settings Tab ────────────────────────────────────────────────
+
+function ModelRetrySettingsTab() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-white">Model Retry Settings</h2>
+        <p className="text-xs text-zinc-400 mt-1">
+          Configure retry policies per model or per provider. When a model fails, Pylos will attempt fallback providers.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/20 p-5 space-y-2">
+          <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Per-Provider Retries</div>
+          <div className="text-2xl font-bold text-white">3</div>
+          <div className="text-[10px] text-zinc-500">default max retries</div>
+        </div>
+        <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/20 p-5 space-y-2">
+          <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Backoff (initial)</div>
+          <div className="text-2xl font-bold text-white">100ms</div>
+          <div className="text-[10px] text-zinc-500">exponential with jitter</div>
+        </div>
+        <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/20 p-5 space-y-2">
+          <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Circuit Breaker</div>
+          <div className="text-2xl font-bold text-white">5</div>
+          <div className="text-[10px] text-zinc-500">max failures before 30s cooldown</div>
+        </div>
+      </div>
+
+      <div className="border border-zinc-800/80 rounded-2xl bg-zinc-900/20 p-6 space-y-4 shadow-2xl">
+        <h3 className="text-sm font-semibold text-white">How retries work</h3>
+        <ol className="list-decimal list-inside space-y-2 text-xs text-zinc-400">
+          <li><strong className="text-zinc-300">Per-provider retry</strong> — If a provider returns a retriable error (timeout, 429, 5xx), the request is retried up to <code className="text-indigo-400">max_retries</code> times with exponential backoff + jitter.</li>
+          <li><strong className="text-zinc-300">Provider fallback</strong> — After exhausting retries, Pylos tries the next provider in the ordered list (<code className="text-indigo-400">select_and_order_providers</code>). Providers supporting the model are tried first.</li>
+          <li><strong className="text-zinc-300">Circuit breaker</strong> — After <code className="text-indigo-400">5 consecutive failures</code>, the provider is skipped for <code className="text-indigo-400">30 seconds</code> to allow recovery.</li>
+          <li><strong className="text-zinc-300">Model mapping</strong> — If the model name isn't supported by the fallback provider, <code className="text-indigo-400">map_model_for_provider</code> translates it (e.g., <code className="text-indigo-400">gpt-4o</code> → <code className="text-indigo-400">anthropic.claude-3-5-sonnet</code>).</li>
+          <li><strong className="text-zinc-300">Request queuing</strong> — If the concurrency limit is reached, requests are queued with a configurable timeout (default: 30s).</li>
+        </ol>
       </div>
     </div>
   )
@@ -900,6 +1302,12 @@ export default function ModelCatalog() {
         <ModelGroupAliasTab />
       ) : activeTab === 'health' ? (
         <ModelHealthTab />
+      ) : activeTab === 'llm-credentials' ? (
+        <LlmCredentialsTab />
+      ) : activeTab === 'endpoints' ? (
+        <PassThroughEndpointsTab />
+      ) : activeTab === 'retry' ? (
+        <ModelRetrySettingsTab />
       ) : (
         <>
           {/* Dropdown Filters (Current Team & View) */}
@@ -1138,6 +1546,30 @@ export default function ModelCatalog() {
                                       <span className="text-zinc-400">Provider</span>
                                       <span className="text-zinc-200 font-semibold capitalize">{pylos.provider}</span>
                                     </div>
+                                    {pylos.api_base && (
+                                      <div className="flex justify-between text-xs">
+                                        <span className="text-zinc-400">API Base</span>
+                                        <span className="text-zinc-200 font-mono text-[10px]">{pylos.api_base}</span>
+                                      </div>
+                                    )}
+                                    {pylos.tpm && (
+                                      <div className="flex justify-between text-xs">
+                                        <span className="text-zinc-400">TPM</span>
+                                        <span className="text-zinc-200 font-mono">{pylos.tpm}</span>
+                                      </div>
+                                    )}
+                                    {pylos.rpm && (
+                                      <div className="flex justify-between text-xs">
+                                        <span className="text-zinc-400">RPM</span>
+                                        <span className="text-zinc-200 font-mono">{pylos.rpm}</span>
+                                      </div>
+                                    )}
+                                    {pylos.max_retries && (
+                                      <div className="flex justify-between text-xs">
+                                        <span className="text-zinc-400">Max Retries</span>
+                                        <span className="text-zinc-200 font-mono">{pylos.max_retries}</span>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                                 <div>
@@ -1148,6 +1580,18 @@ export default function ModelCatalog() {
                                     <CapBadge ok={pylos.supports_embeddings} label="Embed" />
                                     <CapBadge ok={pylos.supports_streaming} label="Stream" />
                                   </div>
+                                  {pylos.tags && pylos.tags.length > 0 && (
+                                    <div className="mt-3">
+                                      <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Tags</div>
+                                      <div className="flex gap-1 flex-wrap">
+                                        {pylos.tags.map((tag, i) => (
+                                          <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-900/30 text-indigo-400 border border-indigo-800/50">
+                                            {tag}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                                 <div>
                                   <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Cost Estimation</div>

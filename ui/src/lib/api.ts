@@ -265,6 +265,17 @@ export interface ModelInfo {
   supports_embeddings: boolean
   is_deprecated: boolean
   enabled: boolean
+  api_base: string | null
+  tpm: number | null
+  rpm: number | null
+  max_retries: number | null
+  timeout_secs: number | null
+  stream_timeout_secs: number | null
+  model_access_groups: string[] | null
+  guardrails: string[] | null
+  tags: string[] | null
+  provider_params: Record<string, unknown> | null
+  organization_id: string | null
 }
 
 export interface ModelHealthEntry {

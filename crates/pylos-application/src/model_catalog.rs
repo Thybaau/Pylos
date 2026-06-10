@@ -43,6 +43,19 @@ pub struct ModelInfo {
     pub supports_embeddings: bool,
     pub is_deprecated: bool,
     pub enabled: bool,
+
+    // ── LiteLLM-style overrides ──────────────────────────────────────────
+    pub api_base: Option<String>,
+    pub tpm: Option<u32>,
+    pub rpm: Option<u32>,
+    pub max_retries: Option<u32>,
+    pub timeout_secs: Option<u32>,
+    pub stream_timeout_secs: Option<u32>,
+    pub model_access_groups: Option<Vec<String>>,
+    pub guardrails: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
+    pub provider_params: Option<serde_json::Value>,
+    pub organization_id: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -131,7 +144,18 @@ impl ModelCatalog {
                 supports_embeddings     INTEGER NOT NULL DEFAULT 0,
                 is_deprecated           INTEGER NOT NULL DEFAULT 0,
                 enabled                 INTEGER NOT NULL DEFAULT 1,
-                updated_at_ms           INTEGER NOT NULL
+                updated_at_ms           INTEGER NOT NULL,
+                api_base                TEXT,
+                tpm                     INTEGER,
+                rpm                     INTEGER,
+                max_retries             INTEGER,
+                timeout_secs            INTEGER,
+                stream_timeout_secs     INTEGER,
+                model_access_groups     TEXT,
+                guardrails              TEXT,
+                tags                    TEXT,
+                provider_params         TEXT,
+                organization_id         TEXT
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_uniq ON model_catalog(provider, model_id);
             CREATE TABLE IF NOT EXISTS model_health (
@@ -236,6 +260,19 @@ impl ModelCatalog {
 
     pub async fn upsert_model(&self, model: &ModelInfo) -> Result<(), sqlx::Error> {
         let now = now_ms();
+        let model_access_groups_json = model
+            .model_access_groups
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default());
+        let guardrails_json = model
+            .guardrails
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default());
+        let tags_json = model
+            .tags
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_default());
+        let provider_params_json = model.provider_params.as_ref().map(|v| v.to_string());
         match &self.pool {
             Pool::Sqlite(pool) => {
                 sqlx::query(
@@ -244,8 +281,11 @@ impl ModelCatalog {
                         (id, provider, model_id, display_name, context_window, max_output_tokens,
                          input_price_per_1m_usd, output_price_per_1m_usd,
                          supports_vision, supports_tools, supports_streaming, supports_embeddings,
-                         is_deprecated, enabled, updated_at_ms)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                         is_deprecated, enabled, updated_at_ms,
+                         api_base, tpm, rpm, max_retries, timeout_secs, stream_timeout_secs,
+                         model_access_groups, guardrails, tags, provider_params, organization_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                            $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
                     ON CONFLICT(id) DO UPDATE SET
                         display_name = excluded.display_name,
                         context_window = excluded.context_window,
@@ -258,7 +298,18 @@ impl ModelCatalog {
                         supports_embeddings = excluded.supports_embeddings,
                         is_deprecated = excluded.is_deprecated,
                         enabled = excluded.enabled,
-                        updated_at_ms = excluded.updated_at_ms
+                        updated_at_ms = excluded.updated_at_ms,
+                        api_base = excluded.api_base,
+                        tpm = excluded.tpm,
+                        rpm = excluded.rpm,
+                        max_retries = excluded.max_retries,
+                        timeout_secs = excluded.timeout_secs,
+                        stream_timeout_secs = excluded.stream_timeout_secs,
+                        model_access_groups = excluded.model_access_groups,
+                        guardrails = excluded.guardrails,
+                        tags = excluded.tags,
+                        provider_params = excluded.provider_params,
+                        organization_id = excluded.organization_id
                     "#,
                 )
                 .bind(&model.id)
@@ -276,6 +327,17 @@ impl ModelCatalog {
                 .bind(model.is_deprecated as i32)
                 .bind(model.enabled as i32)
                 .bind(now)
+                .bind(&model.api_base)
+                .bind(model.tpm.map(|v| v as i64))
+                .bind(model.rpm.map(|v| v as i64))
+                .bind(model.max_retries.map(|v| v as i64))
+                .bind(model.timeout_secs.map(|v| v as i64))
+                .bind(model.stream_timeout_secs.map(|v| v as i64))
+                .bind(&model_access_groups_json)
+                .bind(&guardrails_json)
+                .bind(&tags_json)
+                .bind(&provider_params_json)
+                .bind(&model.organization_id)
                 .execute(pool)
                 .await?;
             }
@@ -286,8 +348,11 @@ impl ModelCatalog {
                         (id, provider, model_id, display_name, context_window, max_output_tokens,
                          input_price_per_1m_usd, output_price_per_1m_usd,
                          supports_vision, supports_tools, supports_streaming, supports_embeddings,
-                         is_deprecated, enabled, updated_at_ms)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                         is_deprecated, enabled, updated_at_ms,
+                         api_base, tpm, rpm, max_retries, timeout_secs, stream_timeout_secs,
+                         model_access_groups, guardrails, tags, provider_params, organization_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                            $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
                     ON CONFLICT(id) DO UPDATE SET
                         display_name = excluded.display_name,
                         context_window = excluded.context_window,
@@ -300,7 +365,18 @@ impl ModelCatalog {
                         supports_embeddings = excluded.supports_embeddings,
                         is_deprecated = excluded.is_deprecated,
                         enabled = excluded.enabled,
-                        updated_at_ms = excluded.updated_at_ms
+                        updated_at_ms = excluded.updated_at_ms,
+                        api_base = excluded.api_base,
+                        tpm = excluded.tpm,
+                        rpm = excluded.rpm,
+                        max_retries = excluded.max_retries,
+                        timeout_secs = excluded.timeout_secs,
+                        stream_timeout_secs = excluded.stream_timeout_secs,
+                        model_access_groups = excluded.model_access_groups,
+                        guardrails = excluded.guardrails,
+                        tags = excluded.tags,
+                        provider_params = excluded.provider_params,
+                        organization_id = excluded.organization_id
                     "#,
                 )
                 .bind(&model.id)
@@ -311,13 +387,24 @@ impl ModelCatalog {
                 .bind(model.max_output_tokens as i32)
                 .bind(model.input_price_per_1m_usd)
                 .bind(model.output_price_per_1m_usd)
-                .bind(model.supports_vision as i32)
-                .bind(model.supports_tools as i32)
-                .bind(model.supports_streaming as i32)
-                .bind(model.supports_embeddings as i32)
-                .bind(model.is_deprecated as i32)
-                .bind(model.enabled as i32)
+                .bind(model.supports_vision)
+                .bind(model.supports_tools)
+                .bind(model.supports_streaming)
+                .bind(model.supports_embeddings)
+                .bind(model.is_deprecated)
+                .bind(model.enabled)
                 .bind(now)
+                .bind(&model.api_base)
+                .bind(model.tpm.map(|v| v as i32))
+                .bind(model.rpm.map(|v| v as i32))
+                .bind(model.max_retries.map(|v| v as i32))
+                .bind(model.timeout_secs.map(|v| v as i32))
+                .bind(model.stream_timeout_secs.map(|v| v as i32))
+                .bind(&model_access_groups_json)
+                .bind(&guardrails_json)
+                .bind(&tags_json)
+                .bind(&provider_params_json)
+                .bind(&model.organization_id)
                 .execute(pool)
                 .await?;
             }
@@ -518,6 +605,14 @@ impl ModelCatalog {
     }
 }
 
+fn parse_json_array(val: Option<&str>) -> Option<Vec<String>> {
+    val.and_then(|v| serde_json::from_str(v).ok())
+}
+
+fn parse_json_value(val: Option<&str>) -> Option<serde_json::Value> {
+    val.and_then(|v| serde_json::from_str(v).ok())
+}
+
 fn row_to_model_info_sqlite(row: &sqlx::sqlite::SqliteRow) -> ModelInfo {
     ModelInfo {
         id: row.try_get("id").unwrap_or_default(),
@@ -534,6 +629,32 @@ fn row_to_model_info_sqlite(row: &sqlx::sqlite::SqliteRow) -> ModelInfo {
         supports_embeddings: row.try_get::<i64, _>("supports_embeddings").unwrap_or(0) != 0,
         is_deprecated: row.try_get::<i64, _>("is_deprecated").unwrap_or(0) != 0,
         enabled: row.try_get::<i64, _>("enabled").unwrap_or(1) != 0,
+        api_base: row.try_get("api_base").ok(),
+        tpm: row
+            .try_get::<Option<i64>, _>("tpm")
+            .unwrap_or(None)
+            .map(|v| v as u32),
+        rpm: row
+            .try_get::<Option<i64>, _>("rpm")
+            .unwrap_or(None)
+            .map(|v| v as u32),
+        max_retries: row
+            .try_get::<Option<i64>, _>("max_retries")
+            .unwrap_or(None)
+            .map(|v| v as u32),
+        timeout_secs: row
+            .try_get::<Option<i64>, _>("timeout_secs")
+            .unwrap_or(None)
+            .map(|v| v as u32),
+        stream_timeout_secs: row
+            .try_get::<Option<i64>, _>("stream_timeout_secs")
+            .unwrap_or(None)
+            .map(|v| v as u32),
+        model_access_groups: parse_json_array(row.try_get("model_access_groups").ok()),
+        guardrails: parse_json_array(row.try_get("guardrails").ok()),
+        tags: parse_json_array(row.try_get("tags").ok()),
+        provider_params: parse_json_value(row.try_get("provider_params").ok()),
+        organization_id: row.try_get("organization_id").ok(),
     }
 }
 
@@ -555,6 +676,32 @@ fn row_to_model_info_pg(row: &sqlx::postgres::PgRow) -> ModelInfo {
             .unwrap_or(false),
         is_deprecated: row.try_get::<bool, _>("is_deprecated").unwrap_or(false),
         enabled: row.try_get::<bool, _>("enabled").unwrap_or(true),
+        api_base: row.try_get("api_base").ok(),
+        tpm: row
+            .try_get::<Option<i32>, _>("tpm")
+            .unwrap_or(None)
+            .map(|v| v as u32),
+        rpm: row
+            .try_get::<Option<i32>, _>("rpm")
+            .unwrap_or(None)
+            .map(|v| v as u32),
+        max_retries: row
+            .try_get::<Option<i32>, _>("max_retries")
+            .unwrap_or(None)
+            .map(|v| v as u32),
+        timeout_secs: row
+            .try_get::<Option<i32>, _>("timeout_secs")
+            .unwrap_or(None)
+            .map(|v| v as u32),
+        stream_timeout_secs: row
+            .try_get::<Option<i32>, _>("stream_timeout_secs")
+            .unwrap_or(None)
+            .map(|v| v as u32),
+        model_access_groups: parse_json_array(row.try_get("model_access_groups").ok()),
+        guardrails: parse_json_array(row.try_get("guardrails").ok()),
+        tags: parse_json_array(row.try_get("tags").ok()),
+        provider_params: parse_json_value(row.try_get("provider_params").ok()),
+        organization_id: row.try_get("organization_id").ok(),
     }
 }
 
@@ -593,6 +740,17 @@ fn m(
         supports_embeddings: embeddings,
         is_deprecated: false,
         enabled: true,
+        api_base: None,
+        tpm: None,
+        rpm: None,
+        max_retries: None,
+        timeout_secs: None,
+        stream_timeout_secs: None,
+        model_access_groups: None,
+        guardrails: None,
+        tags: None,
+        provider_params: None,
+        organization_id: None,
     }
 }
 

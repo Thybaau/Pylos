@@ -240,6 +240,17 @@ fn model_info_pylos_field(info: &pylos_application::ModelInfo) -> serde_json::Va
         "supports_embeddings": info.supports_embeddings,
         "is_deprecated": info.is_deprecated,
         "enabled": info.enabled,
+        "api_base": info.api_base,
+        "tpm": info.tpm,
+        "rpm": info.rpm,
+        "max_retries": info.max_retries,
+        "timeout_secs": info.timeout_secs,
+        "stream_timeout_secs": info.stream_timeout_secs,
+        "model_access_groups": info.model_access_groups,
+        "guardrails": info.guardrails,
+        "tags": info.tags,
+        "provider_params": info.provider_params,
+        "organization_id": info.organization_id,
     })
 }
 
@@ -264,6 +275,17 @@ fn make_minimal_pylos(
         "supports_embeddings": false,
         "is_deprecated": false,
         "enabled": true,
+        "api_base": null,
+        "tpm": null,
+        "rpm": null,
+        "max_retries": null,
+        "timeout_secs": null,
+        "stream_timeout_secs": null,
+        "model_access_groups": null,
+        "guardrails": null,
+        "tags": null,
+        "provider_params": null,
+        "organization_id": null,
     })
 }
 
@@ -307,6 +329,28 @@ pub struct UpsertModelRequest {
     pub is_deprecated: bool,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default)]
+    pub api_base: Option<String>,
+    #[serde(default)]
+    pub tpm: Option<u32>,
+    #[serde(default)]
+    pub rpm: Option<u32>,
+    #[serde(default)]
+    pub max_retries: Option<u32>,
+    #[serde(default)]
+    pub timeout_secs: Option<u32>,
+    #[serde(default)]
+    pub stream_timeout_secs: Option<u32>,
+    #[serde(default)]
+    pub model_access_groups: Option<Vec<String>>,
+    #[serde(default)]
+    pub guardrails: Option<Vec<String>>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub provider_params: Option<serde_json::Value>,
+    #[serde(default)]
+    pub organization_id: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -332,6 +376,17 @@ pub async fn upsert_catalog_model(
         supports_embeddings: req.supports_embeddings,
         is_deprecated: req.is_deprecated,
         enabled: req.enabled,
+        api_base: req.api_base,
+        tpm: req.tpm,
+        rpm: req.rpm,
+        max_retries: req.max_retries,
+        timeout_secs: req.timeout_secs,
+        stream_timeout_secs: req.stream_timeout_secs,
+        model_access_groups: req.model_access_groups,
+        guardrails: req.guardrails,
+        tags: req.tags,
+        provider_params: req.provider_params,
+        organization_id: req.organization_id,
     };
 
     match state.model_catalog.upsert_model(&info).await {
@@ -511,6 +566,17 @@ pub async fn pull_provider_models(
                 supports_embeddings: is_embed,
                 is_deprecated: false,
                 enabled: true,
+                api_base: None,
+                tpm: None,
+                rpm: None,
+                max_retries: None,
+                timeout_secs: None,
+                stream_timeout_secs: None,
+                model_access_groups: None,
+                guardrails: None,
+                tags: None,
+                provider_params: None,
+                organization_id: None,
             };
             if state.model_catalog.upsert_model(&info).await.is_ok() {
                 upserted_count += 1;
@@ -685,6 +751,17 @@ pub async fn reload_pricing_data(State(state): State<AppState>) -> impl IntoResp
             supports_embeddings: is_embed,
             is_deprecated: false,
             enabled: true,
+            api_base: None,
+            tpm: None,
+            rpm: None,
+            max_retries: None,
+            timeout_secs: None,
+            stream_timeout_secs: None,
+            model_access_groups: None,
+            guardrails: None,
+            tags: None,
+            provider_params: None,
+            organization_id: None,
         };
 
         if state.model_catalog.upsert_model(&info).await.is_ok() {
