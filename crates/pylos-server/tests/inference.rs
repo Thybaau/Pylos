@@ -167,6 +167,11 @@ async fn test_chat_completions_unary() {
         system_prompt_store,
         org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         search_tool_store: Arc::new(SearchToolStore::in_memory().await.unwrap()),
+        mcp_server_store: Arc::new(
+            pylos_application::McpServerStore::in_memory()
+                .await
+                .unwrap(),
+        ),
         admin_key: None,
         google_client_id: None,
         google_client_secret: None,
@@ -248,6 +253,11 @@ async fn test_chat_completions_stream() {
         system_prompt_store,
         org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         search_tool_store: Arc::new(SearchToolStore::in_memory().await.unwrap()),
+        mcp_server_store: Arc::new(
+            pylos_application::McpServerStore::in_memory()
+                .await
+                .unwrap(),
+        ),
         admin_key: None,
         google_client_id: None,
         google_client_secret: None,
@@ -337,6 +347,11 @@ async fn test_image_generations() {
         system_prompt_store,
         org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         search_tool_store: Arc::new(SearchToolStore::in_memory().await.unwrap()),
+        mcp_server_store: Arc::new(
+            pylos_application::McpServerStore::in_memory()
+                .await
+                .unwrap(),
+        ),
         admin_key: None,
         google_client_id: None,
         google_client_secret: None,
@@ -492,6 +507,11 @@ async fn test_a2a_allowed_models_routing() {
         system_prompt_store,
         org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         search_tool_store: Arc::new(SearchToolStore::in_memory().await.unwrap()),
+        mcp_server_store: Arc::new(
+            pylos_application::McpServerStore::in_memory()
+                .await
+                .unwrap(),
+        ),
         admin_key: None,
         google_client_id: None,
         google_client_secret: None,
@@ -685,6 +705,11 @@ async fn test_semantic_caching_flow() {
         system_prompt_store,
         org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         search_tool_store: Arc::new(SearchToolStore::in_memory().await.unwrap()),
+        mcp_server_store: Arc::new(
+            pylos_application::McpServerStore::in_memory()
+                .await
+                .unwrap(),
+        ),
         admin_key: None,
         google_client_id: None,
         google_client_secret: None,
@@ -834,6 +859,11 @@ async fn test_structured_outputs_validation() {
         system_prompt_store,
         org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         search_tool_store: Arc::new(SearchToolStore::in_memory().await.unwrap()),
+        mcp_server_store: Arc::new(
+            pylos_application::McpServerStore::in_memory()
+                .await
+                .unwrap(),
+        ),
         admin_key: None,
         google_client_id: None,
         google_client_secret: None,
@@ -959,6 +989,11 @@ async fn test_inference_queuing_and_timeout() {
         system_prompt_store,
         org_store: Arc::new(OrganizationStore::in_memory().await.unwrap()),
         search_tool_store: Arc::new(SearchToolStore::in_memory().await.unwrap()),
+        mcp_server_store: Arc::new(
+            pylos_application::McpServerStore::in_memory()
+                .await
+                .unwrap(),
+        ),
         admin_key: None,
         google_client_id: None,
         google_client_secret: None,

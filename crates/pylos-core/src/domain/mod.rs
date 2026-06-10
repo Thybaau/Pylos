@@ -3,6 +3,7 @@ pub mod config;
 pub mod embedding;
 pub mod encryption;
 pub mod image;
+pub mod mcp_server;
 pub mod openai;
 pub mod organization;
 pub mod provider;

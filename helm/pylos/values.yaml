@@ -91,6 +91,31 @@ dev:
       - ReadWriteOnce
     size: 1Gi
 
+mcp:
+  image:
+    repository: ghcr.io/jzacharie/pylos-mcp
+    tag: latest
+    pullPolicy: Always
+  service:
+    port: 8000
+    type: ClusterIP
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  servers: {}
+  # Example:
+  # servers:
+  #   my-tools:
+  #     server_type: python
+  #     target_url: ""
+  #     env_vars:
+  #       MCP_API_KEY: "sk-example"
+  #       LOG_LEVEL: "debug"
+
 secretStore:
   enabled: true
   name: vault-backend

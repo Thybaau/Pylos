@@ -1,0 +1,23 @@
+{{- range $name, $server := .Values.mcp.servers }}
+{{ include "mcp.deployment" (dict "context" $ "server" (mergeOverwrite (dict "name" $name) $server)) }}
+{{ include "mcp.service" (dict "context" $ "server" (mergeOverwrite (dict "name" $name) $server)) }}
+{{ include "mcp.networkpolicy" (dict "context" $ "server" (mergeOverwrite (dict "name" $name) $server)) }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pylos.mcp.name" (dict "name" $name) }}-config
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "pylos.mcp.labels" (dict "name" $name) | nindent 4 }}
+data:
+  server_name: {{ $name }}
+  server_type: {{ $server.server_type | default "python" }}
+  config.json: |
+    {
+      "name": "{{ $name }}",
+      "server_type": "{{ $server.server_type | default "python" }}",
+      "target_url": "{{ $server.target_url | default "" }}",
+      "env_vars": {{ toJson ($server.env_vars | default dict) }}
+    }
+{{- end }}

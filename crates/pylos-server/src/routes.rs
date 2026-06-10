@@ -2,6 +2,8 @@ use crate::interfaces::http::{
     access_control, auth, completions, config, embeddings, health, images, inference, logs,
     metrics, models, vector_stores,
 };
+use crate::mcp;
+use crate::mcp_proxy;
 use crate::middleware::{
     admin_guard_middleware, management_auth_middleware, playgroup_check_middleware,
     queuing_middleware, virtual_key_middleware,
@@ -204,6 +206,20 @@ pub fn create_router(state: AppState) -> Router {
             "/api/vector-stores/collections/:name/search",
             post(vector_stores::search_collection),
         )
+        // MCP Server management routes
+        .route("/api/mcp-servers", get(mcp::list_mcp_servers))
+        .route("/api/mcp-servers", post(mcp::create_mcp_server))
+        .route("/api/mcp-servers/:id", get(mcp::get_mcp_server))
+        .route("/api/mcp-servers/:id", put(mcp::update_mcp_server))
+        .route("/api/mcp-servers/:id", delete(mcp::delete_mcp_server))
+        .route(
+            "/api/mcp-servers/:id/activate",
+            post(mcp::activate_mcp_server),
+        )
+        .route(
+            "/api/mcp-servers/:id/deactivate",
+            post(mcp::deactivate_mcp_server),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             management_auth_middleware,
@@ -221,6 +237,14 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/auth/google/callback", post(auth::google_callback))
         .route("/api/auth/logout", post(auth::logout));
 
+    // MCP proxy routes — accessibles via Virtual Key (Authorization) ou Team (X-Team-Id)
+    let mcp_proxy_routes = Router::new()
+        .route("/mcp/:server_name", get(mcp_proxy::mcp_server_status))
+        .route(
+            "/mcp/:server_name/*path",
+            axum::routing::any(mcp_proxy::mcp_proxy_handler),
+        );
+
     Router::new()
         .route("/", get(health::root))
         .route("/health", get(health::health_check))
@@ -230,6 +254,7 @@ pub fn create_router(state: AppState) -> Router {
         .merge(inference_routes)
         .merge(management_routes)
         .merge(guardrails_admin_routes)
+        .merge(mcp_proxy_routes)
         // Middleware global
         .layer(TraceLayer::new_for_http())
         .layer(build_cors(&state))

@@ -1,0 +1,11 @@
+{
+  "name": "pylos-mcp-server-node",
+  "version": "1.0.0",
+  "description": "Serveur MCP minimal pour Pylos (Node.js)",
+  "main": "server.js",
+  "type": "module",
+  "dependencies": {
+    "express": "^4.18.2",
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

@@ -1,6 +1,8 @@
 pub mod compression;
 pub mod infrastructure;
 pub mod interfaces;
+pub mod mcp;
+pub mod mcp_proxy;
 pub mod metrics;
 pub mod middleware;
 pub mod provider_utils;

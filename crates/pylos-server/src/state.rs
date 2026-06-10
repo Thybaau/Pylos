@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use pylos_application::{
     BudgetPlugin, BudgetStore, ConfigStore, GuardrailsPlugin, InferenceOrchestrator, LogStore,
-    ModelCatalog, OrganizationStore, OtelConfig, PgLogStore, RateLimitPlugin, RateLimitStore,
-    SearchToolStore, SemanticCachePlugin, StructuredOutputPlugin, VirtualKeyStore,
+    McpServerStore, ModelCatalog, OrganizationStore, OtelConfig, PgLogStore, RateLimitPlugin,
+    RateLimitStore, SearchToolStore, SemanticCachePlugin, StructuredOutputPlugin, VirtualKeyStore,
 };
 use pylos_core::domain::traits::LlmPlugin;
 
@@ -83,6 +83,7 @@ pub struct AppState {
     pub system_prompt_store: Arc<pylos_application::SystemPromptStore>,
     pub org_store: Arc<OrganizationStore>,
     pub search_tool_store: Arc<SearchToolStore>,
+    pub mcp_server_store: Arc<McpServerStore>,
     pub admin_key: Option<String>,
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
@@ -112,6 +113,7 @@ impl AppState {
         Arc<pylos_application::SystemPromptStore>,
         Arc<OrganizationStore>,
         Arc<SearchToolStore>,
+        Arc<McpServerStore>,
     )> {
         let db_scheme = db_url.split(':').next().unwrap_or("unknown");
         tracing::info!(database_url = %format!("{}://***@***/***", db_scheme), "Using PostgreSQL for all stores");
@@ -157,6 +159,10 @@ impl AppState {
             Arc::new(SearchToolStore::open_postgres(db_url).await.map_err(|e| {
                 anyhow::anyhow!("Failed to open PostgreSQL search tool store: {}", e)
             })?);
+        let pg_mcp =
+            Arc::new(McpServerStore::open_postgres(db_url).await.map_err(|e| {
+                anyhow::anyhow!("Failed to open PostgreSQL MCP server store: {}", e)
+            })?);
 
         if let Err(e) = config_store.init_database(db_url).await {
             tracing::warn!(error = %e, "Failed to initialize PostgreSQL config store");
@@ -171,6 +177,7 @@ impl AppState {
             pg_prompts,
             pg_org,
             pg_search_tool,
+            pg_mcp,
         ))
     }
 
@@ -186,6 +193,7 @@ impl AppState {
         Arc<pylos_application::SystemPromptStore>,
         Arc<OrganizationStore>,
         Arc<SearchToolStore>,
+        Arc<McpServerStore>,
     )> {
         let data_dir = data_dir.unwrap_or_else(|| {
             std::env::var("PYLOS_DATA_DIR")
@@ -252,6 +260,13 @@ impl AppState {
                 .map_err(|e| anyhow::anyhow!("Failed to open search tool store: {}", e))?,
         );
 
+        let mcp_db_path = data_dir.join("pylos-mcp.db");
+        let sqlite_mcp = Arc::new(
+            McpServerStore::open(&mcp_db_path)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to open MCP server store: {}", e))?,
+        );
+
         let config_db_path = data_dir.join("pylos-config.db");
         let sqlite_config_db_url =
             format!("sqlite://{}?mode=rwc", config_db_path.to_string_lossy());
@@ -268,6 +283,7 @@ impl AppState {
             sqlite_prompts,
             sqlite_org,
             sqlite_search_tool,
+            sqlite_mcp,
         ))
     }
 
@@ -475,6 +491,7 @@ impl AppState {
             system_prompt_store,
             org_store,
             search_tool_store,
+            mcp_server_store,
         ) = if let Some(ref db_url) = database_url {
             Self::init_postgres_stores(db_url, &config_store).await?
         } else {
@@ -522,6 +539,7 @@ impl AppState {
             system_prompt_store,
             org_store,
             search_tool_store,
+            mcp_server_store,
             admin_key: std::env::var("PYLOS_ADMIN_KEY").ok(),
             google_client_id: std::env::var("GOOGLE_CLIENT_ID").ok(),
             google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").ok(),
