@@ -409,7 +409,7 @@ impl InferenceOrchestrator {
                     provider = provider.name(),
                     original_model = %model,
                     mapped_model = %mapped_model,
-                    trace_id = ?ctx.trace_id.as_deref().unwrap_or(""),
+                    trace_id = %ctx.trace_id.as_deref().unwrap_or(""),
                     "[Path] Model '{}' not supported natively by '{}', mapped to '{}' for fallback",
                     model, provider.name(), mapped_model
                 );
@@ -419,7 +419,7 @@ impl InferenceOrchestrator {
             info!(
                 provider = provider.name(),
                 model = %model,
-                trace_id = ?ctx.trace_id.as_deref().unwrap_or(""),
+                trace_id = %ctx.trace_id.as_deref().unwrap_or(""),
                 "[Path] Trying provider '{}' for model '{}'",
                 provider.name(), model
             );
@@ -440,7 +440,7 @@ impl InferenceOrchestrator {
                     info!(
                         provider = provider.name(),
                         model = request.model(),
-                        trace_id = ?ctx.trace_id.as_deref().unwrap_or(""),
+                        trace_id = %ctx.trace_id.as_deref().unwrap_or(""),
                         "Inference successful"
                     );
 
@@ -481,7 +481,7 @@ impl InferenceOrchestrator {
                         model = %model,
                         error = %e,
                         retriable = e.is_retriable(),
-                        trace_id = ?ctx.trace_id.as_deref().unwrap_or(""),
+                        trace_id = %ctx.trace_id.as_deref().unwrap_or(""),
                         "[Path] Provider '{}' FAILED for model '{}' — error: {}. Retriable: {}. Trying fallback...",
                         provider.name(), model, e, e.is_retriable()
                     );
@@ -552,7 +552,7 @@ impl InferenceOrchestrator {
                     provider = provider.name(),
                     original_model = %stream_model,
                     mapped_model = %mapped_model,
-                    trace_id = ?ctx.trace_id.as_deref().unwrap_or(""),
+                    trace_id = %ctx.trace_id.as_deref().unwrap_or(""),
                     "[Path] Stream: Model '{}' not supported natively by '{}', mapped to '{}'",
                     stream_model, provider.name(), mapped_model
                 );
@@ -562,7 +562,7 @@ impl InferenceOrchestrator {
             info!(
                 provider = provider.name(),
                 model = %stream_model,
-                trace_id = ?ctx.trace_id.as_deref().unwrap_or(""),
+                trace_id = %ctx.trace_id.as_deref().unwrap_or(""),
                 "[Path] Stream: Trying provider '{}' for model '{}'",
                 provider.name(), stream_model
             );
@@ -574,7 +574,7 @@ impl InferenceOrchestrator {
                     info!(
                         provider = %actual_provider,
                         model = request.model(),
-                        trace_id = ?ctx.trace_id.as_deref().unwrap_or(""),
+                        trace_id = %ctx.trace_id.as_deref().unwrap_or(""),
                         "Streaming inference started successfully"
                     );
                     return Ok((stream, actual_provider));
@@ -585,7 +585,7 @@ impl InferenceOrchestrator {
                         provider = provider.name(),
                         model = %stream_model,
                         error = %e,
-                        trace_id = ?ctx.trace_id.as_deref().unwrap_or(""),
+                        trace_id = %ctx.trace_id.as_deref().unwrap_or(""),
                         "[Path] Stream: Provider '{}' FAILED for model '{}' — error: {}. Trying fallback...",
                         provider.name(), stream_model, e
                     );

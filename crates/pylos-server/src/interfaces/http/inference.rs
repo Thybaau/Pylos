@@ -383,6 +383,7 @@ async fn stream_response(
                     if output_preview.as_ref().is_none_or(|s| s.trim().is_empty()) {
                         warn!(
                             request_id = %req_id_for_log,
+                            trace_id = %req_id_for_log,
                             source = %src_for_log.as_deref().unwrap_or("api"),
                             provider = %provider_clone,
                             model = %model_clone,
@@ -392,6 +393,7 @@ async fn stream_response(
                     } else {
                         info!(
                             request_id = %req_id_for_log,
+                            trace_id = %req_id_for_log,
                             source = %src_for_log.as_deref().unwrap_or("api"),
                             provider = %provider_clone,
                             model = %model_clone,
