@@ -26,6 +26,35 @@ struct CircuitBreakerState {
     last_failure: Option<Instant>,
 }
 
+/// Compteur Round-Robin pour chaque modèle.
+/// Permet de distribuer les requêtes séquentiellement entre les providers
+/// qui supportent un modèle donné.
+#[derive(Debug, Default)]
+struct RoundRobinState {
+    counters: Mutex<HashMap<String, usize>>,
+}
+
+impl RoundRobinState {
+    fn select_and_advance(&self, model: &str, provider_count: usize) -> usize {
+        let mut counters = self.counters.lock().unwrap();
+        let entry = counters.entry(model.to_string()).or_insert(0);
+        let current = *entry;
+        *entry = (*entry + 1) % provider_count;
+        current
+    }
+}
+
+/// Trait permettant à weighted_shuffle d'extraire le poids d'un item.
+trait HasWeight {
+    fn weight(&self) -> f64;
+}
+
+impl HasWeight for (Arc<dyn Provider>, ProviderConfig, f64, bool) {
+    fn weight(&self) -> f64 {
+        self.2
+    }
+}
+
 /// Orchestre une requête sur un ou plusieurs providers avec retry et fallback
 /// Équivalent de core/inference.go (bifrost) — SendRequest / inferenceLoopHelper
 pub struct InferenceOrchestrator {
@@ -34,6 +63,7 @@ pub struct InferenceOrchestrator {
     providers: Arc<RwLock<ProviderList>>,
     plugins: Vec<Arc<dyn LlmPlugin>>,
     circuit_breakers: Arc<Mutex<HashMap<String, CircuitBreakerState>>>,
+    round_robin: RoundRobinState,
 }
 
 impl InferenceOrchestrator {
@@ -42,6 +72,7 @@ impl InferenceOrchestrator {
             providers: Arc::new(RwLock::new(providers)),
             plugins,
             circuit_breakers: Arc::new(Mutex::new(HashMap::new())),
+            round_robin: RoundRobinState::default(),
         }
     }
 
@@ -112,13 +143,14 @@ impl InferenceOrchestrator {
 
     /// Weighted random shuffle using the A-Res algorithm.
     /// Pre-computes random scores to ensure a deterministic total order.
-    fn weighted_shuffle(
-        items: Vec<(Arc<dyn Provider>, ProviderConfig, f64, bool)>,
-    ) -> Vec<(Arc<dyn Provider>, ProviderConfig, f64, bool)> {
+    fn weighted_shuffle<T>(items: Vec<T>) -> Vec<T>
+    where
+        T: HasWeight,
+    {
         let mut scored: Vec<_> = items
             .into_iter()
             .map(|item| {
-                let weight = item.2.max(0.0001);
+                let weight = item.weight().max(0.0001);
                 let score = fastrand::f64().powf(1.0 / weight);
                 (item, score)
             })
@@ -158,6 +190,16 @@ impl InferenceOrchestrator {
         let mut supporting = Vec::new();
         let mut non_supporting = Vec::new();
 
+        let provider_names: Vec<String> = allowed_providers
+            .iter()
+            .map(|(p, _)| p.name().to_string())
+            .collect();
+        info!(
+            model = %model,
+            available_providers = format!("{:?}", provider_names),
+            "[Routing] Available providers for model"
+        );
+
         for &(provider, config) in &allowed_providers {
             let is_open = self.is_circuit_breaker_open(provider.name());
 
@@ -179,22 +221,41 @@ impl InferenceOrchestrator {
             }
         }
 
-        // 3. Weighted shuffle (A-Res algorithm) for supporting providers
-        let (mut active_supporting, mut broken_supporting): (Vec<_>, Vec<_>) = supporting
+        let (mut active_supporting, broken_supporting): (Vec<_>, Vec<_>) = supporting
             .into_iter()
             .partition(|(_, _, _, is_open)| !*is_open);
 
-        active_supporting = Self::weighted_shuffle(active_supporting);
-        broken_supporting = Self::weighted_shuffle(broken_supporting);
+        // 3. Round-Robin selection among ACTIVE supporting providers
+        let n_active = active_supporting.len();
+        if n_active > 0 {
+            let rr_index = self.round_robin.select_and_advance(model, n_active);
+            active_supporting.rotate_left(rr_index);
 
-        // 4. Do the same for non-supporting
-        let (mut active_non_supporting, mut broken_non_supporting): (Vec<_>, Vec<_>) =
-            non_supporting
-                .into_iter()
-                .partition(|(_, _, _, is_open)| !*is_open);
+            let selected_provider = &active_supporting[0].0;
+            info!(
+                model = %model,
+                selected_provider = %selected_provider.name(),
+                round_robin_index = rr_index,
+                total_active_supporting = n_active,
+                "[Routing] Model: {} -> Selected Provider: {} (Round-Robin index: {})",
+                model,
+                selected_provider.name(),
+                rr_index,
+            );
+        } else {
+            info!(
+                model = %model,
+                "[Routing] No active supporting providers for model — will try fallback chain"
+            );
+        }
 
-        active_non_supporting = Self::weighted_shuffle(active_non_supporting);
-        broken_non_supporting = Self::weighted_shuffle(broken_non_supporting);
+        // 4. Weighted shuffle for remaining ordering
+        let broken_supporting = Self::weighted_shuffle(broken_supporting);
+        let (active_non_supporting, broken_non_supporting): (Vec<_>, Vec<_>) = non_supporting
+            .into_iter()
+            .partition(|(_, _, _, is_open)| !*is_open);
+        let active_non_supporting = Self::weighted_shuffle(active_non_supporting);
+        let broken_non_supporting = Self::weighted_shuffle(broken_non_supporting);
 
         let mut ordered = Vec::new();
         for (prov, cfg, _, _) in active_supporting {
@@ -209,6 +270,14 @@ impl InferenceOrchestrator {
         for (prov, cfg, _, _) in broken_non_supporting {
             ordered.push((prov, cfg));
         }
+
+        let ordered_names: Vec<String> =
+            ordered.iter().map(|(p, _)| p.name().to_string()).collect();
+        info!(
+            model = %model,
+            ordered_providers = format!("{:?}", ordered_names),
+            "[Routing] Final provider order for model"
+        );
 
         ordered
     }
@@ -315,7 +384,7 @@ impl InferenceOrchestrator {
         let model = request.model().to_string();
         let ordered = self.select_and_order_providers(&providers, &model, &ctx);
 
-        for (provider, config) in ordered {
+        for (provider, config) in &ordered {
             if ctx.tried_providers.contains(&provider.name().to_string()) {
                 debug!(
                     provider = provider.name(),
@@ -332,21 +401,31 @@ impl InferenceOrchestrator {
             ctx.tried_providers.push(provider.name().to_string());
 
             let mut req_to_send = request.clone();
-            let is_supported = model_supported_by(&config, &model);
+            let is_supported = model_supported_by(config, &model);
             if !is_supported {
                 let mapped_model =
                     map_model_for_provider(provider.name(), &model, &config.allowed_models);
-                debug!(
+                info!(
                     provider = provider.name(),
                     original_model = %model,
                     mapped_model = %mapped_model,
-                    "Model not supported natively, mapped for fallback"
+                    trace_id = ?ctx.trace_id,
+                    "[Path] Model '{}' not supported natively by '{}', mapped to '{}' for fallback",
+                    model, provider.name(), mapped_model
                 );
                 req_to_send.set_model(mapped_model);
             }
 
+            info!(
+                provider = provider.name(),
+                model = %model,
+                trace_id = ?ctx.trace_id,
+                "[Path] Trying provider '{}' for model '{}'",
+                provider.name(), model
+            );
+
             match self
-                .try_complete_with_retry(provider.as_ref(), &config, &req_to_send)
+                .try_complete_with_retry(provider.as_ref(), config, &req_to_send)
                 .await
             {
                 Ok(mut response) => {
@@ -361,6 +440,7 @@ impl InferenceOrchestrator {
                     info!(
                         provider = provider.name(),
                         model = request.model(),
+                        trace_id = ?ctx.trace_id,
                         "Inference successful"
                     );
 
@@ -398,9 +478,12 @@ impl InferenceOrchestrator {
                     self.record_failure(provider.name());
                     warn!(
                         provider = provider.name(),
+                        model = %model,
                         error = %e,
                         retriable = e.is_retriable(),
-                        "Provider failed, trying fallback"
+                        trace_id = ?ctx.trace_id,
+                        "[Path] Provider '{}' FAILED for model '{}' — error: {}. Retriable: {}. Trying fallback...",
+                        provider.name(), model, e, e.is_retriable()
                     );
                     last_error = Some(e);
                 }
@@ -453,39 +536,57 @@ impl InferenceOrchestrator {
         let stream_model = request.model().to_string();
         let ordered_stream = self.select_and_order_providers(&providers, &stream_model, &ctx);
 
-        for (provider, config) in ordered_stream {
+        for (provider, config) in &ordered_stream {
             if ctx.tried_providers.contains(&provider.name().to_string()) {
                 continue;
             }
             ctx.tried_providers.push(provider.name().to_string());
 
             let mut req_to_send = request.clone();
-            let is_supported = model_supported_by(&config, &stream_model);
+            let is_supported = model_supported_by(config, &stream_model);
             if !is_supported {
                 let mapped_model =
                     map_model_for_provider(provider.name(), &stream_model, &config.allowed_models);
-                debug!(
+                info!(
                     provider = provider.name(),
                     original_model = %stream_model,
                     mapped_model = %mapped_model,
-                    "Model not supported natively, mapped for fallback"
+                    trace_id = ?ctx.trace_id,
+                    "[Path] Stream: Model '{}' not supported natively by '{}', mapped to '{}'",
+                    stream_model, provider.name(), mapped_model
                 );
                 req_to_send.set_model(mapped_model);
             }
 
-            match provider.stream(&req_to_send, &config).await {
+            info!(
+                provider = provider.name(),
+                model = %stream_model,
+                trace_id = ?ctx.trace_id,
+                "[Path] Stream: Trying provider '{}' for model '{}'",
+                provider.name(), stream_model
+            );
+
+            match provider.stream(&req_to_send, config).await {
                 Ok(stream) => {
                     self.record_success(provider.name());
                     info!(
                         provider = provider.name(),
                         model = request.model(),
-                        "Streaming inference started"
+                        trace_id = ?ctx.trace_id,
+                        "Streaming inference started successfully"
                     );
                     return Ok(stream);
                 }
                 Err(e) => {
                     self.record_failure(provider.name());
-                    warn!(provider = provider.name(), error = %e, "Provider stream failed, trying fallback");
+                    warn!(
+                        provider = provider.name(),
+                        model = %stream_model,
+                        error = %e,
+                        trace_id = ?ctx.trace_id,
+                        "[Path] Stream: Provider '{}' FAILED for model '{}' — error: {}. Trying fallback...",
+                        provider.name(), stream_model, e
+                    );
                     last_error = Some(e);
                 }
             }

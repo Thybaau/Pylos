@@ -6,7 +6,7 @@ use crate::mcp;
 use crate::mcp_proxy;
 use crate::middleware::{
     admin_guard_middleware, management_auth_middleware, playgroup_check_middleware,
-    queuing_middleware, virtual_key_middleware,
+    queuing_middleware, request_id_middleware, virtual_key_middleware,
 };
 use crate::state::AppState;
 use axum::{
@@ -257,6 +257,7 @@ pub fn create_router(state: AppState) -> Router {
         .merge(mcp_proxy_routes)
         // Middleware global
         .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn(request_id_middleware))
         .layer(build_cors(&state))
         .with_state(state)
 }

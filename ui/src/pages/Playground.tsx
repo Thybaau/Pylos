@@ -311,7 +311,10 @@ export default function Playground() {
     }
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Pylos-Source': 'playground',
+      }
       if (cavemanMode !== 'off') {
         headers['x-caveman-mode'] = cavemanMode
       }

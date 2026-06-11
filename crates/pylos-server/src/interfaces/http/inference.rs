@@ -13,13 +13,14 @@ use axum::{
 use futures::StreamExt;
 use serde_json::json;
 use tokio::sync::mpsc;
-use tracing::error;
+use tracing::{error, info, warn};
 
 use pylos_application::log_store::{build_log_entry, LogStatus};
 use pylos_core::domain::openai::ChatCompletionRequest;
 use pylos_core::domain::request::{PylosRequest, RequestContext, StreamChunk};
 use pylos_core::error::PylosError;
 
+use crate::middleware::request_id::RequestTrace;
 use crate::middleware::virtual_key::VirtualKeyInfo;
 use crate::provider_utils::guess_provider;
 use crate::state::AppState;
@@ -29,6 +30,7 @@ pub async fn chat_completions(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Extension(vk_info): Extension<Option<VirtualKeyInfo>>,
+    Extension(trace): Extension<RequestTrace>,
     Json(mut payload): Json<ChatCompletionRequest>,
 ) -> Response {
     let caveman_mode = headers
@@ -54,8 +56,22 @@ pub async fn chat_completions(
         .find(|m| matches!(m.role, pylos_core::domain::openai::MessageRole::User))
         .and_then(|m| m.content.clone());
 
+    let request_id = trace.request_id.clone();
+    let source = trace.source.clone();
+
+    info!(
+        request_id = %request_id,
+        source = %source.as_deref().unwrap_or("api"),
+        model = %model,
+        stream = is_stream,
+        "[Request] POST /v1/chat/completions — Starting inference"
+    );
+
     let request = PylosRequest::ChatCompletion(payload);
-    let mut ctx = RequestContext::default();
+    let mut ctx = RequestContext {
+        trace_id: Some(request_id.clone()),
+        ..Default::default()
+    };
     if let Some(vk) = &vk_info {
         ctx.virtual_key = Some(vk.name.clone());
         ctx.provider_configs = vk.provider_configs.clone();
@@ -70,6 +86,8 @@ pub async fn chat_completions(
             input_preview,
             vk_info,
             saved_bytes,
+            request_id,
+            source,
         )
         .await
     } else {
@@ -81,11 +99,14 @@ pub async fn chat_completions(
             input_preview,
             vk_info,
             saved_bytes,
+            request_id,
+            source,
         )
         .await
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn complete_response(
     state: AppState,
     request: PylosRequest,
@@ -94,6 +115,8 @@ async fn complete_response(
     input_preview: Option<String>,
     vk_info: Option<VirtualKeyInfo>,
     saved_bytes: usize,
+    request_id: String,
+    source: Option<String>,
 ) -> Response {
     let start = Instant::now();
     let req_type = "chat_completion";
@@ -129,6 +152,15 @@ async fn complete_response(
             let provider = guess_provider(&resp.model);
             let vk_name = vk_info.map(|v| v.name);
 
+            info!(
+                request_id = %request_id,
+                source = %source.as_deref().unwrap_or("api"),
+                provider = %provider,
+                model = %resp.model,
+                latency_ms = format!("{:.2}", latency),
+                "[Complete] Inference succeeded"
+            );
+
             let entry = build_log_entry(
                 &provider,
                 &resp.model,
@@ -153,14 +185,32 @@ async fn complete_response(
         }
         Ok(pylos_core::domain::request::PylosResponse::Image(resp)) => {
             state.metrics.inc_success(&provider_name, &model);
+            info!(
+                request_id = %request_id,
+                source = %source.as_deref().unwrap_or("api"),
+                provider = %provider_name,
+                "[Image] Inference succeeded"
+            );
             Json(resp).into_response()
         }
         Ok(pylos_core::domain::request::PylosResponse::Embedding(resp)) => {
             state.metrics.inc_success(&provider_name, &model);
+            info!(
+                request_id = %request_id,
+                source = %source.as_deref().unwrap_or("api"),
+                provider = %provider_name,
+                "[Embedding] Inference succeeded"
+            );
             Json(resp).into_response()
         }
         Ok(pylos_core::domain::request::PylosResponse::TextCompletion(resp)) => {
             state.metrics.inc_success(&provider_name, &model);
+            info!(
+                request_id = %request_id,
+                source = %source.as_deref().unwrap_or("api"),
+                provider = %provider_name,
+                "[TextCompletion] Inference succeeded"
+            );
             Json(resp).into_response()
         }
         Err(e) => {
@@ -168,6 +218,19 @@ async fn complete_response(
             state.metrics.inc_error(&provider_name, e.error_type());
             let provider = guess_provider(&model);
             let vk_name = vk_info.map(|v| v.name);
+
+            error!(
+                request_id = %request_id,
+                source = %source.as_deref().unwrap_or("api"),
+                provider = %provider,
+                model = %model,
+                latency_ms = format!("{:.2}", latency),
+                error = %e,
+                error_type = %e.error_type(),
+                "[Complete] Inference FAILED — root cause: {}. Type: {}",
+                e, e.error_type()
+            );
+
             let entry = build_log_entry(
                 &provider,
                 &model,
@@ -218,6 +281,7 @@ impl StreamAccumulator {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn stream_response(
     state: AppState,
     request: PylosRequest,
@@ -226,6 +290,8 @@ async fn stream_response(
     input_preview: Option<String>,
     vk_info: Option<VirtualKeyInfo>,
     saved_bytes: usize,
+    request_id: String,
+    source: Option<String>,
 ) -> Response {
     let start = Instant::now();
     let req_type = "chat_completion";
@@ -239,6 +305,14 @@ async fn stream_response(
             let provider = guess_provider(&model);
             let vk_name = vk_info.map(|v| v.name);
 
+            info!(
+                request_id = %request_id,
+                source = %source.as_deref().unwrap_or("api"),
+                provider = %provider,
+                model = %model,
+                "[Stream] Streaming inference started"
+            );
+
             // Accumulateur partagé entre le stream et le done_event.
             // Utilise std::sync::Mutex (sync) pour pouvoir s'acquérir dans les
             // closures synchrones du .map() sans risque de bloquer ni de perdre des chunks.
@@ -250,6 +324,8 @@ async fn stream_response(
             let log_tx = Arc::new(log_tx);
             let log_tx_done = Arc::clone(&log_tx);
 
+            let req_id_for_stream = request_id.clone();
+            let src_for_stream = source.clone();
             // Stream principal : accumule les chunks + émet les événements SSE
             let sse_stream = chunk_stream.map(move |result| {
                 match &result {
@@ -261,7 +337,12 @@ async fn stream_response(
                         }
                     }
                     Err(e) => {
-                        error!(error = %e, "SSE chunk error");
+                        error!(
+                            request_id = %req_id_for_stream,
+                            source = %src_for_stream.as_deref().unwrap_or("api"),
+                            error = %e,
+                            "SSE chunk error during streaming"
+                        );
                     }
                 }
                 let data = match result {
@@ -283,6 +364,8 @@ async fn stream_response(
             let input_prev = input_preview.clone();
             let acc_log = Arc::clone(&accumulator);
             let provider_clone = provider.clone();
+            let req_id_for_log = request_id.clone();
+            let src_for_log = source.clone();
             tokio::spawn(async move {
                 if log_rx.recv().await.is_some() {
                     let elapsed_total = start.elapsed().as_secs_f64();
@@ -298,6 +381,27 @@ async fn stream_response(
                         let finish = acc.finish_reason.clone().or_else(|| Some("stop".into()));
                         (tokens, preview, finish, acc.first_token_time)
                     };
+
+                    if output_preview.as_ref().is_none_or(|s| s.trim().is_empty()) {
+                        warn!(
+                            request_id = %req_id_for_log,
+                            source = %src_for_log.as_deref().unwrap_or("api"),
+                            provider = %provider_clone,
+                            model = %model_clone,
+                            latency_ms = format!("{:.2}", latency),
+                            "[Stream] Streaming ended with EMPTY content"
+                        );
+                    } else {
+                        info!(
+                            request_id = %req_id_for_log,
+                            source = %src_for_log.as_deref().unwrap_or("api"),
+                            provider = %provider_clone,
+                            model = %model_clone,
+                            latency_ms = format!("{:.2}", latency),
+                            tokens = completion_tokens,
+                            "[Stream] Streaming completed successfully"
+                        );
+                    }
 
                     // Enregistrer le TTFT si disponible
                     if let Some(ft_time) = first_token_time {
@@ -369,6 +473,19 @@ async fn stream_response(
             let provider = guess_provider(&model);
             state.metrics.inc_error(&provider, e.error_type());
             let vk_name = vk_info.map(|v| v.name);
+
+            error!(
+                request_id = %request_id,
+                source = %source.as_deref().unwrap_or("api"),
+                provider = %provider,
+                model = %model,
+                latency_ms = format!("{:.2}", latency),
+                error = %e,
+                error_type = %e.error_type(),
+                "[Stream] Streaming inference FAILED — root cause: {}. Type: {}",
+                e, e.error_type()
+            );
+
             let entry = build_log_entry(
                 &provider,
                 &model,
