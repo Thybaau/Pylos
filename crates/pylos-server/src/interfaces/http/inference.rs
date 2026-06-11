@@ -301,21 +301,19 @@ async fn stream_response(
         .inc_requests(&guess_provider(&model), &model, req_type);
 
     match state.orchestrator.stream(request, ctx).await {
-        Ok(chunk_stream) => {
-            let provider = guess_provider(&model);
+        Ok((chunk_stream, actual_provider)) => {
             let vk_name = vk_info.map(|v| v.name);
 
             info!(
                 request_id = %request_id,
                 source = %source.as_deref().unwrap_or("api"),
-                provider = %provider,
+                provider = %actual_provider,
                 model = %model,
-                "[Stream] Streaming inference started"
+                "[Stream] Streaming started — actual provider: {}",
+                actual_provider,
             );
 
             // Accumulateur partagé entre le stream et le done_event.
-            // Utilise std::sync::Mutex (sync) pour pouvoir s'acquérir dans les
-            // closures synchrones du .map() sans risque de bloquer ni de perdre des chunks.
             let accumulator = Arc::new(std::sync::Mutex::new(StreamAccumulator::default()));
             let acc_stream = Arc::clone(&accumulator);
 
@@ -363,7 +361,7 @@ async fn stream_response(
             let model_clone = model.clone();
             let input_prev = input_preview.clone();
             let acc_log = Arc::clone(&accumulator);
-            let provider_clone = provider.clone();
+            let provider_clone = actual_provider.clone();
             let req_id_for_log = request_id.clone();
             let src_for_log = source.clone();
             tokio::spawn(async move {
@@ -409,7 +407,7 @@ async fn stream_response(
                         state_for_log
                             .metrics
                             .inference_ttft_seconds
-                            .with_label_values(&[&provider, &model_clone])
+                            .with_label_values(&[&provider_clone, &model_clone])
                             .observe(ttft);
                     }
 
@@ -447,7 +445,7 @@ async fn stream_response(
                     };
 
                     let entry = build_log_entry(
-                        &provider,
+                        &provider_clone,
                         &model_clone,
                         true,
                         LogStatus::Success,
