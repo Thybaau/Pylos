@@ -5,6 +5,7 @@ pub(crate) mod db_pool;
 pub mod guardrails;
 pub mod log_store;
 pub mod memory_plugin;
+pub mod mem0_plugin;
 pub mod model_catalog;
 pub mod otel_plugin;
 pub mod pg_log_store;
@@ -38,6 +39,7 @@ pub use log_store::{
     build_log_entry, generate_log_id, now_ms, LogEntry, LogFilter, LogStats, LogStatus, LogStore,
 };
 pub use memory_plugin::MemoryPlugin;
+pub use mem0_plugin::Mem0Plugin;
 pub use model_catalog::{ModelCatalog, ModelHealth, ModelInfo, PricingReloadStatus};
 pub use otel_plugin::{OtelConfig, OtelPlugin};
 pub use pg_log_store::PgLogStore;

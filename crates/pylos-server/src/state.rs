@@ -410,6 +410,12 @@ impl AppState {
                     plugins.push(Arc::new(GuardrailsPlugin::new(Arc::clone(config_store))));
                     tracing::info!(name = "guardrails", "Guardrails plugin enabled");
                 }
+                "mem0" => {
+                    let sidecar_url = std::env::var("MEM0_SIDECAR_URL")
+                        .unwrap_or_else(|_| "http://mem0-sidecar:7577".to_string());
+                    plugins.push(Arc::new(pylos_application::Mem0Plugin::new(sidecar_url)));
+                    tracing::info!(name = "mem0", "Mem0 plugin enabled");
+                }
                 name => tracing::debug!(name = %name, "Unknown plugin, skipping"),
             }
         }
