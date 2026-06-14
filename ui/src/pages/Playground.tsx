@@ -33,6 +33,8 @@ interface RunResult {
   finish_reason: string
   error?: string
   streaming?: boolean
+  actualProvider?: string
+  actualModel?: string
 }
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
@@ -127,6 +129,7 @@ function ChatMessage({ msg, isStreaming }: { msg: Message; isStreaming?: boolean
 function ResultBadge({ result }: { result: RunResult }) {
   const color = providerColor(result.provider)
   const hasError = !!result.error
+  const hasRouting = result.actualProvider && result.actualProvider !== result.provider
 
   return (
     <div className={`rounded-xl border p-4 space-y-3
@@ -143,6 +146,22 @@ function ResultBadge({ result }: { result: RunResult }) {
           : <CheckCircle size={14} className="text-emerald-400" />
         }
       </div>
+
+      {/* Routing info */}
+      {hasRouting && (
+        <div className="flex items-center gap-2 text-[11px] bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1.5">
+          <Zap size={11} className="text-amber-400 flex-shrink-0" />
+          <span className="text-amber-300 font-medium">Routed</span>
+          <span className="text-zinc-500">to</span>
+          <span className="text-zinc-300 font-semibold">{result.actualProvider}</span>
+          {result.actualModel && result.actualModel !== result.model && (
+            <>
+              <span className="text-zinc-500">→</span>
+              <span className="text-zinc-300 font-mono">{result.actualModel}</span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Metrics row */}
       {!hasError && (
@@ -331,18 +350,45 @@ export default function Playground() {
         })
 
         if (!resp.ok) {
-          const err = await resp.json()
-          throw new Error(err.error?.message ?? `HTTP ${resp.status}`)
+          let errorMsg: string
+          try {
+            const err = await resp.clone().json()
+            errorMsg = err.error?.message ?? `HTTP ${resp.status}`
+          } catch {
+            const text = await resp.text()
+            errorMsg = `HTTP ${resp.status}: ${text.slice(0, 300)}`
+          }
+          throw new Error(errorMsg)
         }
+
+        const actualProvider = resp.headers.get('X-Pylos-Provider') ?? undefined
+        const actualModel = resp.headers.get('X-Pylos-Model') ?? undefined
 
         const reader = resp.body!.getReader()
         const decoder = new TextDecoder()
         let fullContent = ''
         let finishReason = 'stop'
+        let firstTokenTimeout: ReturnType<typeof setTimeout> | undefined
+        const firstTokenPromise = new Promise<void>((_, reject) => {
+          firstTokenTimeout = setTimeout(() => {
+            reject(new Error('Timeout waiting for first token'))
+          }, 60000)
+        })
 
         while (true) {
-          const { done, value } = await reader.read()
+          const readPromise = reader.read()
+          const { done, value } = await Promise.race([
+            readPromise.then(r => ({ ...r, _race: 'read' as const })),
+            firstTokenPromise.then(() => { throw new Error('Timeout waiting for first token') }),
+          ]).catch(err => {
+            clearTimeout(firstTokenTimeout)
+            if (fullContent.trim()) {
+              return { done: true as const, value: undefined, _race: 'read' as const }
+            }
+            throw err
+          }) as { done: boolean; value?: Uint8Array; _race: string }
           if (done) break
+          clearTimeout(firstTokenTimeout)
 
           const chunk = decoder.decode(value, { stream: true })
           for (const line of chunk.split('\n')) {
@@ -365,10 +411,13 @@ export default function Playground() {
               }
             } catch { /* ignore parse errors */ }
             if (streamError) {
+              clearTimeout(firstTokenTimeout)
               throw new Error(streamError)
             }
           }
         }
+
+        clearTimeout(firstTokenTimeout)
 
         // Validate that we received some content
         if (!fullContent.trim()) {
@@ -393,6 +442,8 @@ export default function Playground() {
           cost_usd: 0,
           finish_reason: finishReason,
           streaming: true,
+          actualProvider,
+          actualModel,
         })
       } else {
         const resp = await api.post('/v1/chat/completions', payload, {
@@ -409,6 +460,9 @@ export default function Playground() {
           throw new Error('Empty response from model')
         }
 
+        const actualProvider = resp.headers?.['x-pylos-provider'] ?? undefined
+        const actualModel = resp.headers?.['x-pylos-model'] ?? undefined
+
         const assistantMsg: Message = { role: 'assistant', content }
         setMessages(prev => [...prev, assistantMsg])
         setLastResult({
@@ -423,11 +477,15 @@ export default function Playground() {
           },
           cost_usd: 0,
           finish_reason: choice?.finish_reason ?? 'stop',
+          actualProvider,
+          actualModel,
         })
       }
     } catch (err: unknown) {
       if ((err as Error)?.name === 'AbortError') return
-      const msg = err instanceof Error ? err.message : String(err)
+      const axiosErr = err as { response?: { data?: { error?: { message?: string } } }; message?: string }
+      const msg = axiosErr.response?.data?.error?.message
+        ?? (err instanceof Error ? err.message : String(err))
       setMessages(prev => [
         ...prev,
         { role: 'assistant', content: `Error: ${msg}` },

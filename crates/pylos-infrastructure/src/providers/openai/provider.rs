@@ -229,6 +229,16 @@ impl Provider for OpenAIProvider {
                                 if data == "[DONE]" {
                                     return None;
                                 }
+                                // Vérifie d'abord si le chunk est une erreur Ollama/Provider
+                                if let Ok(err_body) = serde_json::from_str::<
+                                    super::converters::OpenAIErrorBody,
+                                >(&data)
+                                {
+                                    return Some(Err(PylosError::ProviderError {
+                                        provider: "openai".into(),
+                                        message: err_body.error.message,
+                                    }));
+                                }
                                 match serde_json::from_str::<OpenAIStreamChunk>(&data) {
                                     Ok(chunk) => Some(Ok(from_openai_stream_chunk(chunk))),
                                     Err(parse_err) => {

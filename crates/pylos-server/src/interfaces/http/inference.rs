@@ -181,7 +181,18 @@ async fn complete_response(
                 state_clone.log_store.push(entry).await;
             });
 
-            Json(resp).into_response()
+            let actual_model = resp.model.clone();
+            let actual_provider = provider.clone();
+            let mut response = Json(resp).into_response();
+            response.headers_mut().insert(
+                axum::http::header::HeaderName::from_static("x-pylos-provider"),
+                axum::http::header::HeaderValue::from_str(&actual_provider).unwrap(),
+            );
+            response.headers_mut().insert(
+                axum::http::header::HeaderName::from_static("x-pylos-model"),
+                axum::http::header::HeaderValue::from_str(&actual_model).unwrap(),
+            );
+            response
         }
         Ok(pylos_core::domain::request::PylosResponse::Image(resp)) => {
             state.metrics.inc_success(&provider_name, &model);
@@ -464,9 +475,18 @@ async fn stream_response(
                 }
             });
 
-            Sse::new(sse_stream.chain(done_event))
+            let mut response = Sse::new(sse_stream.chain(done_event))
                 .keep_alive(KeepAlive::default())
-                .into_response()
+                .into_response();
+            response.headers_mut().insert(
+                axum::http::header::HeaderName::from_static("x-pylos-provider"),
+                axum::http::header::HeaderValue::from_str(&actual_provider).unwrap(),
+            );
+            response.headers_mut().insert(
+                axum::http::header::HeaderName::from_static("x-pylos-model"),
+                axum::http::header::HeaderValue::from_str(&model).unwrap(),
+            );
+            response
         }
         Err(e) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
