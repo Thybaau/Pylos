@@ -13,7 +13,28 @@ config: |
       "disable_content_logging": false,
       "database_url": "env.DATABASE_URL"
     },
-    "providers": {},
+    "providers": {
+      "ollama": {
+        "keys": [
+          {
+            "name": "local",
+            "value": "ollama",
+            "models": [
+              "gemma4:12b",
+              "gemma4:e2b"
+            ],
+            "weight": 1.0
+          }
+        ],
+        "network": {
+          "base_url": "http://192.168.0.58:11434/v1",
+          "timeout_secs": 120,
+          "max_retries": 2,
+          "retry_backoff_initial_ms": 500,
+          "retry_backoff_max_ms": 5000
+        }
+      }
+    },
     "governance": {
       "virtual_keys": []
     }
