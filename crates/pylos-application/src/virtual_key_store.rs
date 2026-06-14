@@ -316,6 +316,75 @@ impl VirtualKeyStore {
         Ok(())
     }
 
+    pub async fn delete_keys_by_user(
+        &self,
+        user_id: &str,
+        user_email: &str,
+    ) -> Result<Vec<String>, PylosError> {
+        let ids = match &self.pool {
+            DbPool::Sqlite(pool) => {
+                let rows = sqlx::query(
+                    "SELECT id FROM virtual_keys WHERE user_id = $1 OR user_email = $2",
+                )
+                .bind(user_id)
+                .bind(user_email)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| {
+                    PylosError::Internal(format!("Failed to query user virtual keys: {}", e))
+                })?;
+                let ids: Vec<String> = rows
+                    .iter()
+                    .map(|r| r.try_get("id").unwrap_or_default())
+                    .collect();
+                if !ids.is_empty() {
+                    sqlx::query("DELETE FROM virtual_keys WHERE user_id = $1 OR user_email = $2")
+                        .bind(user_id)
+                        .bind(user_email)
+                        .execute(pool)
+                        .await
+                        .map_err(|e| {
+                            PylosError::Internal(format!(
+                                "Failed to delete user virtual keys: {}",
+                                e
+                            ))
+                        })?;
+                }
+                ids
+            }
+            DbPool::Postgres(pool) => {
+                let rows = sqlx::query::<sqlx::Postgres>(
+                    "SELECT id FROM virtual_keys WHERE user_id = $1 OR user_email = $2",
+                )
+                .bind(user_id)
+                .bind(user_email)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| {
+                    PylosError::Internal(format!("Failed to query user virtual keys: {}", e))
+                })?;
+                let ids: Vec<String> = rows
+                    .iter()
+                    .map(|r| r.try_get("id").unwrap_or_default())
+                    .collect();
+                if !ids.is_empty() {
+                    sqlx::query::<sqlx::Postgres>(
+                        "DELETE FROM virtual_keys WHERE user_id = $1 OR user_email = $2",
+                    )
+                    .bind(user_id)
+                    .bind(user_email)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| {
+                        PylosError::Internal(format!("Failed to delete user virtual keys: {}", e))
+                    })?;
+                }
+                ids
+            }
+        };
+        Ok(ids)
+    }
+
     pub async fn delete_key(&self, id: &str) -> Result<bool, PylosError> {
         let rows_affected = match &self.pool {
             DbPool::Sqlite(pool) => sqlx::query("DELETE FROM virtual_keys WHERE id = $1")

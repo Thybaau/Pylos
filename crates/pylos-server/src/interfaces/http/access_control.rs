@@ -527,13 +527,46 @@ pub async fn delete_user(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    match state.org_store.delete_user(&id).await {
-        Ok(true) => Json(json!({ "message": format!("User '{}' deleted", id) })).into_response(),
-        Ok(false) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": format!("User '{}' not found", id) })),
-        )
-            .into_response(),
+    let user = match state.org_store.get_user(&id).await {
+        Ok(Some(u)) => u,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": format!("User '{}' not found", id) })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    match state
+        .vk_store
+        .delete_keys_by_user(&user.id, &user.email)
+        .await
+    {
+        Ok(key_ids) => {
+            for key_id in &key_ids {
+                state.budget_store.delete_vk_entries(key_id).await;
+                state.rate_limit_store.delete_vk_entries(key_id).await;
+            }
+            let _ = state.org_store.delete_user(&id).await;
+            let msg = if key_ids.is_empty() {
+                format!("User '{}' deleted", id)
+            } else {
+                format!(
+                    "User '{}' deleted along with {} virtual key(s)",
+                    id,
+                    key_ids.len()
+                )
+            };
+            Json(json!({ "message": msg })).into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),

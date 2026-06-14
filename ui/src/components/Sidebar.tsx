@@ -292,36 +292,38 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
           ))}
 
           {/* ACCESS CONTROL SECTION */}
-          {(!collapsed || isOpen) ? (
-            <div className="px-3 pt-6 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-              Access Control
-            </div>
-          ) : (
-            <div className="mx-3 mt-6 mb-2 border-t border-zinc-800/50" />
-          )}
+          {isAdmin() && <>
+            {(!collapsed || isOpen) ? (
+              <div className="px-3 pt-6 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                Access Control
+              </div>
+            ) : (
+              <div className="mx-3 mt-6 mb-2 border-t border-zinc-800/50" />
+            )}
 
-          {ACCESS_CONTROL.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              onClick={onClose}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
-                ${isActive
-                  ? 'bg-zinc-800 text-white'
-                  : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0" />}
-                  <Icon size={18} className="flex-shrink-0" />
-                  {(!collapsed || isOpen) && <span>{label}</span>}
-                </>
-              )}
-            </NavLink>
-          ))}
+            {ACCESS_CONTROL.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                onClick={onClose}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
+                  ${isActive
+                    ? 'bg-zinc-800 text-white'
+                    : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0" />}
+                    <Icon size={18} className="flex-shrink-0" />
+                    {(!collapsed || isOpen) && <span>{label}</span>}
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </>}
 
           {/* DEVELOPER TOOLS SECTION */}
           {(!collapsed || isOpen) ? (
@@ -401,64 +403,65 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
           </div>
 
           {/* SETTINGS SECTION */}
-          {(!collapsed || isOpen) ? (
-            <div className="px-3 pt-6 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-              Settings
-            </div>
-          ) : (
-            <div className="mx-3 mt-6 mb-2 border-t border-zinc-800/50" />
-          )}
-
-          {/* Settings Dropdown with Badge */}
-          <div className="flex flex-col mt-1">
-            <button
-              onClick={() => {
-                if (collapsed) setCollapsed(false);
-                setSettingsExpanded(!settingsExpanded);
-              }}
-              className="flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100 w-full"
-            >
-              <div className="flex items-center gap-3">
-                <Settings size={18} className="flex-shrink-0" />
-                {(!collapsed || isOpen) && (
-                  <span className="flex items-center">
-                    Settings
-                    <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-semibold ml-2">New</span>
-                  </span>
-                )}
+          {isAdmin() && <>
+            {(!collapsed || isOpen) ? (
+              <div className="px-3 pt-6 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                Settings
               </div>
-              {(!collapsed || isOpen) && (
-                settingsExpanded ? <ChevronUp size={16} className="opacity-70" /> : <ChevronDown size={16} className="opacity-70" />
-              )}
-            </button>
-            {settingsExpanded && (!collapsed || isOpen) && (
-              <div className="flex flex-col mt-1 ml-4 space-y-1 border-l border-zinc-800/50 pl-2">
-                {SETTINGS_SUB.map(({ to, icon: Icon, label, hasDot }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    onClick={onClose}
-                    className={({ isActive }) =>
-                      `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
-                      ${isActive
-                        ? 'bg-zinc-800 text-white'
-                        : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
-                      }`
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0 absolute -ml-4" />}
-                        <Icon size={16} className="flex-shrink-0" />
-                        <span className="flex-1 truncate">{label}</span>
-                        {hasDot && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0 ml-1 animate-pulse" />}
-                      </>
-                    )}
-                  </NavLink>
-                ))}
-              </div>
+            ) : (
+              <div className="mx-3 mt-6 mb-2 border-t border-zinc-800/50" />
             )}
-          </div>
+
+            <div className="flex flex-col mt-1">
+              <button
+                onClick={() => {
+                  if (collapsed) setCollapsed(false);
+                  setSettingsExpanded(!settingsExpanded);
+                }}
+                className="flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100 w-full"
+              >
+                <div className="flex items-center gap-3">
+                  <Settings size={18} className="flex-shrink-0" />
+                  {(!collapsed || isOpen) && (
+                    <span className="flex items-center">
+                      Settings
+                      <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-semibold ml-2">New</span>
+                    </span>
+                  )}
+                </div>
+                {(!collapsed || isOpen) && (
+                  settingsExpanded ? <ChevronUp size={16} className="opacity-70" /> : <ChevronDown size={16} className="opacity-70" />
+                )}
+              </button>
+              {settingsExpanded && (!collapsed || isOpen) && (
+                <div className="flex flex-col mt-1 ml-4 space-y-1 border-l border-zinc-800/50 pl-2">
+                  {SETTINGS_SUB.map(({ to, icon: Icon, label, hasDot }) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      onClick={onClose}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors
+                        ${isActive
+                          ? 'bg-zinc-800 text-white'
+                          : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100'
+                        }`
+                      }
+                    >
+                      {({ isActive }) => (
+                        <>
+                          {isActive && <div className="w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0 absolute -ml-4" />}
+                          <Icon size={16} className="flex-shrink-0" />
+                          <span className="flex-1 truncate">{label}</span>
+                          {hasDot && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0 ml-1 animate-pulse" />}
+                        </>
+                      )}
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>}
 
         </nav>
 

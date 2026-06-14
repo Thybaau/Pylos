@@ -825,11 +825,35 @@ pub async fn run_model_health_check(
 
 pub async fn run_all_models_health_check(State(state): State<AppState>) -> impl IntoResponse {
     let catalog_models = state.model_catalog.list_models(None, false).await;
+    let handles: Vec<_> = catalog_models
+        .into_iter()
+        .map(|model| {
+            let state = state.clone();
+            tokio::spawn(async move {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(15),
+                    execute_single_health_check(&state, &model.provider, &model.model_id),
+                )
+                .await
+                .unwrap_or_else(|_| ModelHealth {
+                    id: format!("{}/{}", model.provider, model.model_id),
+                    provider: model.provider,
+                    model_id: model.model_id,
+                    health_status: "unhealthy".to_string(),
+                    error_details: Some("Health check timed out after 15s".to_string()),
+                    last_check_ms: Some(pylos_application::log_store::now_ms()),
+                    last_success_ms: None,
+                })
+            })
+        })
+        .collect();
+
     let mut results = Vec::new();
-    for model in catalog_models {
-        let health = execute_single_health_check(&state, &model.provider, &model.model_id).await;
-        let _ = state.model_catalog.update_model_health(&health).await;
-        results.push(health);
+    for handle in handles {
+        if let Ok(health) = handle.await {
+            let _ = state.model_catalog.update_model_health(&health).await;
+            results.push(health);
+        }
     }
     Json(results).into_response()
 }
