@@ -7,7 +7,7 @@ import {
   Activity, Play, Globe, Key, Network, Sliders, Tags, FileJson
 } from 'lucide-react'
 
-const PROVIDERS = ['all', 'openai', 'anthropic', 'gemini', 'cohere', 'groq', 'mistral', 'xai', 'deepseek', 'bedrock', 'ollama-jo3', 'lemonade-jo3', 'lemonade-optimus']
+const PROVIDERS = ['all', 'openai', 'anthropic', 'gemini', 'cohere', 'groq', 'mistral', 'xai', 'deepseek', 'bedrock', 'ollama', 'ollama-jo3', 'lemonade-jo3', 'lemonade-optimus']
 
 function formatPrice(price: number): string {
   if (price === 0) return 'Free'
@@ -1244,23 +1244,7 @@ export default function ModelCatalog() {
           </div>
         </div>
 
-        {/* Warning notification banner */}
-        <div className="flex items-center justify-between gap-4 p-4 rounded-xl bg-indigo-950/20 border border-indigo-900/30 text-indigo-200 text-xs">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-indigo-500/15 text-indigo-400 shrink-0">
-              <Info size={14} />
-            </span>
-            <span>
-              <strong>Missing a provider?</strong> The LiteLLM engineering team is constantly adding support for new LLM models, providers, endpoints. If you don't see the one you need, let us know and we'll prioritize it.
-            </span>
-          </div>
-          <button 
-            onClick={() => window.open('mailto:support@pylos.ai?subject=Provider Request', '_blank')}
-            className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all shrink-0 hover:shadow-lg hover:shadow-indigo-600/15 active:scale-[0.98]"
-          >
-            Request Provider
-          </button>
-        </div>
+
       </div>
 
       {/* Navigation Tabs */}

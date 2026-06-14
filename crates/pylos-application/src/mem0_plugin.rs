@@ -1,7 +1,5 @@
 use async_trait::async_trait;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use pylos_core::domain::openai::{ChatCompletionMessage, MessageRole};
 use pylos_core::domain::request::{PylosRequest, PylosResponse, RequestContext};
@@ -11,7 +9,6 @@ use pylos_core::error::PylosError;
 pub struct Mem0Plugin {
     sidecar_url: String,
     client: reqwest::Client,
-    enabled: Arc<RwLock<bool>>,
 }
 
 impl Mem0Plugin {
@@ -22,7 +19,6 @@ impl Mem0Plugin {
                 .timeout(std::time::Duration::from_secs(5))
                 .build()
                 .expect("Failed to build reqwest client for Mem0Plugin"),
-            enabled: Arc::new(RwLock::new(true)),
         }
     }
 
@@ -138,10 +134,8 @@ impl LlmPlugin for Mem0Plugin {
             .unwrap_or("")
             .to_string();
 
-        let session_id = ctx.session_id.clone();
-
         if let Some(context) = self
-            .fetch_context(&last_user_msg, &virtual_key, session_id.as_deref(), None)
+            .fetch_context(&last_user_msg, &virtual_key, None, None)
             .await
         {
             chat_req.messages.insert(
@@ -152,7 +146,10 @@ impl LlmPlugin for Mem0Plugin {
                     ..Default::default()
                 },
             );
-            info!("Mem0Plugin: injected context into request for vk {}", virtual_key);
+            info!(
+                "Mem0Plugin: injected context into request for vk {}",
+                virtual_key
+            );
         }
 
         Ok(None)
@@ -168,8 +165,6 @@ impl LlmPlugin for Mem0Plugin {
             Some(vk) => vk.clone(),
             None => return Ok(()),
         };
-
-        let session_id = ctx.session_id.clone();
 
         let user_msg = match request {
             PylosRequest::ChatCompletion(req) => req
@@ -193,7 +188,7 @@ impl LlmPlugin for Mem0Plugin {
 
         if !user_msg.is_empty() {
             let payload = format!("User: {}\nAssistant: {}", user_msg, assistant_reply);
-            self.store_interaction(&virtual_key, session_id.as_deref(), &payload, "conversation")
+            self.store_interaction(&virtual_key, None, &payload, "conversation")
                 .await;
         }
 
