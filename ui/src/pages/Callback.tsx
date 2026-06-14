@@ -19,8 +19,8 @@ export default function Callback() {
     const redirectUri = `${window.location.origin}/callback`
     authApi.googleCallback(code, redirectUri)
       .then(res => {
-        sessionStorage.setItem('pylos_admin_key', res.token)
-        sessionStorage.setItem('pylos_user', JSON.stringify(res.user))
+        localStorage.setItem('pylos_admin_key', res.token)
+        localStorage.setItem('pylos_user', JSON.stringify(res.user))
         navigate('/dashboard')
       })
       .catch(err => {

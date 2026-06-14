@@ -22,10 +22,10 @@ export const api = axios.create({
   timeout: 30000,
 })
 
-// Request interceptor to attach the Admin Key from sessionStorage and dynamically set baseURL
+// Request interceptor to attach the Admin Key from localStorage and dynamically set baseURL
 api.interceptors.request.use((config) => {
   config.baseURL = getBaseUrl();
-  const adminKey = typeof window !== 'undefined' ? sessionStorage.getItem('pylos_admin_key') : null;
+  const adminKey = typeof window !== 'undefined' ? localStorage.getItem('pylos_admin_key') : null;
   if (adminKey) {
     config.headers['Authorization'] = `Bearer ${adminKey}`;
   }
@@ -46,13 +46,13 @@ api.interceptors.response.use(
       !originalRequest._retry
     ) {
       originalRequest._retry = true;
-      const currentKey = sessionStorage.getItem('pylos_admin_key');
+      const currentKey = localStorage.getItem('pylos_admin_key');
       const promptMsg = error.response.status === 401
         ? "Administration key required. Please enter your PYLOS_ADMIN_KEY:"
         : "Invalid administration key. Please enter a valid PYLOS_ADMIN_KEY:";
       const adminKey = window.prompt(promptMsg, currentKey || '');
       if (adminKey !== null) {
-        sessionStorage.setItem('pylos_admin_key', adminKey);
+        localStorage.setItem('pylos_admin_key', adminKey);
         originalRequest.headers['Authorization'] = `Bearer ${adminKey}`;
         return api(originalRequest);
       }

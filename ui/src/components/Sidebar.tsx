@@ -44,10 +44,10 @@ import { useQuery } from '@tanstack/react-query'
 import { healthApi, authApi } from '../lib/api'
 
 function isAdmin(): boolean {
-  const userJson = typeof window !== 'undefined' ? sessionStorage.getItem('pylos_user') : null;
+  const userJson = typeof window !== 'undefined' ? localStorage.getItem('pylos_user') : null;
   if (!userJson) {
     // Fallback: if admin key is set, consider as admin
-    return !!sessionStorage.getItem('pylos_admin_key');
+    return !!localStorage.getItem('pylos_admin_key');
   }
   try {
     const user = JSON.parse(userJson);
@@ -58,7 +58,7 @@ function isAdmin(): boolean {
 }
 
 function isPlaygroup(): boolean {
-  const userJson = typeof window !== 'undefined' ? sessionStorage.getItem('pylos_user') : null;
+  const userJson = typeof window !== 'undefined' ? localStorage.getItem('pylos_user') : null;
   if (!userJson) return false;
   try {
     const user = JSON.parse(userJson);
@@ -131,7 +131,7 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
   const [experimentalExpanded, setExperimentalExpanded] = useState(true)
   const [settingsExpanded, setSettingsExpanded] = useState(true)
 
-  const userJson = typeof window !== 'undefined' ? sessionStorage.getItem('pylos_user') : null;
+  const userJson = typeof window !== 'undefined' ? localStorage.getItem('pylos_user') : null;
   const user = userJson ? JSON.parse(userJson) : null;
 
   const { data: health, isError } = useQuery({
@@ -493,10 +493,10 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
         <button
           onClick={() => {
             if (onClose) onClose();
-            const currentKey = sessionStorage.getItem('pylos_admin_key') || '';
+            const currentKey = localStorage.getItem('pylos_admin_key') || '';
             const newKey = window.prompt("Configure Pylos Admin Key (PYLOS_ADMIN_KEY):", currentKey);
             if (newKey !== null) {
-              sessionStorage.setItem('pylos_admin_key', newKey);
+              localStorage.setItem('pylos_admin_key', newKey);
               window.location.reload();
             }
           }}
@@ -566,8 +566,8 @@ export function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () =>
             } catch (e) {
               console.error("Logout request failed:", e);
             } finally {
-              sessionStorage.removeItem('pylos_admin_key');
-              sessionStorage.removeItem('pylos_user');
+              localStorage.removeItem('pylos_admin_key');
+              localStorage.removeItem('pylos_user');
               window.location.href = '/login';
             }
           }}

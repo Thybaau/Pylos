@@ -14,7 +14,7 @@ export default function Login() {
 
   useEffect(() => {
     // Check if user is already logged in
-    const token = sessionStorage.getItem('pylos_admin_key')
+    const token = localStorage.getItem('pylos_admin_key')
     if (token) {
       navigate('/dashboard')
     }
@@ -38,7 +38,7 @@ export default function Login() {
       return
     }
     setError(null)
-    sessionStorage.setItem('pylos_admin_key', adminKey)
+    localStorage.setItem('pylos_admin_key', adminKey)
     navigate('/dashboard')
   }
 

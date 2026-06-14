@@ -98,7 +98,7 @@ interface AdminLayoutProps {
 }
 
 function AdminLayout({ isMobileMenuOpen, setIsMobileMenuOpen }: AdminLayoutProps) {
-  const hasKey = sessionStorage.getItem('pylos_admin_key')
+  const hasKey = localStorage.getItem('pylos_admin_key')
   if (!hasKey) {
     return <Navigate to="/login" replace />
   }
