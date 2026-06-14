@@ -35,9 +35,7 @@ export function formatPercent(n: number): string {
 }
 
 export const PROVIDER_COLORS: Record<string, string> = {
-  openai: '#10a37f',
   anthropic: '#e06c00',
-  bedrock: '#ff9900',
   openrouter: '#6366f1',
   mistral: '#ff6b6b',
   groq: '#f43f5e',

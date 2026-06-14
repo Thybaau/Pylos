@@ -21,8 +21,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   deepseek:   '#6366f1', // indigo
   ollama:     '#10b981', // green (local, gratuit)
   openrouter: '#f59e0b', // amber
-  bedrock:    '#f97316', // orange
-  openai:     '#3b82f6', // blue
+
   graphon:    '#8b5cf6', // violet
   lemonade:   '#ec4899', // pink
 }
