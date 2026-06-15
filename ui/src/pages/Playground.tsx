@@ -40,8 +40,13 @@ interface RunResult {
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 async function fetchModels(): Promise<Model[]> {
-  const r = await api.get('/v1/models')
-  return r.data.data ?? []
+  try {
+    const r = await api.get('/v1/models')
+    const data = r.data?.data
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
 }
 
 // ─── Composants ──────────────────────────────────────────────────────────────
@@ -56,9 +61,11 @@ function ModelSelect({
   favorites?: string[]
 }) {
   const grouped: Record<string, Model[]> = {}
-  for (const m of models) {
-    if (!grouped[m.provider]) grouped[m.provider] = []
-    grouped[m.provider].push(m)
+  if (Array.isArray(models)) {
+    for (const m of models) {
+      if (!grouped[m.provider]) grouped[m.provider] = []
+      grouped[m.provider].push(m)
+    }
   }
 
   return (
