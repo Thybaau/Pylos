@@ -14,7 +14,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
-
   # ───────────────────────────────────────────────────────────────────────────
   # Pylos — AI Gateway
   # ───────────────────────────────────────────────────────────────────────────
@@ -40,6 +39,7 @@ services:
       AWS_ROLE_ARN: "${AWS_ROLE_ARN:-}"
       PYLOS_CONFIG: "/app/pylos.json"
       PYLOS_DATA_DIR: "/data"
+      PYLOS_ADMIN_KEY: "${PYLOS_ADMIN_KEY:-}"
     volumes:
       - ./pylos.json:/app/pylos.json:ro
       - pylos-data:/data
