@@ -1,6 +1,6 @@
 use crate::interfaces::http::{
-    access_control, auth, completions, config, embeddings, health, images, inference, logs,
-    metrics, models, vector_stores,
+    access_control, auth, completions, config, embeddings, guardrails, health, images, inference,
+    logs, metrics, models, vector_stores,
 };
 use crate::mcp;
 use crate::mcp_proxy;
@@ -184,6 +184,15 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/search-tools/:id",
             delete(access_control::delete_search_tool),
+        )
+        // Guardrails Monitor routes
+        .route(
+            "/api/guardrails/events",
+            get(guardrails::get_guardrails_events),
+        )
+        .route(
+            "/api/guardrails/stats",
+            get(guardrails::get_guardrails_stats),
         )
         // Vector Stores routes
         .route(

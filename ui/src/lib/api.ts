@@ -499,6 +499,54 @@ export const authApi = {
     api.post<{ status: string; message: string }>('/api/auth/logout').then(r => r.data),
 }
 
+export interface GuardrailsEvent {
+  id: string
+  timestamp: number
+  provider: string
+  model: string
+  finish_reason: string | null
+  input_preview: string | null
+  output_preview: string | null
+  guardrail_triggered: boolean | null
+  guardrail_type: string | null
+  guardrail_detail: string | null
+}
+
+export interface GuardrailsBreakdown {
+  total_blocks: number
+  keyword_blocks: number
+  prompt_injection_blocks: number
+  content_filter_blocks: number
+  top_keywords: Array<{ keyword: string; count: number }>
+}
+
+export interface GuardrailsTimeline {
+  timestamp: number
+  total: number
+  keyword_blocks: number
+  prompt_injection: number
+  content_filter: number
+}
+
+export interface GuardrailsEventsResponse {
+  events: GuardrailsEvent[]
+  pagination: { limit: number; offset: number; total_count: number }
+  stats: GuardrailsBreakdown
+  has_events: boolean
+}
+
+export interface GuardrailsStatsResponse {
+  breakdown: GuardrailsBreakdown
+  timeline: GuardrailsTimeline[]
+}
+
+export const guardrailsApi = {
+  getEvents: (params?: { limit?: number; offset?: number; period?: string; guardrail_type?: string }) =>
+    api.get<GuardrailsEventsResponse>('/api/guardrails/events', { params }).then(r => r.data),
+  getStats: (params?: { period?: string; since_ms?: number; until_ms?: number }) =>
+    api.get<GuardrailsStatsResponse>('/api/guardrails/stats', { params }).then(r => r.data),
+}
+
 export interface VectorCollection {
   name: string
   status: string

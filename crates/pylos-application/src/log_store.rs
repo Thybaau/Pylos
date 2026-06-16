@@ -31,6 +31,9 @@ pub struct LogEntry {
     pub input_preview: Option<String>,
     pub output_preview: Option<String>,
     pub compression_saved_bytes: usize,
+    pub guardrail_triggered: Option<bool>,
+    pub guardrail_type: Option<String>,
+    pub guardrail_detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -172,6 +175,16 @@ impl SqliteBackend {
             "ALTER TABLE logs ADD COLUMN compression_saved_bytes INTEGER NOT NULL DEFAULT 0",
             [],
         );
+        let _ = b.conn.execute(
+            "ALTER TABLE logs ADD COLUMN guardrail_triggered INTEGER",
+            [],
+        );
+        let _ = b
+            .conn
+            .execute("ALTER TABLE logs ADD COLUMN guardrail_type TEXT", []);
+        let _ = b
+            .conn
+            .execute("ALTER TABLE logs ADD COLUMN guardrail_detail TEXT", []);
         Ok(b)
     }
 
@@ -206,7 +219,7 @@ impl SqliteBackend {
     fn insert(&self, e: &LogEntry) -> rusqlite::Result<()> {
         self.conn.execute(
             "INSERT OR IGNORE INTO logs VALUES
-             (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+             (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
             params![
                 e.id,
                 e.timestamp,
@@ -225,7 +238,10 @@ impl SqliteBackend {
                 e.is_stream as i32,
                 e.input_preview,
                 e.output_preview,
-                e.compression_saved_bytes as i32
+                e.compression_saved_bytes as i32,
+                e.guardrail_triggered,
+                e.guardrail_type,
+                e.guardrail_detail,
             ],
         )?;
         Ok(())
@@ -289,7 +305,8 @@ impl SqliteBackend {
             "SELECT id,timestamp,provider,model,object,status,latency_ms,
                     prompt_tokens,completion_tokens,total_tokens,cost_usd,
                     finish_reason,error_message,virtual_key,is_stream,
-                    input_preview,output_preview,compression_saved_bytes
+                    input_preview,output_preview,compression_saved_bytes,
+                    guardrail_triggered,guardrail_type,guardrail_detail
              FROM logs {where_str}
              ORDER BY timestamp DESC LIMIT ?7 OFFSET ?8"
         );
@@ -436,6 +453,199 @@ impl SqliteBackend {
         Ok(rows)
     }
 
+    fn list_guardrails(
+        &self,
+        limit: usize,
+        offset: usize,
+        filter: &LogFilter,
+    ) -> rusqlite::Result<(Vec<LogEntry>, u64)> {
+        let mut conditions = vec!["guardrail_triggered = 1".to_string()];
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut idx = 0;
+
+        if let Some(ref provider) = filter.provider {
+            idx += 1;
+            conditions.push(format!("provider = ?{idx}"));
+            params_vec.push(Box::new(provider.clone()));
+        }
+        if let Some(ref model) = filter.model {
+            idx += 1;
+            conditions.push(format!("model LIKE ?{idx}"));
+            params_vec.push(Box::new(format!("%{model}%")));
+        }
+        if let Some(ref _status) = filter.status {
+            idx += 1;
+            conditions.push(format!("status = ?{idx}"));
+            params_vec.push(Box::new(_status.as_str().to_string()));
+        }
+        if let Some(since) = filter.since_ms {
+            idx += 1;
+            conditions.push(format!("timestamp >= ?{idx}"));
+            params_vec.push(Box::new(since));
+        }
+        if let Some(until) = filter.until_ms {
+            idx += 1;
+            conditions.push(format!("timestamp <= ?{idx}"));
+            params_vec.push(Box::new(until));
+        }
+        if let Some(ref vk) = filter.virtual_key {
+            idx += 1;
+            conditions.push(format!("virtual_key = ?{idx}"));
+            params_vec.push(Box::new(vk.clone()));
+        }
+
+        let where_clause = conditions.join(" AND ");
+        let count_sql = format!("SELECT COUNT(*) FROM logs WHERE {where_clause}");
+        let total: u64 = self
+            .conn
+            .query_row(
+                &count_sql,
+                rusqlite::params_from_iter(params_vec.iter().map(|p| p.as_ref())),
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let rows_sql = format!(
+            "SELECT id,timestamp,provider,model,object,status,latency_ms,
+                    prompt_tokens,completion_tokens,total_tokens,cost_usd,
+                    finish_reason,error_message,virtual_key,is_stream,
+                    input_preview,output_preview,compression_saved_bytes,
+                    guardrail_triggered,guardrail_type,guardrail_detail
+             FROM logs WHERE {where_clause}
+             ORDER BY timestamp DESC LIMIT ?{} OFFSET ?{}",
+            idx + 1,
+            idx + 2,
+        );
+
+        let limit_i64 = limit as i64;
+        let offset_i64 = offset as i64;
+        let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = params_vec;
+        all_params.push(Box::new(limit_i64));
+        all_params.push(Box::new(offset_i64));
+
+        let mut stmt = self.conn.prepare(&rows_sql)?;
+        let mapped = stmt.query_map(
+            rusqlite::params_from_iter(all_params.iter().map(|p| p.as_ref())),
+            row_to_entry,
+        )?;
+        let entries: Vec<LogEntry> = mapped.filter_map(|r| r.ok()).collect();
+
+        Ok((entries, total))
+    }
+
+    fn guardrails_breakdown(&self, filter: &LogFilter) -> rusqlite::Result<GuardrailsBreakdown> {
+        let (where_clause, params_vec) = build_guardrails_where(filter);
+
+        let total_sql = format!(
+            "SELECT COUNT(*) FROM logs WHERE {where_clause} AND guardrail_type IS NOT NULL"
+        );
+        let total_blocks: u64 = self
+            .conn
+            .query_row(
+                &total_sql,
+                rusqlite::params_from_iter(params_vec.iter().map(|p| p.as_ref())),
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let keyword_sql = format!(
+            "SELECT COUNT(*) FROM logs WHERE {where_clause} AND guardrail_type = 'keyword_block'"
+        );
+        let keyword_blocks: u64 = self
+            .conn
+            .query_row(
+                &keyword_sql,
+                rusqlite::params_from_iter(params_vec.iter().map(|p| p.as_ref())),
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let injection_sql = format!("SELECT COUNT(*) FROM logs WHERE {where_clause} AND guardrail_type = 'prompt_injection'");
+        let prompt_injection_blocks: u64 = self
+            .conn
+            .query_row(
+                &injection_sql,
+                rusqlite::params_from_iter(params_vec.iter().map(|p| p.as_ref())),
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let content_sql = format!(
+            "SELECT COUNT(*) FROM logs WHERE {where_clause} AND guardrail_type = 'content_filter'"
+        );
+        let content_filter_blocks: u64 = self
+            .conn
+            .query_row(
+                &content_sql,
+                rusqlite::params_from_iter(params_vec.iter().map(|p| p.as_ref())),
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let top_keywords_sql = format!(
+            "SELECT guardrail_detail, COUNT(*) as cnt FROM logs
+             WHERE {where_clause} AND guardrail_type = 'keyword_block' AND guardrail_detail IS NOT NULL
+             GROUP BY guardrail_detail ORDER BY cnt DESC LIMIT 10"
+        );
+        let top_keywords = {
+            let mut stmt = self.conn.prepare(&top_keywords_sql)?;
+            let rows = stmt.query_map(
+                rusqlite::params_from_iter(params_vec.iter().map(|p| p.as_ref())),
+                |r| {
+                    Ok(KeywordCount {
+                        keyword: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                        count: r.get::<_, i64>(1)? as u64,
+                    })
+                },
+            )?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
+        Ok(GuardrailsBreakdown {
+            total_blocks,
+            keyword_blocks,
+            prompt_injection_blocks,
+            content_filter_blocks,
+            top_keywords,
+        })
+    }
+
+    fn guardrails_timeline(
+        &self,
+        filter: &LogFilter,
+        bucket_secs: i64,
+    ) -> rusqlite::Result<Vec<GuardrailsTimeline>> {
+        let bucket_ms = bucket_secs * 1000;
+        let (where_clause, params_vec) = build_guardrails_where(filter);
+
+        let sql = format!(
+            "SELECT (timestamp/{b})*{b} AS ts,
+                    COUNT(*) as total,
+                    SUM(CASE WHEN guardrail_type = 'keyword_block' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN guardrail_type = 'prompt_injection' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN guardrail_type = 'content_filter' THEN 1 ELSE 0 END)
+             FROM logs WHERE {where_clause} AND guardrail_triggered = 1
+             GROUP BY ts ORDER BY ts ASC",
+            b = bucket_ms
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mapped = stmt.query_map(
+            rusqlite::params_from_iter(params_vec.iter().map(|p| p.as_ref())),
+            |r| {
+                Ok(GuardrailsTimeline {
+                    timestamp: r.get(0)?,
+                    total: r.get::<_, i64>(1)? as u64,
+                    keyword_blocks: r.get::<_, Option<i64>>(2)?.unwrap_or(0) as u64,
+                    prompt_injection: r.get::<_, Option<i64>>(3)?.unwrap_or(0) as u64,
+                    content_filter: r.get::<_, Option<i64>>(4)?.unwrap_or(0) as u64,
+                })
+            },
+        )?;
+        let rows: Vec<GuardrailsTimeline> = mapped.filter_map(|r| r.ok()).collect();
+        Ok(rows)
+    }
+
     fn token_histogram(
         &self,
         filter: &LogFilter,
@@ -500,6 +710,45 @@ impl SqliteBackend {
     }
 }
 
+fn build_guardrails_where(filter: &LogFilter) -> (String, Vec<Box<dyn rusqlite::types::ToSql>>) {
+    let mut conditions = vec!["guardrail_triggered = 1".to_string()];
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let mut idx = 0;
+
+    if let Some(ref _provider) = filter.provider {
+        idx += 1;
+        conditions.push(format!("provider = ?{idx}"));
+        params_vec.push(Box::new(_provider.clone()));
+    }
+    if let Some(ref _model) = filter.model {
+        idx += 1;
+        conditions.push(format!("model LIKE ?{idx}"));
+        params_vec.push(Box::new(format!("%{_model}%")));
+    }
+    if let Some(ref _status) = filter.status {
+        idx += 1;
+        conditions.push(format!("status = ?{idx}"));
+        params_vec.push(Box::new(_status.as_str().to_string()));
+    }
+    if let Some(since) = filter.since_ms {
+        idx += 1;
+        conditions.push(format!("timestamp >= ?{idx}"));
+        params_vec.push(Box::new(since));
+    }
+    if let Some(until) = filter.until_ms {
+        idx += 1;
+        conditions.push(format!("timestamp <= ?{idx}"));
+        params_vec.push(Box::new(until));
+    }
+    if let Some(ref vk) = filter.virtual_key {
+        idx += 1;
+        conditions.push(format!("virtual_key = ?{idx}"));
+        params_vec.push(Box::new(vk.clone()));
+    }
+
+    (conditions.join(" AND "), params_vec)
+}
+
 fn row_to_entry(r: &rusqlite::Row) -> rusqlite::Result<LogEntry> {
     Ok(LogEntry {
         id: r.get(0)?,
@@ -520,6 +769,9 @@ fn row_to_entry(r: &rusqlite::Row) -> rusqlite::Result<LogEntry> {
         input_preview: r.get(15)?,
         output_preview: r.get(16)?,
         compression_saved_bytes: r.get::<_, Option<i32>>(17)?.unwrap_or(0) as usize,
+        guardrail_triggered: r.get::<_, Option<i32>>(18)?.map(|v| v != 0),
+        guardrail_type: r.get(19)?,
+        guardrail_detail: r.get(20)?,
     })
 }
 
@@ -655,6 +907,92 @@ impl LogStore {
             }
         }
     }
+
+    pub async fn list_guardrails(
+        &self,
+        limit: usize,
+        offset: usize,
+        filter: &LogFilter,
+    ) -> (Vec<LogEntry>, u64) {
+        let g = self.inner.lock().await;
+        match &*g {
+            Backend::Sqlite(db) => db
+                .list_guardrails(limit, offset, filter)
+                .unwrap_or_default(),
+            Backend::Memory { buf, .. } => {
+                let filtered: Vec<&LogEntry> = buf
+                    .iter()
+                    .rev()
+                    .filter(|e| e.guardrail_triggered == Some(true) && filter.matches(e))
+                    .collect();
+                let total = filtered.len() as u64;
+                let page = filtered
+                    .into_iter()
+                    .skip(offset)
+                    .take(limit)
+                    .cloned()
+                    .collect();
+                (page, total)
+            }
+        }
+    }
+
+    pub async fn guardrails_stats(&self, filter: &LogFilter) -> GuardrailsBreakdown {
+        let g = self.inner.lock().await;
+        match &*g {
+            Backend::Sqlite(db) => db.guardrails_breakdown(filter).unwrap_or_default(),
+            Backend::Memory { buf, .. } => {
+                let entries: Vec<&LogEntry> = buf
+                    .iter()
+                    .filter(|e| e.guardrail_triggered == Some(true) && filter.matches(e))
+                    .collect();
+                let total_blocks = entries.len() as u64;
+                let keyword_blocks = entries
+                    .iter()
+                    .filter(|e| e.guardrail_type.as_deref() == Some("keyword_block"))
+                    .count() as u64;
+                let prompt_injection_blocks = entries
+                    .iter()
+                    .filter(|e| e.guardrail_type.as_deref() == Some("prompt_injection"))
+                    .count() as u64;
+                let content_filter_blocks = entries
+                    .iter()
+                    .filter(|e| e.guardrail_type.as_deref() == Some("content_filter"))
+                    .count() as u64;
+                GuardrailsBreakdown {
+                    total_blocks,
+                    keyword_blocks,
+                    prompt_injection_blocks,
+                    content_filter_blocks,
+                    top_keywords: vec![],
+                }
+            }
+        }
+    }
+
+    pub async fn guardrails_breakdown(&self, filter: &LogFilter) -> GuardrailsBreakdown {
+        self.guardrails_stats(filter).await
+    }
+
+    pub async fn guardrails_timeline(
+        &self,
+        filter: &LogFilter,
+        bucket_secs: i64,
+    ) -> Vec<GuardrailsTimeline> {
+        let g = self.inner.lock().await;
+        match &*g {
+            Backend::Sqlite(db) => db
+                .guardrails_timeline(filter, bucket_secs)
+                .unwrap_or_default(),
+            Backend::Memory { buf, .. } => {
+                let entries: Vec<&LogEntry> = buf
+                    .iter()
+                    .filter(|e| e.guardrail_triggered == Some(true) && filter.matches(e))
+                    .collect();
+                memory_guardrails_timeline(&entries, bucket_secs)
+            }
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -705,6 +1043,28 @@ fn memory_histogram(entries: &[&LogEntry], bucket_secs: i64) -> Vec<HistogramBuc
     map.into_values().collect()
 }
 
+fn memory_guardrails_timeline(entries: &[&LogEntry], bucket_secs: i64) -> Vec<GuardrailsTimeline> {
+    let mut map: std::collections::BTreeMap<i64, GuardrailsTimeline> = Default::default();
+    let bms = bucket_secs * 1000;
+    for e in entries {
+        let ts = (e.timestamp / bms) * bms;
+        let b = map.entry(ts).or_insert(GuardrailsTimeline {
+            timestamp: ts,
+            total: 0,
+            keyword_blocks: 0,
+            prompt_injection: 0,
+            content_filter: 0,
+        });
+        b.total += 1;
+        match e.guardrail_type.as_deref() {
+            Some("keyword_block") => b.keyword_blocks += 1,
+            Some("prompt_injection") => b.prompt_injection += 1,
+            _ => b.content_filter += 1,
+        }
+    }
+    map.into_values().collect()
+}
+
 fn memory_token_histogram(entries: &[&LogEntry], bucket_secs: i64) -> Vec<TokenBucket> {
     let mut map: std::collections::BTreeMap<i64, TokenBucket> = Default::default();
     let bms = bucket_secs * 1000;
@@ -726,6 +1086,30 @@ fn memory_token_histogram(entries: &[&LogEntry], bucket_secs: i64) -> Vec<TokenB
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers publics
 // ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GuardrailsBreakdown {
+    pub total_blocks: u64,
+    pub keyword_blocks: u64,
+    pub prompt_injection_blocks: u64,
+    pub content_filter_blocks: u64,
+    pub top_keywords: Vec<KeywordCount>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeywordCount {
+    pub keyword: String,
+    pub count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuardrailsTimeline {
+    pub timestamp: i64,
+    pub total: u64,
+    pub keyword_blocks: u64,
+    pub prompt_injection: u64,
+    pub content_filter: u64,
+}
 
 pub fn now_ms() -> i64 {
     SystemTime::now()
@@ -752,6 +1136,43 @@ pub fn build_log_entry(
     output_preview: Option<String>,
     virtual_key: Option<String>,
     compression_saved_bytes: usize,
+) -> LogEntry {
+    build_log_entry_full(
+        provider,
+        model,
+        is_stream,
+        status,
+        latency_ms,
+        usage,
+        finish_reason,
+        error_message,
+        input_preview,
+        output_preview,
+        virtual_key,
+        compression_saved_bytes,
+        None,
+        None,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_log_entry_full(
+    provider: &str,
+    model: &str,
+    is_stream: bool,
+    status: LogStatus,
+    latency_ms: f64,
+    usage: Option<&pylos_core::domain::openai::Usage>,
+    finish_reason: Option<String>,
+    error_message: Option<String>,
+    input_preview: Option<String>,
+    output_preview: Option<String>,
+    virtual_key: Option<String>,
+    compression_saved_bytes: usize,
+    guardrail_triggered: Option<bool>,
+    guardrail_type: Option<String>,
+    guardrail_detail: Option<String>,
 ) -> LogEntry {
     let (prompt_tokens, completion_tokens, total_tokens) = usage
         .map(|u| (u.prompt_tokens, u.completion_tokens, u.total_tokens))
@@ -780,6 +1201,9 @@ pub fn build_log_entry(
         input_preview: input_preview.map(|s| truncate(&s, 200)),
         output_preview: output_preview.map(|s| truncate(&s, 200)),
         compression_saved_bytes,
+        guardrail_triggered,
+        guardrail_type,
+        guardrail_detail,
     }
 }
 

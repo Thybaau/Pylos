@@ -67,6 +67,49 @@ impl LogStoreVariant {
             Self::Postgres(s) => s.token_histogram(filter, bucket_secs).await,
         }
     }
+
+    pub async fn list_guardrails(
+        &self,
+        limit: usize,
+        offset: usize,
+        filter: &pylos_application::log_store::LogFilter,
+    ) -> (Vec<pylos_application::log_store::LogEntry>, u64) {
+        match self {
+            Self::Sqlite(s) => s.list_guardrails(limit, offset, filter).await,
+            Self::Postgres(s) => s.list_guardrails(limit, offset, filter).await,
+        }
+    }
+
+    pub async fn guardrails_stats(
+        &self,
+        filter: &pylos_application::log_store::LogFilter,
+    ) -> pylos_application::log_store::GuardrailsBreakdown {
+        match self {
+            Self::Sqlite(s) => s.guardrails_stats(filter).await,
+            Self::Postgres(s) => s.guardrails_stats(filter).await,
+        }
+    }
+
+    pub async fn guardrails_breakdown(
+        &self,
+        filter: &pylos_application::log_store::LogFilter,
+    ) -> pylos_application::log_store::GuardrailsBreakdown {
+        match self {
+            Self::Sqlite(s) => s.guardrails_breakdown(filter).await,
+            Self::Postgres(s) => s.guardrails_breakdown(filter).await,
+        }
+    }
+
+    pub async fn guardrails_timeline(
+        &self,
+        filter: &pylos_application::log_store::LogFilter,
+        bucket_secs: i64,
+    ) -> Vec<pylos_application::log_store::GuardrailsTimeline> {
+        match self {
+            Self::Sqlite(s) => s.guardrails_timeline(filter, bucket_secs).await,
+            Self::Postgres(s) => s.guardrails_timeline(filter, bucket_secs).await,
+        }
+    }
 }
 
 #[derive(Clone)]

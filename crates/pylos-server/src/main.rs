@@ -8,6 +8,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+
     // OpenTelemetry (OTLP via OTEL_ENDPOINT)
     let _otel_provider = otel::setup_otel();
     let otel_tracer = _otel_provider.as_ref().map(|p| p.tracer("pylos"));

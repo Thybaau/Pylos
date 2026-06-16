@@ -47,8 +47,9 @@ impl PgLogStore {
                 (id, timestamp, provider, model, object, status, latency_ms,
                  prompt_tokens, completion_tokens, total_tokens, cost_usd,
                  finish_reason, error_message, virtual_key, is_stream,
-                 input_preview, output_preview, compression_saved_bytes)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                 input_preview, output_preview, compression_saved_bytes,
+                 guardrail_triggered, guardrail_type, guardrail_detail)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
             ON CONFLICT(id) DO NOTHING
             "#,
         )
@@ -70,6 +71,9 @@ impl PgLogStore {
         .bind(&entry.input_preview)
         .bind(&entry.output_preview)
         .bind(entry.compression_saved_bytes as i32)
+        .bind(entry.guardrail_triggered)
+        .bind(&entry.guardrail_type)
+        .bind(&entry.guardrail_detail)
         .execute(&self.pool)
         .await
         {
@@ -251,6 +255,136 @@ impl PgLogStore {
         }
     }
 
+    pub async fn list_guardrails(
+        &self,
+        limit: usize,
+        offset: usize,
+        filter: &LogFilter,
+    ) -> (Vec<LogEntry>, u64) {
+        let (where_clause, params) = build_where_clause(filter);
+        let guard_where = if where_clause.is_empty() {
+            "WHERE guardrail_triggered = TRUE".to_string()
+        } else {
+            format!("{} AND guardrail_triggered = TRUE", where_clause)
+        };
+
+        let count_sql = format!("SELECT COUNT(*) FROM requests {}", guard_where);
+        let mut count_q = sqlx::query(&count_sql);
+        for p in &params {
+            count_q = count_q.bind(p);
+        }
+        let total: u64 = count_q
+            .fetch_one(&self.pool)
+            .await
+            .map(|r| r.try_get::<i64, _>(0).unwrap_or(0) as u64)
+            .unwrap_or(0);
+
+        let limit_idx = params.len() + 1;
+        let offset_idx = params.len() + 2;
+        let data_sql = format!(
+            "SELECT * FROM requests {} ORDER BY timestamp DESC LIMIT ${} OFFSET ${}",
+            guard_where, limit_idx, offset_idx
+        );
+        let mut data_q = sqlx::query(&data_sql);
+        for p in &params {
+            data_q = data_q.bind(p);
+        }
+        data_q = data_q.bind(limit as i64).bind(offset as i64);
+        let rows = data_q
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default()
+            .iter()
+            .map(row_to_log_entry)
+            .collect();
+
+        (rows, total)
+    }
+
+    pub async fn guardrails_stats(
+        &self,
+        filter: &LogFilter,
+    ) -> crate::log_store::GuardrailsBreakdown {
+        let (where_clause, params) = build_where_clause(filter);
+        let guard_where = if where_clause.is_empty() {
+            "WHERE guardrail_triggered = TRUE".to_string()
+        } else {
+            format!("{} AND guardrail_triggered = TRUE", where_clause)
+        };
+
+        let total_sql = format!(
+            "SELECT COUNT(*) FROM requests {} AND guardrail_type IS NOT NULL",
+            guard_where
+        );
+        let mut q = sqlx::query(&total_sql);
+        for p in &params {
+            q = q.bind(p);
+        }
+        let total_blocks: u64 = q
+            .fetch_one(&self.pool)
+            .await
+            .map(|r| r.try_get::<i64, _>(0).unwrap_or(0) as u64)
+            .unwrap_or(0);
+
+        crate::log_store::GuardrailsBreakdown {
+            total_blocks,
+            keyword_blocks: 0,
+            prompt_injection_blocks: 0,
+            content_filter_blocks: 0,
+            top_keywords: vec![],
+        }
+    }
+
+    pub async fn guardrails_breakdown(
+        &self,
+        filter: &LogFilter,
+    ) -> crate::log_store::GuardrailsBreakdown {
+        self.guardrails_stats(filter).await
+    }
+
+    pub async fn guardrails_timeline(
+        &self,
+        filter: &LogFilter,
+        bucket_secs: i64,
+    ) -> Vec<crate::log_store::GuardrailsTimeline> {
+        let bucket_ms = bucket_secs * 1000;
+        let (where_clause, params) = build_where_clause(filter);
+        let guard_where = if where_clause.is_empty() {
+            "WHERE guardrail_triggered = TRUE".to_string()
+        } else {
+            format!("{} AND guardrail_triggered = TRUE", where_clause)
+        };
+
+        let sql = format!(
+            "SELECT (timestamp / {b}) * {b} AS ts,
+                    COUNT(*) as total,
+                    COALESCE(SUM(CASE WHEN guardrail_type = 'keyword_block' THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN guardrail_type = 'prompt_injection' THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN guardrail_type = 'content_filter' THEN 1 ELSE 0 END), 0)
+             FROM requests {guard_where}
+             GROUP BY ts ORDER BY ts ASC",
+            b = bucket_ms
+        );
+
+        let mut q = sqlx::query(&sql);
+        for p in &params {
+            q = q.bind(p);
+        }
+        match q.fetch_all(&self.pool).await {
+            Ok(rows) => rows
+                .iter()
+                .map(|row| crate::log_store::GuardrailsTimeline {
+                    timestamp: row.try_get::<i64, _>(0).unwrap_or(0),
+                    total: row.try_get::<i64, _>(1).unwrap_or(0) as u64,
+                    keyword_blocks: row.try_get::<i64, _>(2).unwrap_or(0) as u64,
+                    prompt_injection: row.try_get::<i64, _>(3).unwrap_or(0) as u64,
+                    content_filter: row.try_get::<i64, _>(4).unwrap_or(0) as u64,
+                })
+                .collect(),
+            Err(_) => vec![],
+        }
+    }
+
     async fn purge_old_logs(&self) {
         let cutoff = now_ms() - (self.retention_days as i64 * 86_400_000);
         match sqlx::query("DELETE FROM requests WHERE timestamp < $1")
@@ -347,5 +481,8 @@ fn row_to_log_entry(row: &sqlx::postgres::PgRow) -> LogEntry {
         compression_saved_bytes: row
             .try_get::<i32, _>("compression_saved_bytes")
             .unwrap_or(0) as usize,
+        guardrail_triggered: row.try_get::<bool, _>("guardrail_triggered").ok(),
+        guardrail_type: row.try_get("guardrail_type").ok(),
+        guardrail_detail: row.try_get("guardrail_detail").ok(),
     }
 }

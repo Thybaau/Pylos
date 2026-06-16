@@ -42,4 +42,5 @@ fastrand = "2"
 jsonwebtoken = "9.3"
 moka = { version = "0.12", features = ["future"] }
 ring = "0.17"
+dotenvy = "0.15"
 

@@ -3,6 +3,7 @@ pub mod auth;
 pub mod completions;
 pub mod config;
 pub mod embeddings;
+pub mod guardrails;
 pub mod health;
 pub mod images;
 pub mod inference;

@@ -36,7 +36,8 @@ pub use cache_aligner::CacheAlignerPlugin;
 pub use config_store::ConfigStore;
 pub use guardrails::GuardrailsPlugin;
 pub use log_store::{
-    build_log_entry, generate_log_id, now_ms, LogEntry, LogFilter, LogStats, LogStatus, LogStore,
+    build_log_entry, build_log_entry_full, generate_log_id, now_ms, GuardrailsBreakdown,
+    GuardrailsTimeline, KeywordCount, LogEntry, LogFilter, LogStats, LogStatus, LogStore,
 };
 pub use mem0_plugin::Mem0Plugin;
 pub use memory_plugin::MemoryPlugin;

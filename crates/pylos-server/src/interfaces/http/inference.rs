@@ -15,10 +15,32 @@ use serde_json::json;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
-use pylos_application::log_store::{build_log_entry, LogStatus};
+use pylos_application::log_store::{build_log_entry_full, LogStatus};
 use pylos_core::domain::openai::ChatCompletionRequest;
 use pylos_core::domain::request::{PylosRequest, RequestContext, StreamChunk};
 use pylos_core::error::PylosError;
+
+fn guardrails_info_from_response(
+    finish_reason: &Option<String>,
+    output_preview: &Option<String>,
+) -> (Option<bool>, Option<String>, Option<String>) {
+    let triggered = finish_reason.as_deref() == Some("content_filter");
+    if !triggered {
+        return (None, None, None);
+    }
+    let (gtype, detail) = match output_preview.as_deref() {
+        Some(msg) if msg.contains("prompt injection") => (
+            Some("prompt_injection".into()),
+            Some("Prompt injection attempt blocked".into()),
+        ),
+        Some(msg) if msg.contains("flagged") => (
+            Some("keyword_block".into()),
+            Some("Blocked keyword detected".into()),
+        ),
+        _ => (Some("content_filter".into()), None),
+    };
+    (Some(true), gtype, detail)
+}
 
 use crate::middleware::request_id::RequestTrace;
 use crate::middleware::virtual_key::VirtualKeyInfo;
@@ -149,6 +171,8 @@ async fn complete_response(
 
             let output_preview = resp.choices.first().and_then(|c| c.message.content.clone());
             let finish_reason = resp.choices.first().and_then(|c| c.finish_reason.clone());
+            let (gr_triggered, gr_type, gr_detail) =
+                guardrails_info_from_response(&finish_reason, &output_preview);
             let provider = guess_provider(&resp.model);
             let vk_name = vk_info.map(|v| v.name);
 
@@ -158,10 +182,12 @@ async fn complete_response(
                 provider = %provider,
                 model = %resp.model,
                 latency_ms = format!("{:.2}", latency),
+                guardrail_triggered = ?gr_triggered,
+                guardrail_type = ?gr_type,
                 "[Complete] Inference succeeded"
             );
 
-            let entry = build_log_entry(
+            let entry = build_log_entry_full(
                 &provider,
                 &resp.model,
                 false,
@@ -174,6 +200,9 @@ async fn complete_response(
                 output_preview,
                 vk_name,
                 saved_bytes,
+                gr_triggered,
+                gr_type,
+                gr_detail,
             );
 
             let state_clone = state.clone();
@@ -242,7 +271,7 @@ async fn complete_response(
                 e, e.error_type()
             );
 
-            let entry = build_log_entry(
+            let entry = build_log_entry_full(
                 &provider,
                 &model,
                 false,
@@ -255,6 +284,9 @@ async fn complete_response(
                 None,
                 vk_name,
                 saved_bytes,
+                None,
+                None,
+                None,
             );
             let state_clone = state.clone();
             tokio::spawn(async move {
@@ -457,7 +489,9 @@ async fn stream_response(
                         ..Default::default()
                     };
 
-                    let entry = build_log_entry(
+                    let (gr_triggered, gr_type, gr_detail) =
+                        guardrails_info_from_response(&finish, &output_preview);
+                    let entry = build_log_entry_full(
                         &provider_clone,
                         &model_clone,
                         true,
@@ -470,6 +504,9 @@ async fn stream_response(
                         output_preview,
                         vk_name,
                         saved_bytes,
+                        gr_triggered,
+                        gr_type,
+                        gr_detail,
                     );
                     state_for_log.log_store.push(entry).await;
                 }
@@ -506,7 +543,7 @@ async fn stream_response(
                 e, e.error_type()
             );
 
-            let entry = build_log_entry(
+            let entry = build_log_entry_full(
                 &provider,
                 &model,
                 true,
@@ -519,6 +556,9 @@ async fn stream_response(
                 None,
                 vk_name,
                 saved_bytes,
+                None,
+                None,
+                None,
             );
             tokio::spawn(async move {
                 state.log_store.push(entry).await;
