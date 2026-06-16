@@ -37,6 +37,7 @@ services:
       AWS_SESSION_TOKEN: "${AWS_SESSION_TOKEN:-}"
       AWS_REGION: "${AWS_REGION:-us-east-1}"
       AWS_ROLE_ARN: "${AWS_ROLE_ARN:-}"
+      QDRANT_URL: "${QDRANT_URL:-http://qdrant.qdrant.svc:6333}"
       PYLOS_CONFIG: "/app/pylos.json"
       PYLOS_DATA_DIR: "/data"
       PYLOS_ADMIN_KEY: "${PYLOS_ADMIN_KEY:-}"
