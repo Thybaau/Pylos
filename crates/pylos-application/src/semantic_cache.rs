@@ -29,9 +29,18 @@ impl SemanticCachePlugin {
         similarity_threshold: f64,
         ttl_secs: u64,
     ) -> Self {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(key) = std::env::var("QDRANT_API_KEY") {
+            if !key.is_empty() {
+                if let Ok(val) = reqwest::header::HeaderValue::from_str(&key) {
+                    headers.insert("api-key", val);
+                }
+            }
+        }
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(30))
+            .default_headers(headers)
             .build()
             .unwrap_or_default();
         Self {

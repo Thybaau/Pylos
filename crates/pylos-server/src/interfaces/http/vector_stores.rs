@@ -37,14 +37,27 @@ fn get_qdrant_url() -> String {
     std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://qdrant:6333".to_string())
 }
 
+fn get_qdrant_client(timeout_secs: u64) -> reqwest::Client {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Ok(key) = std::env::var("QDRANT_API_KEY") {
+        if !key.is_empty() {
+            if let Ok(val) = reqwest::header::HeaderValue::from_str(&key) {
+                headers.insert("api-key", val);
+            }
+        }
+    }
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .default_headers(headers)
+        .build()
+        .unwrap_or_default()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/vector-stores/collections
 // ─────────────────────────────────────────────────────────────────────────────
 pub async fn list_collections(State(_state): State<AppState>) -> impl IntoResponse {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_default();
+    let client = get_qdrant_client(5);
     let url = format!("{}/collections", get_qdrant_url().trim_end_matches('/'));
 
     let resp = match client.get(&url).send().await {
@@ -169,10 +182,7 @@ pub async fn create_collection(
             .into_response();
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_default();
+    let client = get_qdrant_client(5);
     let url = format!(
         "{}/collections/{}",
         get_qdrant_url().trim_end_matches('/'),
@@ -218,10 +228,7 @@ pub async fn delete_collection(
     State(_state): State<AppState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .unwrap_or_default();
+    let client = get_qdrant_client(5);
     let url = format!(
         "{}/collections/{}",
         get_qdrant_url().trim_end_matches('/'),
@@ -308,10 +315,7 @@ pub async fn add_document(
     let payload_obj = payload.as_object_mut().unwrap();
     payload_obj.insert("content".to_string(), Value::String(req.text.clone()));
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_default();
+    let client = get_qdrant_client(10);
     let url = format!(
         "{}/collections/{}/points",
         get_qdrant_url().trim_end_matches('/'),
@@ -407,10 +411,7 @@ pub async fn search_collection(
         }
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_default();
+    let client = get_qdrant_client(10);
     let url = format!(
         "{}/collections/{}/points/search",
         get_qdrant_url().trim_end_matches('/'),

@@ -57,6 +57,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.dev.existingSecret | default "pylos-secret" }}
                   key: GH_PAT
+            - name: QDRANT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dev.existingSecret | default "pylos-secret" }}
+                  key: QDRANT_API_KEY
             {{- if .Values.database.enabled }}
             - name: DATABASE_URL
               {{- if .Values.database.url }}
