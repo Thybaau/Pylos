@@ -94,6 +94,9 @@ database:
   existingSecret: ""
   existingSecretKey: "DATABASE_URL"
 
+qdrant:
+  url: "http://qdrant.qdrant.svc:6333"
+
 backend:
   name: pylos
   replicaCount: 2

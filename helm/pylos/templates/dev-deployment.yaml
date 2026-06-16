@@ -40,6 +40,8 @@ spec:
               value: {{ .Values.dev.dataDir }}
             - name: PYLOS_CONFIG
               value: "/app/pylos.json"
+            - name: QDRANT_URL
+              value: {{ .Values.qdrant.url | quote }}
             - name: OPENCODE_API_KEY
               valueFrom:
                 secretKeyRef:
